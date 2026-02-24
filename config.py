@@ -1,0 +1,73 @@
+# config.py
+"""
+Shared configuration for the unified calibration pipeline.
+Edit this file to match your hardware setup.
+"""
+
+from dataclasses import dataclass, field
+from typing import Dict, List, Optional, Tuple
+import numpy as np
+
+
+@dataclass
+class CubeConfig:
+    """ArUco cube target configuration."""
+    cube_side_m: float = 0.06          # cube edge length (m)
+    marker_size_m: float = 0.05        # marker size on each face (m)
+    dictionary_name: str = "DICT_4X4_50"
+    marker_ids: Tuple[int, ...] = (0, 1, 2, 3, 4)
+
+    # marker_id -> face name
+    id_to_face: Dict[int, str] = field(default_factory=lambda: {
+        0: "+Y",
+        1: "+Z",
+        2: "+X",
+        3: "-Z",
+        4: "-X",
+    })
+
+    # per-marker in-plane rotation (deg) if physically rotated
+    face_roll_deg: Dict[int, float] = field(default_factory=lambda: {
+        0: 0.0, 1: 0.0, 2: 0.0, 3: 0.0, 4: 0.0
+    })
+
+
+@dataclass
+class CameraStreamConfig:
+    """RealSense stream config."""
+    color_w: int = 640
+    color_h: int = 480
+    depth_w: int = 640
+    depth_h: int = 480
+    fps: int = 15
+
+
+@dataclass
+class RobotConfig:
+    """Robot communication config."""
+    host: str = "192.168.0.23"
+    port: int = 12348
+    # Euler convention for your robot (ZYX intrinsic = extrinsic XYZ)
+    # robot_poses format: [x_mm, y_mm, z_mm, rz_deg, ry_deg, rx_deg]
+    euler_order: str = "ZYX"
+
+
+@dataclass
+class CalibrationConfig:
+    """Calibration parameters."""
+    # ArUco detection
+    min_markers: int = 1
+    reproj_max_px: float = 10.0
+    use_ransac: bool = True
+
+    # Hand-eye
+    handeye_method: int = 4   # cv2.CALIB_HAND_EYE_PARK
+
+    # Multi-cam
+    ref_fixed_cam_idx: int = 1       # which fixed camera is the reference
+    gripper_cam_idx: int = 0         # which cam index is the gripper camera
+
+    # Point cloud fusion
+    z_min: float = 0.2
+    z_max: float = 1.5
+    stride: int = 4

@@ -5,21 +5,22 @@ Step 2: Capture ArUco cube images from ALL cameras (fixed + gripper)
 
 Two modes:
   A) Robot-controlled (--use_robot): Robot server sends 'capture' commands,
-     client moves robot to predefined joints, captures from all cameras.
+     client sends predefined 6D command, captures from all cameras.
   B) Manual (default): Press SPACE to capture when cube is visible.
 
 For each capture event, saves:
   - RGB (+ optional depth) per camera
-  - Robot TCP pose (if robot mode)
+  - Robot TCP pose (if available)
+  - Robot command joints/pose (if robot mode)
 
-명령어 
-[수동모드] : 로봇 없이 고정카메라만 캡처 (SPACE로 클릭시 캡처)
+명령어
+[수동모드]
   python Step2_capture_cube_poses.py \
     --root_folder ./data/session_01 \
     --intrinsics_dir ./intrinsics \
     --save_depth --show
 
-[로봇모드] : 
+[로봇모드]
   python Step2_capture_cube_poses.py \
     --root_folder ./data/session_01 \
     --intrinsics_dir ./intrinsics \
@@ -35,16 +36,17 @@ import argparse
 from typing import Dict, List, Optional
 
 import cv2
-import numpy as np
 
 from camera import RealSenseCamera
 from aruco_cube import ArucoCubeTarget
 from config import CubeConfig
 from robot_comm import RobotClient, euler_deg_to_matrix
 
+
 def ensure_dir(p: str) -> str:
     os.makedirs(p, exist_ok=True)
     return p
+
 
 def load_device_map(intr_dir: str):
     map_path = os.path.join(intr_dir, "device_map.json")
@@ -55,6 +57,7 @@ def load_device_map(intr_dir: str):
     serial_to_idx = m.get("serial_to_idx", {})
     gripper_cam_idx = m.get("gripper_cam_idx", None)
     return serial_to_idx, gripper_cam_idx, map_path
+
 
 def main():
     parser = argparse.ArgumentParser(description="Capture cube images from all cameras + robot poses")
@@ -89,9 +92,16 @@ def main():
     parser.add_argument("--robot_ip", type=str, default="192.168.0.23")
     parser.add_argument("--robot_port", type=int, default=12348)
     parser.add_argument("--joint_file", type=str, default=None,
-                        help="JSON file with list of joint poses [[j1..j6], ...]")
+                        help="JSON file with list of 6D commands [[d1..d6], ...]")
     parser.add_argument("--settle_time", type=float, default=1.5,
                         help="Wait time (s) after robot moves before capturing")
+    parser.add_argument("--query_robot_tcp", dest="query_robot_tcp", action="store_true",
+                        help="Try querying Zeus for current TCP pose when capture command payload has no pose")
+    parser.add_argument("--no_query_robot_tcp", dest="query_robot_tcp", action="store_false",
+                        help="Disable extra TCP query after robot move")
+    parser.add_argument("--allow_joint_as_pose_fallback", action="store_true",
+                        help="If TCP pose is unavailable, store sent 6D command as robot_pose_6dof (권장X)")
+    parser.set_defaults(query_robot_tcp=True)
 
     args = parser.parse_args()
 
@@ -99,7 +109,7 @@ def main():
     intr_dir = args.intrinsics_dir
 
     # ─── Load device map ───
-    serial_to_idx, gripper_cam_idx, map_path = load_device_map(intr_dir)
+    serial_to_idx, gripper_cam_idx, _ = load_device_map(intr_dir)
     devs = RealSenseCamera.list_devices()
     if len(devs) == 0:
         raise RuntimeError("No RealSense devices found.")
@@ -129,26 +139,30 @@ def main():
     for ci, serial in idx_serial_pairs:
         cam = RealSenseCamera(
             serial=serial,
-            width=args.width, height=args.height, fps=args.fps,
-            use_color=True, use_depth=args.save_depth,
-            align_depth_to_color=True, warmup_frames=10)
+            width=args.width,
+            height=args.height,
+            fps=args.fps,
+            use_color=True,
+            use_depth=args.save_depth,
+            align_depth_to_color=True,
+            warmup_frames=10,
+        )
         cam.start()
         cams[ci] = cam
         ensure_dir(os.path.join(root, f"cam{ci}"))
 
     cfg = CubeConfig()
-    cube =  (cfg)
+    cube = ArucoCubeTarget(cfg)
 
     # ─── Robot setup ───
     robot_client: Optional[RobotClient] = None
     joint_list: List[List[float]] = []
-    robot_poses_record: List[Optional[List[float]]] = []
 
     if args.use_robot:
         if args.joint_file:
             with open(args.joint_file, "r") as f:
                 joint_list = json.load(f)
-            print(f"[INFO] Loaded {len(joint_list)} joint poses from {args.joint_file}")
+            print(f"[INFO] Loaded {len(joint_list)} commands from {args.joint_file}")
         robot_client = RobotClient(args.robot_ip, args.robot_port)
         robot_client.connect()
 
@@ -168,7 +182,11 @@ def main():
     print("  SPACE : manual capture (all view check)")
     print("  ESC/q : quit\n")
 
-    def do_capture(robot_pose_6dof: Optional[List[float]] = None) -> bool:
+    def do_capture(
+        robot_pose_6dof: Optional[List[float]] = None,
+        robot_joints_6: Optional[List[float]] = None,
+        robot_pose_source: Optional[str] = None,
+    ) -> bool:
         """Capture from all cameras. Returns True if successful."""
         nonlocal event_id, last_save_t
 
@@ -186,22 +204,33 @@ def main():
                 cams_with_cube += 1
 
             frames[ci] = {
-                "color": color, "depth": depth, "ts_ms": ts_ms,
+                "color": color,
+                "depth": depth,
+                "ts_ms": ts_ms,
                 "ok": ok,
                 "ids": ([] if ids is None else [int(x) for x in ids]),
-                "corners": corners, "ids_np": ids,
+                "corners": corners,
+                "ids_np": ids,
             }
 
         if cams_with_cube < args.min_cams_with_cube:
             print(f"[SKIP] Only {cams_with_cube}/{args.min_cams_with_cube} cams see cube.")
             return False
 
-        # Save
         fid = int(event_id)
         cap_rec = {"event_id": fid, "cams": {}}
 
+        if robot_joints_6 is not None:
+            cap_rec["robot_joints_6"] = [float(x) for x in robot_joints_6]
+
         if robot_pose_6dof is not None:
-            cap_rec["robot_pose_6dof"] = robot_pose_6dof
+            pose6 = [float(x) for x in robot_pose_6dof]
+            cap_rec["robot_pose_6dof"] = pose6
+            cap_rec["robot_pose_source"] = str(robot_pose_source or "unknown")
+            try:
+                cap_rec["robot_pose_matrix_4x4"] = euler_deg_to_matrix(*pose6).tolist()
+            except Exception:
+                pass
 
         for ci in sorted(frames.keys()):
             fr = frames[ci]
@@ -227,7 +256,8 @@ def main():
             json.dump(meta, f, indent=2)
 
         visible_str = ", ".join([f"cam{ci}({'✓' if frames[ci]['ok'] else '✗'})" for ci in sorted(frames.keys())])
-        print(f"[SAVE] event_id={event_id} | {visible_str}")
+        src = cap_rec.get("robot_pose_source", "-")
+        print(f"[SAVE] event_id={event_id} | {visible_str} | pose_src={src}")
         event_id += 1
         last_save_t = time.time() * 1000
         return True
@@ -237,20 +267,32 @@ def main():
             # ─── Robot-controlled mode ───
             print("[MODE] Robot-controlled capture")
             for ji, joints in enumerate(joint_list):
-                if all(x == 0 for x in joints):
+                if all(float(x) == 0.0 for x in joints):
                     print("[INFO] End marker reached in joint list.")
                     break
 
                 print(f"\n[Robot] Pose {ji+1}/{len(joint_list)}: {joints}")
-                ok = robot_client.send_pose_and_wait(joints, settle_time=args.settle_time)
+                ok, tcp_pose, pose_source = robot_client.send_pose_and_wait_with_tcp(
+                    joints=joints,
+                    settle_time=args.settle_time,
+                    query_tcp_if_missing=args.query_robot_tcp,
+                )
                 if not ok:
                     print("[INFO] Robot quit or error.")
                     break
 
-                # Capture with robot pose
-                # Note: robot_pose_6dof should be the TCP pose from the robot controller
-                # For now we store the joints; actual TCP comes from robot feedback
-                do_capture(robot_pose_6dof=joints)
+                if tcp_pose is None and args.allow_joint_as_pose_fallback:
+                    print("[WARN] TCP pose unavailable. Using command values as fallback robot_pose_6dof.")
+                    tcp_pose = [float(x) for x in joints]
+                    pose_source = "joint_fallback"
+                elif tcp_pose is None:
+                    print("[WARN] TCP pose unavailable. This capture will be saved without robot_pose_6dof.")
+
+                do_capture(
+                    robot_pose_6dof=tcp_pose,
+                    robot_joints_6=[float(x) for x in joints],
+                    robot_pose_source=pose_source,
+                )
 
             print(f"\n[DONE] Robot capture complete. {event_id} captures saved.")
 
@@ -258,10 +300,9 @@ def main():
             # ─── Manual mode ───
             print("[MODE] Manual capture (press SPACE)")
             while True:
-                # Live view
                 frames_view: Dict[int, dict] = {}
                 for ci, cam in cams.items():
-                    color, depth, ts_ms = cam.get_latest()
+                    color, _, _ = cam.get_latest()
                     if color is None:
                         continue
 
@@ -281,7 +322,8 @@ def main():
                         corners = frames_view[ci]["corners"]
                         if ids_np is not None:
                             try:
-                                cv2.aruco.drawDetectedMarkers(img, corners, ids_np.reshape(-1, 1) if ids_np.ndim == 1 else ids_np)
+                                draw_ids = ids_np.reshape(-1, 1) if getattr(ids_np, "ndim", 1) == 1 else ids_np
+                                cv2.aruco.drawDetectedMarkers(img, corners, draw_ids)
                             except Exception:
                                 pass
                         tag = "GRIP" if ci == gripper_cam_idx else "FIX"

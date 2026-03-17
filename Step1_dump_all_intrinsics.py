@@ -1,13 +1,17 @@
 # Step1_dump_all_intrinsics.py
 
 """
-Step 1: 연결된 모든 RealSense 카메라 (고정 4대 + 그리퍼 1대) intrinsics 저장
+Step 1: 연결된 모든 RealSense 카메라 intrinsics 저장
  - Saves per-camera npz (K, D, depth_scale, etc.)
  - Saves device_map.json with serial -> cam_idx mapping
- - User must label which cam_idx is the gripper camera
+ * 그리퍼 카메라 사용시 : User must label which cam_idx is the gripper camera
 
 명령어:
-  python Step1_dump_all_intrinsics.py --out_dir ./intrinsics
+  python Step1_dump_all_intrinsics.py \
+  --out_dir ./intrinsics \
+  --color_w 640 \
+  --color_h 480 \
+  --fps 15
 
 결과물:
   intrinsics/

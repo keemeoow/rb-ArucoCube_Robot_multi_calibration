@@ -3,6 +3,16 @@
 Step 3 (new): Robot grasps cube, then calibrate fixed cameras using
 kinematics + fixed-cam PnP only.
 
+[명령어]:
+python Step3_calibrate_grasped_cube_fk.py \
+  --root_folder ./data/session_01 \
+  --intrinsics_dir ./intrinsics \
+  --ref_fixed_cam_idx 1 \
+  --pair_mode consecutive \
+  --min_markers 1 \
+  --reproj_max_px 6.0 \
+  --min_motion_rot_deg 2.0
+
 Core equations (cube rigidly attached to gripper):
   T_base_cube(k) = T_base_grip(k) * T_grip_cube
 
@@ -15,18 +25,11 @@ So:
 Compared to the old route (with gripper camera hand-eye), this removes
 one PnP error source in the final fixed-camera base transform estimation.
 
-Outputs:
+결과물:
   - T_grip_cube.npy
   - T_base_C{idx}.npy for fixed cameras
   - T_C{ref}_C{idx}.npy (derived from base transforms)
   - calibration_summary_grasped_cube.json
-
-Usage example:
-  python Step3_calibrate_grasped_cube_fk.py \
-    --root_folder ./data/session_01 \
-    --intrinsics_dir ./intrinsics \
-    --gripper_cam_idx 0 \
-    --ref_fixed_cam_idx 1
 """
 
 import os

@@ -9,12 +9,19 @@ Verification:
 
 Optional: Fuse depth from all cameras into a single point cloud in robot base frame.
 
-Usage:
-  python Step4_verify_and_fuse.py \
-    --root_folder ./data/session_01 \
-    --intrinsics_dir ./intrinsics \
-    --frame_idx 0 \
-    --save_ply --eval_icp
+[명령어]:
+python Step4_verify_and_fuse.py \
+  --root_folder ./data/session_01 \
+  --intrinsics_dir ./intrinsics \
+  --calib_dir ./data/session_01/calib_out_grasped_cube \
+  --frame_idx 0 \
+  --save_ply \
+  --eval_icp \
+  --coord_frame base \
+  --z_min 0.2 \
+  --z_max 1.5 \
+  --stride 4
+  --visualize
 """
 
 import os

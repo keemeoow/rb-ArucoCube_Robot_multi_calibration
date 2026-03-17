@@ -1,6 +1,6 @@
 # Step2_capture_cube_poses.py
 """
-Step 2: Capture ArUco cube images from ALL cameras (fixed + gripper)
+Step 2: Capture ArUco cube images from ALL cameras
         while simultaneously recording robot TCP poses.
 
 Two modes:
@@ -13,20 +13,25 @@ For each capture event, saves:
   - Robot TCP pose (if available)
   - Robot command joints/pose (if robot mode)
 
-명령어
+명령어 : 
 [수동모드]
   python Step2_capture_cube_poses.py \
     --root_folder ./data/session_01 \
     --intrinsics_dir ./intrinsics \
     --save_depth --show
 
-[로봇모드]
+[로봇모드] - 이거로 사용!!
   python Step2_capture_cube_poses.py \
     --root_folder ./data/session_01 \
     --intrinsics_dir ./intrinsics \
-    --use_robot --robot_ip 192.168.0.23 --robot_port 12348 \
-    --joint_file joints.json \
-    --save_depth --show
+    --use_robot \
+    --robot_ip 192.168.0.23 \ --robot_port 12348 \
+    --joint_file joints_handeye_calib.json \
+    --settle_time 1.5 \
+    --save_depth \
+    --show \
+    --min_cams_with_cube 2 \
+    --min_markers 1
 """
 
 import os

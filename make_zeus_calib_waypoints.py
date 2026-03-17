@@ -9,10 +9,12 @@ The generated JSON is a list of [d1,d2,d3,d4,d5,d6] rows.
 In this project, these 6 values are commonly used as TCP-like pose values
 (x, y, z, rz, ry, rx) in mm/deg. Keep your Zeus server interpretation aligned.
 
-Example:
+명령어:
   python make_zeus_calib_waypoints.py \
-    --seed_pose 450,-120,380,180,0,180 \
-    --out_file joints_handeye_calib.json
+  --seed_pose 450,-120,380,180,0,180 \
+  --out_file joints_handeye_calib.json \
+  --translation_scale 1.0 \
+  --rotation_scale 1.0
 """
 
 import argparse

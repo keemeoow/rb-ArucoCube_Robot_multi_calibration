@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(grep -n \"device_map\" /Users/woo/Documents/GitHub/Robot-Lab/rb-ArucoCube_Robot_multi_calibration/*.py)"
+    ]
+  }
+}

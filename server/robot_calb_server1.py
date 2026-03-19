@@ -1,4 +1,4 @@
-# robot_calb_server.py
+# robot_calb_server1.py
 """
 Zeus Robot Calibration Server (i611 SDK)
 Step2_capture_cube_poses.py 클라이언트와 TCP 소켓으로 통신하는 서버.

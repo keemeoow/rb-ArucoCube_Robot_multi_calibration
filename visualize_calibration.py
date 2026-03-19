@@ -3,20 +3,18 @@
 Visualize calibration results in robot base coordinate frame.
 
 Shows:
-  - Robot base frame (origin)
-  - Fixed camera positions & orientations (cam0, cam1, cam3)
-  - Gripper camera position at each capture (cam2)
+  - Robot base frame (origin) with XYZ axes + labels
+  - Fixed camera positions with coordinate axes + labels
+  - Gripper camera positions at each capture
   - Robot gripper (TCP) positions at each capture
-  - Cube positions at each capture
-  - Fused point cloud (optional)
+  - Cube positions
+  - Ground grid (XY plane)
 
 Usage:
   python visualize_calibration.py \
     --root_folder ./data/session_manual \
     --intrinsics_dir ./intrinsics \
-    --calib_dir ./data/session_manual/calib_out_kinematic \
-    --show_pointcloud \
-    --frame_idx 0
+    --calib_dir ./data/session_manual/calib_out_direct
 """
 
 import os
@@ -35,59 +33,102 @@ def load_intrinsics(intr_dir, cam_idx):
     d = np.load(p, allow_pickle=True)
     K = d["color_K"].astype(np.float64)
     D = d["color_D"].astype(np.float64)
-    ds = float(d["depth_scale_m_per_unit"]) if "depth_scale_m_per_unit" in d else 0.001
-    if np.isnan(ds):
-        ds = 0.001
-    return K, D, ds
+    return K, D
 
 
-def create_camera_frustum(T, K, w=640, h=480, scale=0.05, color=[1, 0, 0]):
-    """Create a camera frustum (pyramid wireframe) at pose T."""
+def create_axis_lines(T, size=0.1, thickness=3):
+    """Create thick XYZ axis lines at pose T. Returns list of LineSet."""
     import open3d as o3d
 
-    fx, fy, cx, cy = K[0, 0], K[1, 1], K[0, 2], K[1, 2]
-
-    # 4 corners of image plane at distance=scale
-    corners_cam = np.array([
-        [0, 0],
-        [w, 0],
-        [w, h],
-        [0, h],
-    ], dtype=np.float64)
-
-    pts_cam = []
-    pts_cam.append([0, 0, 0])  # camera center
-    for u, v in corners_cam:
-        x = (u - cx) / fx * scale
-        y = (v - cy) / fy * scale
-        pts_cam.append([x, y, scale])
-
-    pts_cam = np.array(pts_cam, dtype=np.float64)
-
-    # Transform to world frame
+    origin = T[:3, 3]
     R = T[:3, :3]
-    t = T[:3, 3]
-    pts_world = pts_cam @ R.T + t
 
-    # Lines: center to each corner + rectangle
-    lines = [
-        [0, 1], [0, 2], [0, 3], [0, 4],  # center to corners
-        [1, 2], [2, 3], [3, 4], [4, 1],  # rectangle
-    ]
+    axes = []
+    colors = [[1, 0, 0], [0, 1, 0], [0, 0, 1]]  # R, G, B = X, Y, Z
+
+    for i, color in enumerate(colors):
+        direction = R[:, i] * size
+        end = origin + direction
+
+        pts = np.array([origin, end])
+        ls = o3d.geometry.LineSet()
+        ls.points = o3d.utility.Vector3dVector(pts)
+        ls.lines = o3d.utility.Vector2iVector([[0, 1]])
+        ls.colors = o3d.utility.Vector3dVector([color])
+        axes.append(ls)
+
+    return axes
+
+
+def create_3d_text(text, position, scale=0.02, color=[1, 1, 1]):
+    """Create 3D text as a point cloud with text rendered on a plane."""
+    import open3d as o3d
+
+    # Use a simple sphere as label marker + store text info
+    sphere = o3d.geometry.TriangleMesh.create_sphere(radius=scale * 0.3)
+    sphere.translate(position)
+    sphere.paint_uniform_color(color)
+    return sphere
+
+
+def create_text_label(text, position, T=None, axis_size=0.1, color=[1, 1, 1]):
+    """Create text labels for axes (X, Y, Z) at end of axis lines."""
+    import open3d as o3d
+
+    labels = []
+    if T is not None:
+        origin = T[:3, 3]
+        R = T[:3, :3]
+        axis_colors = [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
+        axis_names = ["X", "Y", "Z"]
+
+        for i in range(3):
+            end_pos = origin + R[:, i] * axis_size * 1.15
+            sphere = o3d.geometry.TriangleMesh.create_sphere(radius=0.004)
+            sphere.translate(end_pos)
+            sphere.paint_uniform_color(axis_colors[i])
+            labels.append(sphere)
+
+    # Main label
+    sphere = o3d.geometry.TriangleMesh.create_sphere(radius=0.006)
+    sphere.translate(position)
+    sphere.paint_uniform_color(color)
+    labels.append(sphere)
+
+    return labels
+
+
+def create_ground_grid(size=1.0, spacing=0.1, z=0.0, color=[0.3, 0.3, 0.3]):
+    """Create a ground grid on XY plane at z height."""
+    import open3d as o3d
+
+    lines = []
+    points = []
+    idx = 0
+
+    n = int(size / spacing)
+
+    # Lines parallel to X axis
+    for i in range(-n, n + 1):
+        y = i * spacing
+        points.append([-size, y, z])
+        points.append([size, y, z])
+        lines.append([idx, idx + 1])
+        idx += 2
+
+    # Lines parallel to Y axis
+    for i in range(-n, n + 1):
+        x = i * spacing
+        points.append([x, -size, z])
+        points.append([x, size, z])
+        lines.append([idx, idx + 1])
+        idx += 2
 
     ls = o3d.geometry.LineSet()
-    ls.points = o3d.utility.Vector3dVector(pts_world)
+    ls.points = o3d.utility.Vector3dVector(np.array(points))
     ls.lines = o3d.utility.Vector2iVector(lines)
     ls.colors = o3d.utility.Vector3dVector([color] * len(lines))
     return ls
-
-
-def create_axis_frame(T, size=0.05):
-    """Create a coordinate frame at pose T."""
-    import open3d as o3d
-    frame = o3d.geometry.TriangleMesh.create_coordinate_frame(size=size)
-    frame.transform(T)
-    return frame
 
 
 def create_cube_wireframe(T, side_m=0.03, color=[1, 1, 0]):
@@ -117,7 +158,7 @@ def create_cube_wireframe(T, side_m=0.03, color=[1, 1, 0]):
     return ls
 
 
-def create_trajectory_line(positions, color=[0, 1, 0]):
+def create_trajectory_line(positions, color=[0.5, 0.5, 0.5]):
     """Create a line connecting trajectory positions."""
     import open3d as o3d
 
@@ -132,41 +173,17 @@ def create_trajectory_line(positions, color=[0, 1, 0]):
     return ls
 
 
-def depth_to_points(depth_u16, K, depth_scale, z_min, z_max, stride=4):
-    fx, fy, cx, cy = K[0, 0], K[1, 1], K[0, 2], K[1, 2]
-    h, w = depth_u16.shape[:2]
-    pts, pix = [], []
-    for v in range(0, h, stride):
-        for u in range(0, w, stride):
-            d = int(depth_u16[v, u])
-            if d == 0:
-                continue
-            z = float(d) * float(depth_scale)
-            if z < z_min or z > z_max:
-                continue
-            x = (u - cx) * z / fx
-            y = (v - cy) * z / fy
-            pts.append([x, y, z])
-            pix.append((v, u))
-    if len(pts) == 0:
-        return np.empty((0, 3), np.float64), []
-    return np.asarray(pts, np.float64), pix
-
-
 def main():
     parser = argparse.ArgumentParser(description="Visualize calibration in robot base frame")
     parser.add_argument("--root_folder", required=True)
     parser.add_argument("--intrinsics_dir", required=True)
     parser.add_argument("--calib_dir", type=str, default=None)
-    parser.add_argument("--show_pointcloud", action="store_true",
-                        help="Also show fused point cloud")
-    parser.add_argument("--frame_idx", type=int, default=0,
-                        help="Frame index for point cloud")
-    parser.add_argument("--stride", type=int, default=4)
-    parser.add_argument("--z_min", type=float, default=0.2)
-    parser.add_argument("--z_max", type=float, default=1.5)
-    parser.add_argument("--save_ply", action="store_true",
-                        help="Save visualization as PLY")
+    parser.add_argument("--axis_size", type=float, default=0.08,
+                        help="Size of coordinate axes (meters)")
+    parser.add_argument("--grid_size", type=float, default=0.8,
+                        help="Ground grid size (meters)")
+    parser.add_argument("--grid_spacing", type=float, default=0.1,
+                        help="Ground grid line spacing (meters)")
     args = parser.parse_args()
 
     try:
@@ -177,7 +194,7 @@ def main():
 
     root = args.root_folder
     intr_dir = args.intrinsics_dir
-    calib_dir = args.calib_dir or os.path.join(root, "calib_out_kinematic")
+    calib_dir = args.calib_dir or os.path.join(root, "calib_out_direct")
 
     # Load calibration
     with open(os.path.join(calib_dir, "calibration_summary.json")) as f:
@@ -198,28 +215,69 @@ def main():
     with open(os.path.join(root, "meta.json")) as f:
         meta = json.load(f)
 
-    # Load intrinsics
-    K_map, D_map, ds_map = {}, {}, {}
+    K_map = {}
     for ci in all_cam_ids:
-        K_map[ci], D_map[ci], ds_map[ci] = load_intrinsics(intr_dir, ci)
+        K_map[ci], _ = load_intrinsics(intr_dir, ci)
 
-    # ─── Build visualization geometries ───
+    cfg = CubeConfig()
+    cube_target = ArucoCubeTarget(cfg)
+
     geometries = []
+    labels_3d = []  # (text, position, color) for overlay
 
     # Camera colors
     cam_colors = {
-        0: [1, 0, 0],      # cam0: red
-        1: [0, 0, 1],      # cam1: blue
-        2: [0, 1, 0],      # cam2 (gripper): green
-        3: [1, 0.5, 0],    # cam3: orange
+        0: [1.0, 0.2, 0.2],    # cam0: red
+        1: [0.2, 0.4, 1.0],    # cam1: blue
+        2: [0.2, 0.9, 0.2],    # cam2 (gripper): green
+        3: [1.0, 0.6, 0.1],    # cam3: orange
+    }
+    cam_names = {
+        0: "cam0 (R)",
+        1: "cam1 (F)",
+        2: "cam2 (G)",
+        3: "cam3 (L)",
     }
 
-    # 1. Robot base frame (origin)
-    base_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.15)
-    geometries.append(base_frame)
-    print("[VIS] Robot base frame (origin, RGB=XYZ)")
+    # ─── 1. Ground grid (XY plane) ───
+    grid = create_ground_grid(
+        size=args.grid_size, spacing=args.grid_spacing, z=0.0,
+        color=[0.25, 0.25, 0.25])
+    geometries.append(grid)
 
-    # 2. Fixed camera positions
+    # Highlight X and Y axes on grid
+    x_axis_line = o3d.geometry.LineSet()
+    x_axis_line.points = o3d.utility.Vector3dVector([
+        [-args.grid_size, 0, 0], [args.grid_size, 0, 0]])
+    x_axis_line.lines = o3d.utility.Vector2iVector([[0, 1]])
+    x_axis_line.colors = o3d.utility.Vector3dVector([[0.6, 0.15, 0.15]])
+    geometries.append(x_axis_line)
+
+    y_axis_line = o3d.geometry.LineSet()
+    y_axis_line.points = o3d.utility.Vector3dVector([
+        [0, -args.grid_size, 0], [0, args.grid_size, 0]])
+    y_axis_line.lines = o3d.utility.Vector2iVector([[0, 1]])
+    y_axis_line.colors = o3d.utility.Vector3dVector([[0.15, 0.6, 0.15]])
+    geometries.append(y_axis_line)
+
+    print("[VIS] Ground grid (XY plane)")
+
+    # ─── 2. Robot base frame (origin) ───
+    T_base = np.eye(4)
+    base_axes = create_axis_lines(T_base, size=args.axis_size * 2.0)
+    geometries.extend(base_axes)
+
+    # Base label
+    labels_3d.append(("ROBOT BASE", T_base[:3, 3] + np.array([0, 0, args.axis_size * 2.2]), [1, 1, 1]))
+
+    # Axis end labels for base
+    labels_3d.append(("X", np.array([args.axis_size * 2.2, 0, 0]), [1, 0, 0]))
+    labels_3d.append(("Y", np.array([0, args.axis_size * 2.2, 0]), [0, 1, 0]))
+    labels_3d.append(("Z", np.array([0, 0, args.axis_size * 2.2]), [0, 0, 1]))
+
+    print("[VIS] Robot base frame (origin)")
+
+    # ─── 3. Fixed cameras ───
     for ci in fixed_cam_ids:
         key = f"T_base_C{ci}"
         T = transforms.get(key)
@@ -227,22 +285,26 @@ def main():
             continue
 
         color = cam_colors.get(ci, [0.5, 0.5, 0.5])
-        frustum = create_camera_frustum(T, K_map[ci], scale=0.06, color=color)
-        geometries.append(frustum)
 
-        cam_frame = create_axis_frame(T, size=0.04)
-        geometries.append(cam_frame)
+        # Coordinate axes
+        axes = create_axis_lines(T, size=args.axis_size)
+        geometries.extend(axes)
+
+        # Camera label
+        label_pos = T[:3, 3] + T[:3, :3] @ np.array([0, 0, -args.axis_size * 1.3])
+        labels_3d.append((cam_names.get(ci, f"cam{ci}"), label_pos, color))
+
+        # Label sphere at camera position
+        sphere = o3d.geometry.TriangleMesh.create_sphere(radius=0.008)
+        sphere.translate(T[:3, 3])
+        sphere.paint_uniform_color(color)
+        geometries.append(sphere)
 
         t = T[:3, 3]
-        print(f"[VIS] cam{ci} (FIXED): pos=[{t[0]*1000:.1f}, {t[1]*1000:.1f}, {t[2]*1000:.1f}] mm  color={color}")
+        print(f"[VIS] {cam_names.get(ci, f'cam{ci}')}: [{t[0]*1000:.1f}, {t[1]*1000:.1f}, {t[2]*1000:.1f}] mm")
 
-    # 3. Robot gripper trajectory + gripper camera at each capture
+    # ─── 4. Gripper TCP + camera at each capture ───
     gripper_positions = []
-    gripper_cam_positions = []
-    cube_positions = []
-
-    cfg = CubeConfig()
-    cube_target = ArucoCubeTarget(cfg)
 
     for cap in meta["captures"]:
         rp = cap.get("robot_pose_6dof")
@@ -250,25 +312,40 @@ def main():
             continue
 
         T_bTg = euler_deg_to_matrix(*rp)
-        gripper_pos = T_bTg[:3, 3].tolist()
-        gripper_positions.append(gripper_pos)
+        gripper_pos = T_bTg[:3, 3]
+        gripper_positions.append(gripper_pos.tolist())
 
-        # Gripper frame
-        gripper_frame = create_axis_frame(T_bTg, size=0.02)
-        geometries.append(gripper_frame)
+        # Gripper TCP axes (smaller)
+        axes = create_axis_lines(T_bTg, size=args.axis_size * 0.4)
+        geometries.extend(axes)
 
-        # Gripper camera position
+        # Gripper camera
         if T_gTc is not None:
             T_base_cam2 = T_bTg @ T_gTc
-            gripper_cam_positions.append(T_base_cam2[:3, 3].tolist())
+            axes_gc = create_axis_lines(T_base_cam2, size=args.axis_size * 0.3)
+            geometries.extend(axes_gc)
 
-            # Gripper camera frustum (smaller)
-            frustum = create_camera_frustum(
-                T_base_cam2, K_map[gripper_cam_idx],
-                scale=0.03, color=[0, 0.8, 0])
-            geometries.append(frustum)
+            # Small green sphere
+            sphere = o3d.geometry.TriangleMesh.create_sphere(radius=0.004)
+            sphere.translate(T_base_cam2[:3, 3])
+            sphere.paint_uniform_color([0.2, 0.9, 0.2])
+            geometries.append(sphere)
 
-        # Cube position from fixed cameras
+    # Gripper trajectory
+    if len(gripper_positions) >= 2:
+        traj = create_trajectory_line(gripper_positions, color=[0.5, 0.5, 0.5])
+        if traj:
+            geometries.append(traj)
+
+    print(f"[VIS] Gripper poses: {len(gripper_positions)}")
+
+    # ─── 5. Cube positions ───
+    cube_count = 0
+    K_map_full, D_map_full = {}, {}
+    for ci in all_cam_ids:
+        K_map_full[ci], D_map_full[ci] = load_intrinsics(intr_dir, ci)
+
+    for cap in meta["captures"]:
         eid = cap["event_id"]
         for ci in fixed_cam_ids:
             ci_str = str(ci)
@@ -282,7 +359,8 @@ def main():
                 continue
 
             ok, rvec, tvec, used = cube_target.solve_pnp_cube(
-                img, K_map[ci], D_map[ci], min_markers=1, reproj_thr_mean_px=10.0)
+                img, K_map_full[ci], D_map_full[ci],
+                min_markers=1, reproj_thr_mean_px=10.0)
             if not ok:
                 continue
 
@@ -290,101 +368,59 @@ def main():
             T_base_cam = transforms.get(f"T_base_C{ci}")
             if T_base_cam is not None:
                 T_base_O = T_base_cam @ T_cam_O
-                cube_positions.append(T_base_O[:3, 3].tolist())
-
-                # Cube wireframe (only once per event from best camera)
                 cube_wf = create_cube_wireframe(T_base_O, cfg.cube_side_m, color=[1, 1, 0])
                 geometries.append(cube_wf)
-                break  # one per event
+                cube_count += 1
+                break
 
-    # 4. Gripper trajectory line
-    if len(gripper_positions) >= 2:
-        traj = create_trajectory_line(gripper_positions, color=[0.5, 0.5, 0.5])
-        if traj:
-            geometries.append(traj)
-    print(f"[VIS] Gripper trajectory: {len(gripper_positions)} poses")
+    print(f"[VIS] Cube positions: {cube_count}")
 
-    # 5. Gripper camera trajectory
-    if len(gripper_cam_positions) >= 2:
-        traj = create_trajectory_line(gripper_cam_positions, color=[0, 0.6, 0])
-        if traj:
-            geometries.append(traj)
-    print(f"[VIS] Gripper camera trajectory: {len(gripper_cam_positions)} poses")
-
-    # 6. Cube positions
-    print(f"[VIS] Cube positions: {len(cube_positions)}")
-
-    # 7. Optional: fused point cloud
-    if args.show_pointcloud:
-        print(f"\n[VIS] Loading point cloud (frame={args.frame_idx})...")
-        all_pts, all_cols = [], []
-
-        for ci in fixed_cam_ids:
-            rgb_path = os.path.join(root, f"cam{ci}", f"rgb_{args.frame_idx:05d}.jpg")
-            depth_path = os.path.join(root, f"cam{ci}", f"depth_{args.frame_idx:05d}.png")
-            if not (os.path.exists(rgb_path) and os.path.exists(depth_path)):
-                continue
-
-            rgb_bgr = cv2.imread(rgb_path)
-            depth_u16 = cv2.imread(depth_path, cv2.IMREAD_UNCHANGED)
-            if rgb_bgr is None or depth_u16 is None:
-                continue
-
-            rgb = cv2.cvtColor(rgb_bgr, cv2.COLOR_BGR2RGB).astype(np.float64) / 255.0
-            pts_cam, pix = depth_to_points(
-                depth_u16, K_map[ci], ds_map[ci],
-                args.z_min, args.z_max, args.stride)
-
-            if pts_cam.shape[0] == 0:
-                continue
-
-            T = transforms.get(f"T_base_C{ci}")
-            if T is None:
-                continue
-
-            R, t = T[:3, :3], T[:3, 3]
-            pts_base = pts_cam @ R.T + t
-            cols = np.array([rgb[v, u] for v, u in pix], dtype=np.float64)
-
-            all_pts.append(pts_base)
-            all_cols.append(cols)
-            print(f"  cam{ci}: {pts_base.shape[0]} points")
-
-        if all_pts:
-            P = np.concatenate(all_pts)
-            C = np.concatenate(all_cols)
-            pcd = o3d.geometry.PointCloud()
-            pcd.points = o3d.utility.Vector3dVector(P)
-            pcd.colors = o3d.utility.Vector3dVector(C)
-            geometries.append(pcd)
-            print(f"  Total: {P.shape[0]} points")
+    # ─── 6. Create label annotations ───
+    for text, pos, color in labels_3d:
+        sphere = o3d.geometry.TriangleMesh.create_sphere(radius=0.006)
+        sphere.translate(pos)
+        sphere.paint_uniform_color(color)
+        geometries.append(sphere)
 
     # ─── Legend ───
     print("\n=== Legend ===")
-    print("  Large RGB axes  : Robot base frame (origin)")
-    print("  Red frustum     : cam0 (fixed, right)")
-    print("  Blue frustum    : cam1 (fixed, front)")
-    print("  Orange frustum  : cam3 (fixed, left)")
-    print("  Green frustums  : cam2 (gripper) at each capture")
-    print("  Small axes      : Gripper TCP at each capture")
+    print("  Large RGB axes  : Robot base (origin)")
+    print("  Red axes+sphere : cam0 (fixed, right)")
+    print("  Blue axes+sphere: cam1 (fixed, front)")
+    print("  Orange axes+sph : cam3 (fixed, left)")
+    print("  Small RGB axes  : Gripper TCP at each capture")
+    print("  Small green axes: Gripper camera (cam2) at each capture")
     print("  Yellow wireframe: Cube positions")
+    print("  Gray grid       : XY ground plane")
     print("  Gray line       : Gripper trajectory")
-    print("  Green line      : Gripper camera trajectory")
-
-    # ─── Save PLY ───
-    if args.save_ply and args.show_pointcloud and all_pts:
-        out_path = os.path.join(root, "visualization_base_frame.ply")
-        o3d.io.write_point_cloud(out_path, pcd)
-        print(f"\n[SAVE] {out_path}")
+    print()
+    print("  Axis colors: Red=X, Green=Y, Blue=Z")
 
     # ─── Visualize ───
-    print("\n[VIS] Opening viewer... (close window to exit)")
-    o3d.visualization.draw_geometries(
-        geometries,
-        window_name="Calibration - Robot Base Frame",
-        width=1280,
-        height=720,
-    )
+    print("\n[VIS] Opening viewer...")
+    print("  Mouse: rotate / Scroll: zoom / Shift+mouse: pan")
+
+    vis = o3d.visualization.Visualizer()
+    vis.create_window(window_name="Calibration - Robot Base Frame", width=1400, height=900)
+
+    for g in geometries:
+        vis.add_geometry(g)
+
+    # Set render options
+    opt = vis.get_render_option()
+    opt.background_color = np.array([0.05, 0.05, 0.1])
+    opt.line_width = 3.0
+    opt.point_size = 5.0
+
+    # Set viewpoint
+    ctr = vis.get_view_control()
+    ctr.set_zoom(0.5)
+    ctr.set_front([0.5, -0.5, 0.7])
+    ctr.set_lookat([0, 0.3, 0])
+    ctr.set_up([0, 0, 1])
+
+    vis.run()
+    vis.destroy_window()
 
 
 if __name__ == "__main__":

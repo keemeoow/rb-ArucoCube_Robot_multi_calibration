@@ -105,7 +105,7 @@ def estimate_per_marker_poses(
             obj_pts.reshape(-1, 1, 3).astype(np.float64),
             img_pts.reshape(-1, 1, 2).astype(np.float64),
             K, D,
-            flags=cv2.SOLVEPNP_IPPE_SQUARE,
+            flags=cv2.SOLVEPNP_IPPE,
         )
 
         if not ok:

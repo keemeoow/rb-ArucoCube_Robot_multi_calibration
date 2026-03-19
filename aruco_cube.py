@@ -169,7 +169,7 @@ class ArucoCubeTarget:
             return (False, None, None, used, None) if return_reproj else (False, None, None, used)
 
         n = int(obj_pts.shape[0])
-        flags = cv2.SOLVEPNP_ITERATIVE if n >= 8 else cv2.SOLVEPNP_IPPE_SQUARE
+        flags = cv2.SOLVEPNP_ITERATIVE if n >= 8 else cv2.SOLVEPNP_IPPE
 
         if use_ransac and n >= 8:
             ok, rvec, tvec, _ = cv2.solvePnPRansac(

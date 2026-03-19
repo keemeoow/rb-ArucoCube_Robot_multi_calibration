@@ -386,6 +386,7 @@ def main():
                 cv2.imwrite(os.path.join(root, depth_rel), fr["depth"])
 
             cam_rec = {
+                "saved": True,
                 "is_gripper": (ci == gripper_cam_idx),
                 "rgb_path": rgb_rel,
                 "depth_path": depth_rel,

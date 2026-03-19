@@ -147,7 +147,8 @@
                 ]
               ]
             }
-          ]
+          ],
+          "saved": true
         },
         "1": {
           "is_gripper": false,
@@ -159,7 +160,8 @@
             4
           ],
           "cube_visible": true,
-          "markers": []
+          "markers": [],
+          "saved": true
         },
         "2": {
           "is_gripper": true,
@@ -232,7 +234,8 @@
                 ]
               ]
             }
-          ]
+          ],
+          "saved": true
         },
         "3": {
           "is_gripper": false,
@@ -350,7 +353,8 @@
                 1.0
               ]
             ]
-          }
+          },
+          "saved": true
         }
       },
       "robot_pose_6dof": [
@@ -559,7 +563,8 @@
                 ]
               ]
             }
-          ]
+          ],
+          "saved": true
         },
         "1": {
           "is_gripper": false,
@@ -632,7 +637,8 @@
                 ]
               ]
             }
-          ]
+          ],
+          "saved": true
         },
         "2": {
           "is_gripper": true,
@@ -705,7 +711,8 @@
                 ]
               ]
             }
-          ]
+          ],
+          "saved": true
         },
         "3": {
           "is_gripper": false,
@@ -823,7 +830,8 @@
                 1.0
               ]
             ]
-          }
+          },
+          "saved": true
         }
       },
       "robot_pose_6dof": [
@@ -1015,7 +1023,8 @@
                 1.0
               ]
             ]
-          }
+          },
+          "saved": true
         },
         "1": {
           "is_gripper": false,
@@ -1088,7 +1097,8 @@
                 ]
               ]
             }
-          ]
+          ],
+          "saved": true
         },
         "2": {
           "is_gripper": true,
@@ -1161,7 +1171,8 @@
                 ]
               ]
             }
-          ]
+          ],
+          "saved": true
         },
         "3": {
           "is_gripper": false,
@@ -1296,7 +1307,8 @@
                 ]
               ]
             }
-          ]
+          ],
+          "saved": true
         }
       },
       "robot_pose_6dof": [
@@ -1488,7 +1500,8 @@
                 1.0
               ]
             ]
-          }
+          },
+          "saved": true
         },
         "1": {
           "is_gripper": false,
@@ -1622,7 +1635,8 @@
                 ]
               ]
             }
-          ]
+          ],
+          "saved": true
         },
         "2": {
           "is_gripper": true,
@@ -1695,7 +1709,8 @@
                 ]
               ]
             }
-          ]
+          ],
+          "saved": true
         },
         "3": {
           "is_gripper": false,
@@ -1813,7 +1828,8 @@
                 1.0
               ]
             ]
-          }
+          },
+          "saved": true
         }
       },
       "robot_pose_6dof": [
@@ -2022,7 +2038,8 @@
                 ]
               ]
             }
-          ]
+          ],
+          "saved": true
         },
         "1": {
           "is_gripper": false,
@@ -2032,7 +2049,8 @@
           "n_markers_detected": 0,
           "marker_ids": [],
           "cube_visible": false,
-          "markers": []
+          "markers": [],
+          "saved": true
         },
         "2": {
           "is_gripper": true,
@@ -2105,7 +2123,8 @@
                 ]
               ]
             }
-          ]
+          ],
+          "saved": true
         },
         "3": {
           "is_gripper": false,
@@ -2223,7 +2242,8 @@
                 1.0
               ]
             ]
-          }
+          },
+          "saved": true
         }
       },
       "robot_pose_6dof": [
@@ -2415,7 +2435,8 @@
                 1.0
               ]
             ]
-          }
+          },
+          "saved": true
         },
         "1": {
           "is_gripper": false,
@@ -2488,7 +2509,8 @@
                 ]
               ]
             }
-          ]
+          ],
+          "saved": true
         },
         "2": {
           "is_gripper": true,
@@ -2561,7 +2583,8 @@
                 ]
               ]
             }
-          ]
+          ],
+          "saved": true
         },
         "3": {
           "is_gripper": false,
@@ -2696,7 +2719,8 @@
                 ]
               ]
             }
-          ]
+          ],
+          "saved": true
         }
       },
       "robot_pose_6dof": [
@@ -2888,7 +2912,8 @@
                 1.0
               ]
             ]
-          }
+          },
+          "saved": true
         },
         "1": {
           "is_gripper": false,
@@ -3023,7 +3048,8 @@
                 ]
               ]
             }
-          ]
+          ],
+          "saved": true
         },
         "2": {
           "is_gripper": true,
@@ -3096,7 +3122,8 @@
                 ]
               ]
             }
-          ]
+          ],
+          "saved": true
         },
         "3": {
           "is_gripper": false,
@@ -3231,7 +3258,8 @@
                 ]
               ]
             }
-          ]
+          ],
+          "saved": true
         }
       },
       "robot_pose_6dof": [
@@ -3423,7 +3451,8 @@
                 1.0
               ]
             ]
-          }
+          },
+          "saved": true
         },
         "1": {
           "is_gripper": false,
@@ -3496,7 +3525,8 @@
                 ]
               ]
             }
-          ]
+          ],
+          "saved": true
         },
         "2": {
           "is_gripper": true,
@@ -3569,7 +3599,8 @@
                 ]
               ]
             }
-          ]
+          ],
+          "saved": true
         },
         "3": {
           "is_gripper": false,
@@ -3687,7 +3718,8 @@
                 1.0
               ]
             ]
-          }
+          },
+          "saved": true
         }
       },
       "robot_pose_6dof": [
@@ -3896,7 +3928,8 @@
                 ]
               ]
             }
-          ]
+          ],
+          "saved": true
         },
         "1": {
           "is_gripper": false,
@@ -3970,7 +4003,8 @@
                 ]
               ]
             }
-          ]
+          ],
+          "saved": true
         },
         "2": {
           "is_gripper": true,
@@ -4043,7 +4077,8 @@
                 ]
               ]
             }
-          ]
+          ],
+          "saved": true
         },
         "3": {
           "is_gripper": false,
@@ -4161,7 +4196,8 @@
                 1.0
               ]
             ]
-          }
+          },
+          "saved": true
         }
       },
       "robot_pose_6dof": [
@@ -4370,7 +4406,8 @@
                 ]
               ]
             }
-          ]
+          ],
+          "saved": true
         },
         "1": {
           "is_gripper": false,
@@ -4382,7 +4419,8 @@
             4
           ],
           "cube_visible": true,
-          "markers": []
+          "markers": [],
+          "saved": true
         },
         "2": {
           "is_gripper": true,
@@ -4455,7 +4493,8 @@
                 ]
               ]
             }
-          ]
+          ],
+          "saved": true
         },
         "3": {
           "is_gripper": false,
@@ -4573,7 +4612,8 @@
                 1.0
               ]
             ]
-          }
+          },
+          "saved": true
         }
       },
       "robot_pose_6dof": [
@@ -4782,7 +4822,8 @@
                 ]
               ]
             }
-          ]
+          ],
+          "saved": true
         },
         "1": {
           "is_gripper": false,
@@ -4792,7 +4833,8 @@
           "n_markers_detected": 0,
           "marker_ids": [],
           "cube_visible": false,
-          "markers": []
+          "markers": [],
+          "saved": true
         },
         "2": {
           "is_gripper": true,
@@ -4865,7 +4907,8 @@
                 ]
               ]
             }
-          ]
+          ],
+          "saved": true
         },
         "3": {
           "is_gripper": false,
@@ -4983,7 +5026,8 @@
                 1.0
               ]
             ]
-          }
+          },
+          "saved": true
         }
       },
       "robot_pose_6dof": [
@@ -5192,7 +5236,8 @@
                 ]
               ]
             }
-          ]
+          ],
+          "saved": true
         },
         "1": {
           "is_gripper": false,
@@ -5202,7 +5247,8 @@
           "n_markers_detected": 0,
           "marker_ids": [],
           "cube_visible": false,
-          "markers": []
+          "markers": [],
+          "saved": true
         },
         "2": {
           "is_gripper": true,
@@ -5214,7 +5260,8 @@
             4
           ],
           "cube_visible": true,
-          "markers": []
+          "markers": [],
+          "saved": true
         },
         "3": {
           "is_gripper": false,
@@ -5226,7 +5273,8 @@
             4
           ],
           "cube_visible": true,
-          "markers": []
+          "markers": [],
+          "saved": true
         }
       },
       "robot_pose_6dof": [
@@ -5312,7 +5360,8 @@
             2
           ],
           "cube_visible": true,
-          "markers": []
+          "markers": [],
+          "saved": true
         },
         "1": {
           "is_gripper": false,
@@ -5322,7 +5371,8 @@
           "n_markers_detected": 0,
           "marker_ids": [],
           "cube_visible": false,
-          "markers": []
+          "markers": [],
+          "saved": true
         },
         "2": {
           "is_gripper": true,
@@ -5395,7 +5445,8 @@
                 ]
               ]
             }
-          ]
+          ],
+          "saved": true
         },
         "3": {
           "is_gripper": false,
@@ -5530,7 +5581,8 @@
                 ]
               ]
             }
-          ]
+          ],
+          "saved": true
         }
       },
       "robot_pose_6dof": [
@@ -5723,7 +5775,8 @@
                 1.0
               ]
             ]
-          }
+          },
+          "saved": true
         },
         "1": {
           "is_gripper": false,
@@ -5733,7 +5786,8 @@
           "n_markers_detected": 0,
           "marker_ids": [],
           "cube_visible": false,
-          "markers": []
+          "markers": [],
+          "saved": true
         },
         "2": {
           "is_gripper": true,
@@ -5867,7 +5921,8 @@
                 ]
               ]
             }
-          ]
+          ],
+          "saved": true
         },
         "3": {
           "is_gripper": false,
@@ -6002,7 +6057,8 @@
                 ]
               ]
             }
-          ]
+          ],
+          "saved": true
         }
       },
       "robot_pose_6dof": [

@@ -1,14 +1,14 @@
 {
-  "created_at_epoch": 1773932906.579175,
-  "updated_at_epoch": 1773932906.5791762,
+  "created_at_epoch": 1773938844.3505597,
+  "updated_at_epoch": 1773938844.3505604,
   "serial_to_idx": {
     "039422061216": 0,
     "314522062542": 1,
     "752112070297": 2,
     "912322060991": 3
   },
-  "gripper_cam_idx": null,
-  "gripper_serial": null,
+  "gripper_cam_idx": 2,
+  "gripper_serial": 752112070297,
   "detected_now": [
     {
       "serial": "912322060991",

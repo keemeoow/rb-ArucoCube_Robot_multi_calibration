@@ -1,0 +1,502 @@
+{
+  "root_folder": "/home/sprout/Desktop/**jiwoo/rb-ArucoCube_Robot_multi_calibration/data/session_v2",
+  "gripper_cam_idx": 2,
+  "n_fixed_cams": 3,
+  "n_gripper_cams": 1,
+  "cam_indices": [
+    0,
+    1,
+    2,
+    3
+  ],
+  "captures": [
+    {
+      "event_id": 0,
+      "pose_index": 0,
+      "cams": {
+        "0": {
+          "is_gripper": false,
+          "rgb_path": "cam0/rgb_00000.jpg",
+          "depth_path": "cam0/depth_00000.png",
+          "ts_ms": 1773939941277.5332,
+          "n_markers_detected": 1,
+          "marker_ids": [
+            2
+          ],
+          "cube_visible": true,
+          "markers": []
+        },
+        "1": {
+          "is_gripper": false,
+          "rgb_path": "cam1/rgb_00000.jpg",
+          "depth_path": "cam1/depth_00000.png",
+          "ts_ms": 1773939941240.3142,
+          "n_markers_detected": 0,
+          "marker_ids": [],
+          "cube_visible": false,
+          "markers": []
+        },
+        "2": {
+          "is_gripper": true,
+          "rgb_path": "cam2/rgb_00000.jpg",
+          "depth_path": "cam2/depth_00000.png",
+          "ts_ms": 1773939941269.423,
+          "n_markers_detected": 0,
+          "marker_ids": [],
+          "cube_visible": false,
+          "markers": []
+        },
+        "3": {
+          "is_gripper": false,
+          "rgb_path": "cam3/rgb_00000.jpg",
+          "depth_path": "cam3/depth_00000.png",
+          "ts_ms": 1773939941248.7385,
+          "n_markers_detected": 1,
+          "marker_ids": [
+            4
+          ],
+          "cube_visible": true,
+          "markers": []
+        }
+      },
+      "capture_pose_6dof": [
+        -80.013,
+        524.983,
+        19.997,
+        180.00001984784282,
+        0.0,
+        179.9997906647248
+      ],
+      "capture_pose_matrix_4x4": [
+        [
+          -0.9999999999999399,
+          -3.464102066170814e-07,
+          -1.2656407951106728e-12,
+          -0.080013
+        ],
+        [
+          -3.464102066193935e-07,
+          0.9999999999932655,
+          3.6535897930431853e-06,
+          0.524983
+        ],
+        [
+          0.0,
+          3.6535897930434047e-06,
+          -0.9999999999933256,
+          0.019997
+        ],
+        [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      ]
+    },
+    {
+      "event_id": 1,
+      "pose_index": 1,
+      "cams": {
+        "0": {
+          "is_gripper": false,
+          "rgb_path": "cam0/rgb_00001.jpg",
+          "depth_path": "cam0/depth_00001.png",
+          "ts_ms": 1773940035416.8848,
+          "n_markers_detected": 1,
+          "marker_ids": [
+            2
+          ],
+          "cube_visible": true,
+          "markers": []
+        },
+        "1": {
+          "is_gripper": false,
+          "rgb_path": "cam1/rgb_00001.jpg",
+          "depth_path": "cam1/depth_00001.png",
+          "ts_ms": 1773940035379.8284,
+          "n_markers_detected": 1,
+          "marker_ids": [
+            4
+          ],
+          "cube_visible": true,
+          "markers": []
+        },
+        "2": {
+          "is_gripper": true,
+          "rgb_path": "cam2/rgb_00001.jpg",
+          "depth_path": "cam2/depth_00001.png",
+          "ts_ms": 1773940035409.1638,
+          "n_markers_detected": 0,
+          "marker_ids": [],
+          "cube_visible": false,
+          "markers": []
+        },
+        "3": {
+          "is_gripper": false,
+          "rgb_path": "cam3/rgb_00001.jpg",
+          "depth_path": "cam3/depth_00001.png",
+          "ts_ms": 1773940035388.56,
+          "n_markers_detected": 1,
+          "marker_ids": [
+            4
+          ],
+          "cube_visible": true,
+          "markers": []
+        }
+      },
+      "capture_pose_6dof": [
+        -160.01299999999998,
+        434.975,
+        19.997999999999998,
+        -180.00001984784282,
+        -5.729577951308232e-05,
+        179.9997906647248
+      ],
+      "capture_pose_matrix_4x4": [
+        [
+          -0.9999999999994399,
+          3.464138602068744e-07,
+          -9.999987343523037e-07,
+          -0.160013
+        ],
+        [
+          3.4641020661922026e-07,
+          0.9999999999932655,
+          3.653590139453392e-06,
+          0.434975
+        ],
+        [
+          9.999999999998333e-07,
+          3.6535897930415776e-06,
+          -0.9999999999928255,
+          0.019998
+        ],
+        [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      ]
+    },
+    {
+      "event_id": 2,
+      "pose_index": 2,
+      "cams": {
+        "0": {
+          "is_gripper": false,
+          "rgb_path": "cam0/rgb_00002.jpg",
+          "depth_path": "cam0/depth_00002.png",
+          "ts_ms": 1773940089172.4443,
+          "n_markers_detected": 1,
+          "marker_ids": [
+            2
+          ],
+          "cube_visible": true,
+          "markers": []
+        },
+        "1": {
+          "is_gripper": false,
+          "rgb_path": "cam1/rgb_00002.jpg",
+          "depth_path": "cam1/depth_00002.png",
+          "ts_ms": 1773940089202.5354,
+          "n_markers_detected": 1,
+          "marker_ids": [
+            2
+          ],
+          "cube_visible": true,
+          "markers": []
+        },
+        "2": {
+          "is_gripper": true,
+          "rgb_path": "cam2/rgb_00002.jpg",
+          "depth_path": "cam2/depth_00002.png",
+          "ts_ms": 1773940089232.1868,
+          "n_markers_detected": 0,
+          "marker_ids": [],
+          "cube_visible": false,
+          "markers": []
+        },
+        "3": {
+          "is_gripper": false,
+          "rgb_path": "cam3/rgb_00002.jpg",
+          "depth_path": "cam3/depth_00002.png",
+          "ts_ms": 1773940089211.604,
+          "n_markers_detected": 1,
+          "marker_ids": [
+            4
+          ],
+          "cube_visible": true,
+          "markers": []
+        }
+      },
+      "capture_pose_6dof": [
+        -160.01299999999998,
+        574.9689999999999,
+        19.997,
+        -180.00001984784282,
+        0.0,
+        -180.00001984784282
+      ],
+      "capture_pose_matrix_4x4": [
+        [
+          -0.9999999999999399,
+          3.4641020661937267e-07,
+          1.200000312500909e-13,
+          -0.160013
+        ],
+        [
+          3.464102066193935e-07,
+          0.9999999999998799,
+          3.4641020661937267e-07,
+          0.574969
+        ],
+        [
+          0.0,
+          3.464102066193935e-07,
+          -0.9999999999999399,
+          0.019997
+        ],
+        [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      ]
+    },
+    {
+      "event_id": 3,
+      "pose_index": 3,
+      "cams": {
+        "0": {
+          "is_gripper": false,
+          "rgb_path": "cam0/rgb_00003.jpg",
+          "depth_path": "cam0/depth_00003.png",
+          "ts_ms": 1773940137418.102,
+          "n_markers_detected": 1,
+          "marker_ids": [
+            2
+          ],
+          "cube_visible": true,
+          "markers": []
+        },
+        "1": {
+          "is_gripper": false,
+          "rgb_path": "cam1/rgb_00003.jpg",
+          "depth_path": "cam1/depth_00003.png",
+          "ts_ms": 1773940137448.0667,
+          "n_markers_detected": 2,
+          "marker_ids": [
+            3,
+            2
+          ],
+          "cube_visible": true,
+          "markers": [
+            {
+              "marker_id": 3,
+              "face": "-Z",
+              "corners_2d": [
+                [
+                  483.0,
+                  143.0
+                ],
+                [
+                  476.0,
+                  198.0
+                ],
+                [
+                  423.0,
+                  193.0
+                ],
+                [
+                  429.0,
+                  138.0
+                ]
+              ],
+              "rvec": [
+                -2.0951643373871547,
+                -2.284967410846404,
+                -0.2286935250511796
+              ],
+              "tvec": [
+                0.0037682708419536615,
+                -0.0019932010188183033,
+                0.017606131938221924
+              ],
+              "reproj_error_mean_px": 464.2230927459093,
+              "reproj_error_max_px": 597.9986906792379,
+              "T_cam_cube_4x4": [
+                [
+                  -0.09114939893524499,
+                  0.9930194291388957,
+                  0.07486120775411736,
+                  0.0037682708419536615
+                ],
+                [
+                  0.9881586452573295,
+                  0.08087332808378522,
+                  0.13039170452084511,
+                  -0.0019932010188183033
+                ],
+                [
+                  0.12342722097229003,
+                  0.08585987512985321,
+                  -0.988632289056828,
+                  0.017606131938221924
+                ],
+                [
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0
+                ]
+              ]
+            }
+          ]
+        },
+        "2": {
+          "is_gripper": true,
+          "rgb_path": "cam2/rgb_00003.jpg",
+          "depth_path": "cam2/depth_00003.png",
+          "ts_ms": 1773940137478.0754,
+          "n_markers_detected": 0,
+          "marker_ids": [],
+          "cube_visible": false,
+          "markers": []
+        },
+        "3": {
+          "is_gripper": false,
+          "rgb_path": "cam3/rgb_00003.jpg",
+          "depth_path": "cam3/depth_00003.png",
+          "ts_ms": 1773940137457.349,
+          "n_markers_detected": 1,
+          "marker_ids": [
+            4
+          ],
+          "cube_visible": true,
+          "markers": []
+        }
+      },
+      "capture_pose_6dof": [
+        -110.014,
+        574.966,
+        69.99600000000001,
+        -180.00001984784282,
+        0.0,
+        -180.00001984784282
+      ],
+      "capture_pose_matrix_4x4": [
+        [
+          -0.9999999999999399,
+          3.4641020661937267e-07,
+          1.200000312500909e-13,
+          -0.110014
+        ],
+        [
+          3.464102066193935e-07,
+          0.9999999999998799,
+          3.4641020661937267e-07,
+          0.574966
+        ],
+        [
+          0.0,
+          3.464102066193935e-07,
+          -0.9999999999999399,
+          0.069996
+        ],
+        [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      ]
+    },
+    {
+      "event_id": 4,
+      "pose_index": 4,
+      "cams": {
+        "0": {
+          "is_gripper": false,
+          "rgb_path": "cam0/rgb_00004.jpg",
+          "depth_path": "cam0/depth_00004.png",
+          "ts_ms": 1773940208106.768,
+          "n_markers_detected": 1,
+          "marker_ids": [
+            2
+          ],
+          "cube_visible": true,
+          "markers": []
+        },
+        "1": {
+          "is_gripper": false,
+          "rgb_path": "cam1/rgb_00004.jpg",
+          "depth_path": "cam1/depth_00004.png",
+          "ts_ms": 1773940208136.6785,
+          "n_markers_detected": 0,
+          "marker_ids": [],
+          "cube_visible": false,
+          "markers": []
+        },
+        "2": {
+          "is_gripper": true,
+          "rgb_path": "cam2/rgb_00004.jpg",
+          "depth_path": "cam2/depth_00004.png",
+          "ts_ms": 1773940208099.9077,
+          "n_markers_detected": 0,
+          "marker_ids": [],
+          "cube_visible": false,
+          "markers": []
+        },
+        "3": {
+          "is_gripper": false,
+          "rgb_path": "cam3/rgb_00004.jpg",
+          "depth_path": "cam3/depth_00004.png",
+          "ts_ms": 1773940208146.4614,
+          "n_markers_detected": 1,
+          "marker_ids": [
+            4
+          ],
+          "cube_visible": true,
+          "markers": []
+        }
+      },
+      "capture_pose_6dof": [
+        -210.014,
+        374.957,
+        19.997,
+        -180.00001984784282,
+        -5.729577951308232e-05,
+        179.9997906647248
+      ],
+      "capture_pose_matrix_4x4": [
+        [
+          -0.9999999999994399,
+          3.464138602068744e-07,
+          -9.999987343523037e-07,
+          -0.210014
+        ],
+        [
+          3.4641020661922026e-07,
+          0.9999999999932655,
+          3.653590139453392e-06,
+          0.374957
+        ],
+        [
+          9.999999999998333e-07,
+          3.6535897930415776e-06,
+          -0.9999999999928255,
+          0.019997
+        ],
+        [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      ]
+    }
+  ]
+}

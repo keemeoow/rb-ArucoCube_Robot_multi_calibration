@@ -55,8 +55,9 @@ import json
 HOST = '0.0.0.0'
 PORT = 12348
 
-# Gripper wait time (manual mode)
-GRIPPER_WAIT_SEC = 3.0
+# Gripper IO port
+GRIPPER_IO_PORT = 48
+GRIPPER_TIMEOUT_SEC = 5.0
 
 # Default capture height offset (mm above place z)
 DEFAULT_CAPTURE_Z_OFFSET = 200.0
@@ -177,22 +178,39 @@ def move_z_offset(offset):
     print 'Move complete'
 
 
+def check_gripper():
+    """Read gripper state from din 48~51."""
+    a = din(GRIPPER_IO_PORT)
+    b = din(GRIPPER_IO_PORT + 1)
+    c = din(GRIPPER_IO_PORT + 2)
+    d = din(GRIPPER_IO_PORT + 3)
+    return [d, c, b, a]
+
+
 def gripper_open():
-    print ''
-    print '>>> GRIPPER OPEN - Release the cube!'
-    print '>>> Waiting {}s...'.format(GRIPPER_WAIT_SEC)
-    time.sleep(GRIPPER_WAIT_SEC)
-    print '>>> Gripper opened'
-    print ''
+    print 'Gripper opening...'
+    dout(GRIPPER_IO_PORT, '0000')
+    t0 = time.time()
+    while check_gripper() != ['0', '1', '0', '0']:
+        dout(GRIPPER_IO_PORT, '0100')
+        if time.time() - t0 > GRIPPER_TIMEOUT_SEC:
+            print '[WARN] Gripper open timeout!'
+            break
+        time.sleep(0.05)
+    print 'Gripper opened'
 
 
 def gripper_close():
-    print ''
-    print '>>> GRIPPER CLOSE - Grab the cube!'
-    print '>>> Waiting {}s...'.format(GRIPPER_WAIT_SEC)
-    time.sleep(GRIPPER_WAIT_SEC)
-    print '>>> Gripper closed'
-    print ''
+    print 'Gripper closing...'
+    dout(GRIPPER_IO_PORT, '0000')
+    t0 = time.time()
+    while check_gripper() != ['0', '0', '0', '1']:
+        dout(GRIPPER_IO_PORT, '0001')
+        if time.time() - t0 > GRIPPER_TIMEOUT_SEC:
+            print '[WARN] Gripper close timeout!'
+            break
+        time.sleep(0.05)
+    print 'Gripper closed'
 
 
 def do_capture(conn, capture_count):

@@ -162,6 +162,8 @@ def main():
     parser.add_argument("--robot_port", type=int, default=12348)
     parser.add_argument("--waypoint_file", type=str, default=None,
                         help="JSON file with list of {place, capture} waypoint pairs")
+    parser.add_argument("--manual_robot", action="store_true",
+                        help="Manual robot mode: server sends capture commands interactively (use with teach_and_capture.py)")
     parser.add_argument("--settle_time", type=float, default=1.5,
                         help="Wait time (s) after robot signals capture before taking images")
 
@@ -410,7 +412,63 @@ def main():
         return True
 
     try:
-        if args.use_robot and waypoint_list:
+        if args.use_robot and args.manual_robot:
+            # ─── Manual Robot mode (with teach_and_capture.py server) ───
+            print("[MODE] Manual Robot - waiting for server capture commands")
+            print("[INFO] Move robot on server side, press 'c' to capture\n")
+
+            import socket as _sock
+            manual_sock = _sock.socket(_sock.AF_INET, _sock.SOCK_STREAM)
+            manual_sock.settimeout(None)  # block forever
+            manual_sock.connect((args.robot_ip, args.robot_port))
+            print(f"[ManualRobot] Connected to {args.robot_ip}:{args.robot_port}")
+
+            try:
+                while True:
+                    # Wait for server command
+                    data = manual_sock.recv(8192)
+                    if not data:
+                        print("[ManualRobot] Server disconnected.")
+                        break
+
+                    msg = json.loads(data.decode("utf-8").strip())
+                    cmd = msg.get("command", "")
+
+                    if cmd == "quit":
+                        print("[ManualRobot] Server sent quit.")
+                        break
+
+                    if cmd == "capture":
+                        capture_tcp = msg.get("capture_pose_6dof")
+                        pose_idx = msg.get("pose_index", event_id)
+
+                        print(f"\n[ManualRobot] Capture signal received (pose_index={pose_idx})")
+                        if capture_tcp:
+                            print(f"  TCP: {capture_tcp}")
+
+                        saved = do_capture(
+                            capture_pose_6dof=capture_tcp,
+                            pose_index=pose_idx,
+                        )
+
+                        # Send acknowledgement
+                        status = "success" if saved else "skipped"
+                        resp = json.dumps({"action": "captured", "status": status})
+                        manual_sock.sendall(resp.encode("utf-8"))
+
+                        if saved:
+                            print(f"[OK] Capture {pose_idx} saved")
+                        else:
+                            print(f"[SKIP] Capture {pose_idx} skipped")
+                    else:
+                        print(f"[ManualRobot] Unknown command: {cmd}")
+
+            finally:
+                manual_sock.close()
+
+            print(f"\n[DONE] Manual robot capture complete. {event_id} captures saved.")
+
+        elif args.use_robot and waypoint_list:
             # ─── Robot Place-and-Capture mode ───
             print("[MODE] Robot Place-and-Capture")
             print(f"[INFO] {len(waypoint_list)} waypoints to process\n")

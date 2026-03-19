@@ -41,7 +41,7 @@ GRIPPER_CLOSE_PORT = 2   # DO port number for gripper close
 GRIPPER_SETTLE_SEC = 0.8 # wait time after gripper action
 
 # Set True if no automatic gripper (server will pause and print message)
-MANUAL_GRIPPER = False
+MANUAL_GRIPPER = True
 MANUAL_GRIPPER_WAIT_SEC = 3.0
 
 # Move speed override (0-100)
@@ -96,12 +96,12 @@ def get_tcp_pose():
 
 def move_to_pos(pose_6dof):
     """Move robot to a TCP Cartesian position."""
-    goal = Pos(pose_6dof[0], pose_6dof[1], pose_6dof[2],
-               pose_6dof[3], pose_6dof[4], pose_6dof[5])
+    goal = Position(pose_6dof[0], pose_6dof[1], pose_6dof[2],
+                    pose_6dof[3], pose_6dof[4], pose_6dof[5])
     print 'Moving to: [{:.1f}, {:.1f}, {:.1f}, {:.1f}, {:.1f}, {:.1f}]'.format(
         pose_6dof[0], pose_6dof[1], pose_6dof[2],
         pose_6dof[3], pose_6dof[4], pose_6dof[5])
-    rb.move(goal)
+    rb.line(goal)
     print 'Move complete'
 
 

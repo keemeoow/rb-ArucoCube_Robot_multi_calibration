@@ -40,11 +40,45 @@ import time
 HOST = '0.0.0.0'
 PORT = 12348
 position_list = []
+rb = None
+rbs = None
 
 # Motion timing (seconds)
 PLACE_SETTLE_SEC = 0.20
 CAPTURE_SETTLE_SEC = 0.20
 SOCKET_RECV_TIMEOUT_SEC = 30.0
+
+
+def safe_rb_exit():
+    try:
+        if rb is not None:
+            rb.exit(0)
+    except Exception:
+        pass
+
+
+def safe_rb_close():
+    try:
+        if rb is not None:
+            rb.close()
+    except Exception:
+        pass
+
+
+def safe_rbs_close():
+    try:
+        if rbs is not None:
+            rbs.close()
+    except Exception:
+        pass
+
+
+def safe_rbs_reset():
+    try:
+        if rbs is not None:
+            rbs.cmd_reset()
+    except Exception:
+        pass
 
 
 def send_json_to_client(conn, obj):
@@ -319,32 +353,32 @@ def main(conn):
 
     except Robot_emo as e:
         print(e)
-        rb.exit(0)
-        rbs.cmd_reset()
+        safe_rb_exit()
+        safe_rbs_reset()
 
     except Robot_error as e:
         print(e)
-        rb.exit(0)
-        rbs.cmd_reset()
+        safe_rb_exit()
+        safe_rbs_reset()
 
     except Robot_fatalerror as e:
         print(e)
-        rb.exit(0)
-        rbs.cmd_reset()
+        safe_rb_exit()
+        safe_rbs_reset()
 
     except Exception as e:
         print(e)
-        rb.exit(0)
+        safe_rb_exit()
 
     except KeyboardInterrupt:
-        rb.exit(0)
+        safe_rb_exit()
         print('Key Interrupt')
 
     finally:
         print('[INFO] position_list size={}'.format(len(position_list)))
-        rb.close()
-        rbs.close()
-        rb.exit(0)
+        safe_rb_close()
+        safe_rbs_close()
+        safe_rb_exit()
 
 
 def start_server():
@@ -383,21 +417,21 @@ if __name__ == '__main__':
 
     except Exception as e:
         print(e)
-        rb.exit(0)
+        safe_rb_exit()
 
     except Robot_emo:
-        rb.exit(0)
-        rbs.cmd_reset()
+        safe_rb_exit()
+        safe_rbs_reset()
 
     except Robot_error:
-        rb.exit(0)
-        rbs.cmd_reset()
+        safe_rb_exit()
+        safe_rbs_reset()
 
     except Robot_fatalerror:
-        rb.exit(0)
-        rbs.cmd_reset()
+        safe_rb_exit()
+        safe_rbs_reset()
 
     finally:
-        rb.close()
-        rbs.close()
-        rb.exit(0)
+        safe_rb_close()
+        safe_rbs_close()
+        safe_rb_exit()

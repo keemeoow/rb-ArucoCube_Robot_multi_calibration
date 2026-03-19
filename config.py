@@ -12,8 +12,8 @@ import numpy as np
 @dataclass
 class CubeConfig:
     """ArUco cube target configuration."""
-    cube_side_m: float = 0.06          # cube edge length (m)
-    marker_size_m: float = 0.05        # marker size on each face (m)
+    cube_side_m: float = 0.03          # cube edge length (m) - 30mm
+    marker_size_m: float = 0.022       # marker size on each face (m) - 22mm
     dictionary_name: str = "DICT_4X4_50"
     marker_ids: Tuple[int, ...] = (0, 1, 2, 3, 4)
 

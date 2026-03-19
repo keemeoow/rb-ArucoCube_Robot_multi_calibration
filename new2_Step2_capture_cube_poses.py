@@ -351,20 +351,25 @@ def main():
         }
 
         # Robot pose data
-        if place_pose_6dof is not None:
+        # capture_pose = current robot TCP when images are taken
+        # Step3 looks for: robot_pose_6dof / robot_pose_matrix_4x4
+        robot_tcp = capture_pose_6dof or place_pose_6dof
+        if robot_tcp is not None:
+            tcp_f = [float(x) for x in robot_tcp]
+            cap_rec["robot_pose_6dof"] = tcp_f        # Step3 compatible
+            cap_rec["capture_pose_6dof"] = tcp_f      # new2 format
+            try:
+                T44 = euler_deg_to_matrix(*tcp_f).tolist()
+                cap_rec["robot_pose_matrix_4x4"] = T44  # Step3 compatible
+                cap_rec["capture_pose_matrix_4x4"] = T44
+            except Exception:
+                pass
+
+        if place_pose_6dof is not None and place_pose_6dof != robot_tcp:
             cap_rec["place_pose_6dof"] = [float(x) for x in place_pose_6dof]
             try:
                 cap_rec["place_pose_matrix_4x4"] = euler_deg_to_matrix(
                     *place_pose_6dof
-                ).tolist()
-            except Exception:
-                pass
-
-        if capture_pose_6dof is not None:
-            cap_rec["capture_pose_6dof"] = [float(x) for x in capture_pose_6dof]
-            try:
-                cap_rec["capture_pose_matrix_4x4"] = euler_deg_to_matrix(
-                    *capture_pose_6dof
                 ).tolist()
             except Exception:
                 pass

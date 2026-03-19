@@ -3,15 +3,32 @@
 """
 Teach-and-Capture Server:
   setting.py 스타일로 로봇을 수동 조작하면서,
-  원하는 위치에서 'c' 입력하면 클라이언트 카메라 4대 동시 촬영.
+  원하는 위치에서 큐브를 내려놓고 위로 올라가서 촬영하는 사이클.
 
 Commands:
-  p <axis>,<value>  : TCP move (e.g., "p z,50")
+  --- Movement ---
+  p <axis>,<value>  : TCP move (e.g., "p z,50" or "p z,-10")
   j <axis>,<value>  : Joint move (e.g., "j d1,10")
   show              : Show current TCP pose & joints
   speed <0-100>     : Set speed override
-  c                 : Capture! (send capture command to client)
+
+  --- Place-Capture Cycle ---
+  setz              : Save current z as table/place height
+  up <mm>           : Set capture height offset (default: 200)
+  cycle             : Full cycle: gripper open -> z up -> capture -> z down -> gripper close
+  c                 : Capture only (no gripper/move, just trigger cameras)
+
+  --- Manual gripper ---
+  go                : Gripper open (manual: 3s wait)
+  gc                : Gripper close (manual: 3s wait)
+
+  --- Quit ---
   q                 : Quit
+
+Workflow:
+  1. Move robot to where cube touches table -> "setz"
+  2. Move to next XY position -> "cycle" (auto: open, up, capture, down, close)
+  3. Repeat 2 for different positions
 
 Usage:
   [Robot]    python teach_and_capture.py
@@ -36,6 +53,12 @@ import json
 
 HOST = '0.0.0.0'
 PORT = 12348
+
+# Gripper wait time (manual mode)
+GRIPPER_WAIT_SEC = 3.0
+
+# Default capture height offset (mm above place z)
+DEFAULT_CAPTURE_Z_OFFSET = 200.0
 
 
 # ──────────────────────────────────────────────────────────────
@@ -132,6 +155,70 @@ def move_joint(axis, value):
     print 'Move complete'
 
 
+def move_z_to(target_z):
+    """Move only z axis to absolute target_z value."""
+    tcp = get_tcp()
+    current = Position(tcp[0], tcp[1], tcp[2], tcp[3], tcp[4], tcp[5])
+    dz = target_z - tcp[2]
+    target = current.offset(dz=dz)
+    print 'Moving z: {:.1f} -> {:.1f} (dz={:.1f})'.format(tcp[2], target_z, dz)
+    rb.line(target)
+    print 'Move complete'
+
+
+def move_z_offset(offset):
+    """Move z axis by offset mm."""
+    tcp = get_tcp()
+    current = Position(tcp[0], tcp[1], tcp[2], tcp[3], tcp[4], tcp[5])
+    target = current.offset(dz=offset)
+    print 'Moving z: {:.1f} -> {:.1f} (dz={:.1f})'.format(tcp[2], tcp[2] + offset, offset)
+    rb.line(target)
+    print 'Move complete'
+
+
+def gripper_open():
+    print ''
+    print '>>> GRIPPER OPEN - Release the cube!'
+    print '>>> Waiting {}s...'.format(GRIPPER_WAIT_SEC)
+    time.sleep(GRIPPER_WAIT_SEC)
+    print '>>> Gripper opened'
+    print ''
+
+
+def gripper_close():
+    print ''
+    print '>>> GRIPPER CLOSE - Grab the cube!'
+    print '>>> Waiting {}s...'.format(GRIPPER_WAIT_SEC)
+    time.sleep(GRIPPER_WAIT_SEC)
+    print '>>> Gripper closed'
+    print ''
+
+
+def do_capture(conn, capture_count):
+    """Send capture command and wait for response."""
+    tcp = get_tcp()
+    print ''
+    print '*** CAPTURING *** (pose_index={})'.format(capture_count)
+    print '  TCP: [{:.1f}, {:.1f}, {:.1f}, {:.1f}, {:.1f}, {:.1f}]'.format(
+        tcp[0], tcp[1], tcp[2], tcp[3], tcp[4], tcp[5])
+
+    send_json(conn, {
+        "command": "capture",
+        "capture_pose_6dof": tcp,
+        "pose_index": capture_count
+    })
+
+    resp = recv_json(conn)
+    if resp is None:
+        print 'Client disconnected!'
+        return False
+
+    status = resp.get('status', 'unknown') if isinstance(resp, dict) else 'unknown'
+    print '*** Capture {} done (status={}) ***'.format(capture_count, status)
+    print ''
+    return True
+
+
 # ──────────────────────────────────────────────────────────────
 # Main
 # ──────────────────────────────────────────────────────────────
@@ -168,23 +255,40 @@ def main():
         conn, addr = s.accept()
         print "Client connected: {}".format(addr)
 
+        # ─── State ───
+        place_z = None          # table z height (set with 'setz')
+        capture_z_offset = DEFAULT_CAPTURE_Z_OFFSET
+        capture_count = 0
+
         print ''
-        print '======================================'
+        print '=========================================='
         print '  Teach-and-Capture Mode'
-        print '======================================'
-        print 'Commands:'
-        print '  p <axis>,<value>  : TCP move (p z,50)'
+        print '=========================================='
+        print ''
+        print '--- Movement ---'
+        print '  p <axis>,<value>  : TCP move (p z,-10)'
         print '  j <axis>,<value>  : Joint move (j d1,10)'
         print '  show              : Show current pose'
         print '  speed <0-100>     : Set speed'
-        print '  c                 : ** CAPTURE ** (trigger all cameras)'
+        print ''
+        print '--- Place-Capture Cycle ---'
+        print '  setz              : Save current z as place height'
+        print '  up <mm>           : Set capture z offset (default: {:.0f})'.format(capture_z_offset)
+        print '  cycle             : Full: open -> up -> capture -> down -> close'
+        print '  c                 : Capture only (just trigger cameras)'
+        print ''
+        print '--- Gripper ---'
+        print '  go                : Gripper open (manual wait)'
+        print '  gc                : Gripper close (manual wait)'
+        print ''
         print '  q                 : Quit'
-        print '======================================'
+        print '=========================================='
+        print ''
+        print '*** Step 1: Move robot down until cube touches table'
+        print '***         Then type "setz" to save the height'
         print ''
 
         show_pose()
-
-        capture_count = 0
 
         while True:
             try:
@@ -195,17 +299,26 @@ def main():
             if not cmd:
                 continue
 
+            cmd_lower = cmd.lower()
+
             # ─── Quit ───
-            if cmd.lower() == 'q':
+            if cmd_lower == 'q':
                 send_json(conn, {"command": "quit"})
                 break
 
             # ─── Show pose ───
-            elif cmd.lower() == 'show':
+            elif cmd_lower == 'show':
                 show_pose()
+                if place_z is not None:
+                    print '  [Saved] place_z = {:.3f}'.format(place_z)
+                    print '  [Saved] capture_z_offset = {:.1f}'.format(capture_z_offset)
+                    print '  [Saved] capture_z = {:.3f}'.format(place_z + capture_z_offset)
+                else:
+                    print '  [!] place_z not set. Use "setz" first.'
+                print ''
 
             # ─── Speed ───
-            elif cmd.lower().startswith('speed'):
+            elif cmd_lower.startswith('speed'):
                 try:
                     spd = int(cmd.split()[1])
                     rb.override(spd)
@@ -213,33 +326,105 @@ def main():
                 except Exception:
                     print 'Usage: speed <0-100>'
 
-            # ─── CAPTURE ───
-            elif cmd.lower() == 'c':
-                tcp = get_tcp()
+            # ─── Set place Z ───
+            elif cmd_lower.startswith('setz'):
+                parts = cmd.split()
+                if len(parts) >= 2:
+                    try:
+                        place_z = float(parts[1])
+                    except ValueError:
+                        print('Usage: setz or setz <value>')
+                        continue
+                else:
+                    tcp = get_tcp()
+                    place_z = tcp[2]
                 print ''
-                print '*** CAPTURING *** (pose_index={})'.format(capture_count)
-                print '  TCP: [{:.1f}, {:.1f}, {:.1f}, {:.1f}, {:.1f}, {:.1f}]'.format(
-                    tcp[0], tcp[1], tcp[2], tcp[3], tcp[4], tcp[5])
+                print '*** Place Z saved: {:.3f} ***'.format(place_z)
+                print '    Capture Z will be: {:.3f} (offset +{:.0f})'.format(
+                    place_z + capture_z_offset, capture_z_offset)
+                print ''
 
-                send_json(conn, {
-                    "command": "capture",
-                    "capture_pose_6dof": tcp,
-                    "pose_index": capture_count
-                })
+            # ─── Set capture Z offset ───
+            elif cmd_lower.startswith('up'):
+                try:
+                    parts = cmd.split()
+                    if len(parts) >= 2:
+                        capture_z_offset = float(parts[1])
+                    print 'Capture Z offset set to: {:.1f} mm'.format(capture_z_offset)
+                    if place_z is not None:
+                        print 'Capture Z will be: {:.3f}'.format(place_z + capture_z_offset)
+                except Exception:
+                    print 'Usage: up <mm> (e.g., up 200)'
 
-                # Wait for client to finish
-                resp = recv_json(conn)
-                if resp is None:
-                    print 'Client disconnected!'
+            # ─── Gripper open ───
+            elif cmd_lower == 'go':
+                gripper_open()
+
+            # ─── Gripper close ───
+            elif cmd_lower == 'gc':
+                gripper_close()
+
+            # ─── CYCLE: full place-capture-pickup ───
+            elif cmd_lower == 'cycle':
+                if place_z is None:
+                    print '[ERROR] place_z not set! Move to table height and type "setz" first.'
+                    continue
+
+                current_tcp = get_tcp()
+                capture_z = place_z + capture_z_offset
+
+                print ''
+                print '====== CYCLE START (#{}) ======'.format(capture_count)
+                print '  Current z: {:.1f}'.format(current_tcp[2])
+                print '  Place z:   {:.1f}'.format(place_z)
+                print '  Capture z: {:.1f} (+{:.0f})'.format(capture_z, capture_z_offset)
+                print ''
+
+                # 1. Move down to place z (if not already there)
+                if abs(current_tcp[2] - place_z) > 1.0:
+                    print '--- 1/6: Moving down to place z ---'
+                    move_z_to(place_z)
+                else:
+                    print '--- 1/6: Already at place z ---'
+
+                # 2. Gripper open (release cube)
+                print '--- 2/6: Gripper open ---'
+                gripper_open()
+
+                # 3. Move up to capture z
+                print '--- 3/6: Moving up to capture z ---'
+                move_z_to(capture_z)
+                time.sleep(0.5)
+
+                # 4. Capture
+                print '--- 4/6: Capturing ---'
+                ok = do_capture(conn, capture_count)
+                if not ok:
                     break
+                capture_count += 1
 
-                status = resp.get('status', 'unknown') if isinstance(resp, dict) else 'unknown'
-                print '*** Capture {} done (status={}) ***'.format(capture_count, status)
+                # 5. Move down to place z
+                print '--- 5/6: Moving down to place z ---'
+                move_z_to(place_z)
+
+                # 6. Gripper close (grab cube)
+                print '--- 6/6: Gripper close ---'
+                gripper_close()
+
+                print '====== CYCLE DONE ======'.format()
+                print '  Total captures: {}'.format(capture_count)
+                print '  Move to next position, then type "cycle" again'
                 print ''
+
+            # ─── CAPTURE only (no move/gripper) ───
+            elif cmd_lower == 'c':
+                ok = do_capture(conn, capture_count)
+                if not ok:
+                    break
                 capture_count += 1
 
             # ─── TCP move ───
-            elif cmd.lower().startswith('p '):
+            elif cmd_lower.startswith('p '):
                 try:
                     parts = cmd[2:].strip().split(',')
                     axis = parts[0].strip()
@@ -250,7 +435,7 @@ def main():
                     print 'Error: {}. Usage: p <axis>,<value>'.format(e)
 
             # ─── Joint move ───
-            elif cmd.lower().startswith('j '):
+            elif cmd_lower.startswith('j '):
                 try:
                     parts = cmd[2:].strip().split(',')
                     axis = parts[0].strip()
@@ -261,7 +446,7 @@ def main():
                     print 'Error: {}. Usage: j <axis>,<value>'.format(e)
 
             else:
-                print 'Unknown: {}. (p/j/c/show/speed/q)'.format(cmd)
+                print 'Unknown: {}. (p/j/c/cycle/setz/up/go/gc/show/speed/q)'.format(cmd)
 
         print '\nTotal captures: {}'.format(capture_count)
 

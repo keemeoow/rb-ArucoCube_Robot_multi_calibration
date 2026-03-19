@@ -1,0 +1,25 @@
+{
+  "seed_place": [
+    450.0,
+    -120.0,
+    200.0,
+    180.0,
+    0.0,
+    180.0
+  ],
+  "capture_z_offset": 200.0,
+  "capture_xy_offset": [
+    0.0,
+    0.0
+  ],
+  "translation_scale": 1.0,
+  "rotation_scale": 1.0,
+  "multi_angle": false,
+  "total_waypoints": 22,
+  "notes": [
+    "Use with: new2_Step2_capture_cube_poses.py --waypoint_file <out_file>",
+    "place: TCP pose where robot releases cube on workspace",
+    "capture: TCP pose where robot moves to for gripper+fixed camera capture",
+    "Verify all poses are collision-safe before running."
+  ]
+}

@@ -252,7 +252,7 @@ def main():
 
     # ─── Robot client ───
     robot_client: Optional[PlaceCaptureClient] = None
-    if args.use_robot:
+    if args.use_robot and not args.manual_robot:
         robot_client = PlaceCaptureClient(args.robot_ip, args.robot_port)
         robot_client.connect()
 

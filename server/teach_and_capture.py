@@ -1,5 +1,3 @@
-#!/usr/bin/python
-# -*- coding: utf-8 -*-
 """
 Teach-and-Capture Server:
   setting.py 스타일로 로봇을 수동 조작하면서,
@@ -38,7 +36,10 @@ Usage:
                --use_robot --manual_robot \
                --robot_ip 192.168.0.23 --robot_port 12348 \
                --save_depth --show --min_markers 1 --min_cams_with_cube 1
+               
 """
+#!/usr/bin/python
+# -*- coding: utf-8 -*-
 
 from i611_MCS import *
 from teachdata import *

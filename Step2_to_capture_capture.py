@@ -1,4 +1,4 @@
-# new2_Step2_capture_cube_poses.py
+# Step2_to_capture_capture.py
 """
 Step 2 v2: Place-and-Capture calibration with gripper camera + fixed cameras.
 
@@ -16,7 +16,7 @@ This enables accurate transformation matrix computation using:
   - Multi-view constraints across gripper + fixed cameras
 
 Usage:
-  python new2_Step2_capture_cube_poses.py \
+  python Step2_to_capture_capture.py \
     --root_folder ./data/session_v2 \
     --intrinsics_dir ./intrinsics \
     --use_robot \

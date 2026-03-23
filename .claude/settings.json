@@ -3,7 +3,8 @@
     "allow": [
       "Bash(grep -n \"device_map\" /Users/woo/Documents/GitHub/Robot-Lab/rb-ArucoCube_Robot_multi_calibration/*.py)",
       "Bash(ls -la /Users/woo/Documents/GitHub/Robot-Lab/rb-ArucoCube_Robot_multi_calibration/*.py)",
-      "Bash(ls /Users/woo/Documents/GitHub/Robot-Lab/rb-ArucoCube_Robot_multi_calibration/new2_*)"
+      "Bash(ls /Users/woo/Documents/GitHub/Robot-Lab/rb-ArucoCube_Robot_multi_calibration/new2_*)",
+      "Bash(wc -l /Users/woo/Documents/GitHub/Robot-Lab/rb-ArucoCube_Robot_multi_calibration/*.py)"
     ]
   }
 }

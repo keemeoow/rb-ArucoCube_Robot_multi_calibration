@@ -33,6 +33,16 @@ class CubeConfig:
 
 
 @dataclass
+class CharucoBoardConfig:
+    """ChArUco board target configuration (for eye-in-hand / gripper camera)."""
+    squares_x: int = 11           # number of squares in X
+    squares_y: int = 7            # number of squares in Y
+    square_length_m: float = 0.022   # checker square side (m) - 22mm
+    marker_length_m: float = 0.016   # ArUco marker side (m) - 16mm
+    dictionary_name: str = "DICT_4X4_250"  # 7x11 board needs ~39 markers
+
+
+@dataclass
 class CameraStreamConfig:
     """RealSense stream config."""
     color_w: int = 640

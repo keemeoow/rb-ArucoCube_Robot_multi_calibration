@@ -1,4 +1,4 @@
-# Step3_calibrate_all_kinematic_cube.py
+# Step3_to_calibration.py
 """
 Step 3 (Refined): Kinematics + ArUco cube unified calibration.
 
@@ -11,7 +11,7 @@ Compared to Step3_calibrate_all.py:
   4) Produces diagnostics for hand-eye consistency and per-transform stability.
 
 Usage:
-  python Step3_calibrate_all_kinematic_cube.py \
+  python Step3_to_calibration.py \
     --root_folder ./data/session_01 \
     --intrinsics_dir ./intrinsics \
     --gripper_cam_idx 0 \

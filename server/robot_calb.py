@@ -30,7 +30,7 @@ Workflow:
 
 Usage:
   [Robot]    python teach_and_capture.py
-  [Computer] python new2_Step2_capture_cube_poses.py \
+  [PC] python Step2_to_capture_capture.py \
                --root_folder ./data/session_manual \
                --intrinsics_dir ./intrinsics \
                --use_robot --manual_robot \
@@ -61,6 +61,12 @@ GRIPPER_TIMEOUT_SEC = 5.0
 
 # Default capture height offset (mm above place z)
 DEFAULT_CAPTURE_Z_OFFSET = 200.0
+
+# Cube grip parameters
+CUBE_SIZE_MM = 30.0         # cube side length (mm)
+CUBE_GRIP_Z_ABOVE = 2.0    # grip 2mm above cube top
+# c1/c2 lift height: cube half (15) + grip offset (2) + margin (5) = 22mm
+CUBE_LIFT_Z = 22.0
 
 
 # ──────────────────────────────────────────────────────────────
@@ -213,19 +219,26 @@ def gripper_close():
     print 'Gripper closed'
 
 
-def do_capture(conn, capture_count):
+def do_capture(conn, capture_count, cube_center_6dof=None):
     """Send capture command and wait for response."""
     tcp = get_tcp()
     print ''
     print '*** CAPTURING *** (pose_index={})'.format(capture_count)
     print '  TCP: [{:.1f}, {:.1f}, {:.1f}, {:.1f}, {:.1f}, {:.1f}]'.format(
         tcp[0], tcp[1], tcp[2], tcp[3], tcp[4], tcp[5])
+    if cube_center_6dof is not None:
+        print '  Cube center: [{:.1f}, {:.1f}, {:.1f}]'.format(
+            cube_center_6dof[0], cube_center_6dof[1], cube_center_6dof[2])
 
-    send_json(conn, {
+    msg = {
         "command": "capture",
         "capture_pose_6dof": tcp,
         "pose_index": capture_count
-    })
+    }
+    if cube_center_6dof is not None:
+        msg["cube_center_6dof"] = cube_center_6dof
+
+    send_json(conn, msg)
 
     resp = recv_json(conn)
     if resp is None:
@@ -278,6 +291,8 @@ def main():
         place_z = None          # table z height (set with 'setz')
         capture_z_offset = DEFAULT_CAPTURE_Z_OFFSET
         capture_count = 0
+        move_history = []       # [(type, axis, value), ...] for undo
+        cube_center_6dof = None # cube center position when placed (grip corrected)
 
         print ''
         print '=========================================='
@@ -296,15 +311,22 @@ def main():
         print '  cycle             : Full: open -> up -> capture -> down -> close'
         print '  c                 : Capture only (just trigger cameras)'
         print ''
+        print '--- Cube Place/Pickup (c1/c2) ---'
+        print '  c1                : Place cube: open gripper -> z +22mm'
+        print '  c2                : Pickup cube: z -22mm -> close gripper'
+        print ''
         print '--- Gripper ---'
         print '  go                : Gripper open (manual wait)'
         print '  gc                : Gripper close (manual wait)'
         print ''
+        print '--- Undo ---'
+        print '  undo              : Reverse last p/j move'
+        print ''
         print '  q                 : Quit'
         print '=========================================='
         print ''
-        print '*** Step 1: Move robot down until cube touches table'
-        print '***         Then type "setz" to save the height'
+        print '*** Grip: cube center (x,y), z = cube top + 2mm'
+        print '*** c1 = place cube (open + z+22), c2 = pickup (z-22 + close)'
         print ''
 
         show_pose()
@@ -417,7 +439,7 @@ def main():
 
                 # 4. Capture
                 print '--- 4/6: Capturing ---'
-                ok = do_capture(conn, capture_count)
+                ok = do_capture(conn, capture_count, cube_center_6dof)
                 if not ok:
                     break
                 capture_count += 1
@@ -437,10 +459,80 @@ def main():
 
             # ─── CAPTURE only (no move/gripper) ───
             elif cmd_lower == 'c':
-                ok = do_capture(conn, capture_count)
+                ok = do_capture(conn, capture_count, cube_center_6dof)
                 if not ok:
                     break
                 capture_count += 1
+
+            # ─── C1: Place cube (open gripper -> z up 22mm) ───
+            elif cmd_lower == 'c1':
+                print ''
+                print '--- C1: Place cube ---'
+
+                # Record grip TCP BEFORE opening (cube is still held)
+                grip_tcp = get_tcp()
+                # Cube center = grip point - 2mm (above top) - 15mm (half cube)
+                grip_offset_z = CUBE_GRIP_Z_ABOVE + CUBE_SIZE_MM / 2.0  # 17mm
+                cube_center_6dof = list(grip_tcp)
+                cube_center_6dof[2] = grip_tcp[2] - grip_offset_z
+                print '  Grip TCP z:     {:.1f}'.format(grip_tcp[2])
+                print '  Cube center z:  {:.1f} (TCP - {:.0f}mm)'.format(
+                    cube_center_6dof[2], grip_offset_z)
+
+                print '--- 1/2: Gripper open ---'
+                gripper_open()
+                move_history = []  # reset undo history after placing
+                print '--- 2/2: Moving z +{:.0f}mm ---'.format(CUBE_LIFT_Z)
+                move_z_offset(CUBE_LIFT_Z)
+                print '--- C1 done: cube placed, gripper above ---'
+                print ''
+
+            # ─── C2: Pickup cube (z down 22mm -> close gripper) ───
+            elif cmd_lower == 'c2':
+                print ''
+                print '--- C2: Pickup cube ---'
+                print '--- 1/2: Moving z -{:.0f}mm ---'.format(CUBE_LIFT_Z)
+                move_z_offset(-CUBE_LIFT_Z)
+                print '--- 2/2: Gripper close ---'
+                gripper_close()
+                print '--- C2 done: cube grabbed ---'
+                print ''
+
+            # ─── UNDO: reverse moves ───
+            # undo      : reverse last 1 move
+            # undo 3    : reverse last 3 moves (in reverse order)
+            # undo all  : reverse ALL moves since last c1/c/cycle
+            elif cmd_lower.startswith('undo'):
+                if not move_history:
+                    print 'Nothing to undo.'
+                else:
+                    parts = cmd.split()
+                    if len(parts) >= 2 and parts[1].lower() == 'all':
+                        count = len(move_history)
+                    elif len(parts) >= 2:
+                        try:
+                            count = int(parts[1])
+                        except ValueError:
+                            print 'Usage: undo / undo <N> / undo all'
+                            continue
+                    else:
+                        count = 1
+
+                    count = min(count, len(move_history))
+                    print ''
+                    print '--- Undoing {} move(s) ---'.format(count)
+                    for i in range(count):
+                        last = move_history.pop()
+                        mtype, maxis, mvalue = last
+                        reverse = -mvalue
+                        print '  [{}/{}] {} {},{} -> {}'.format(
+                            i + 1, count, mtype, maxis, mvalue, reverse)
+                        if mtype == 'p':
+                            move_tcp(maxis, reverse)
+                        elif mtype == 'j':
+                            move_joint(maxis, reverse)
+                    print '--- Undo complete ---'
+                    show_pose()
 
             # ─── TCP move ───
             elif cmd_lower.startswith('p '):
@@ -449,6 +541,7 @@ def main():
                     axis = parts[0].strip()
                     value = float(parts[1].strip())
                     move_tcp(axis, value)
+                    move_history.append(('p', axis, value))
                     show_pose()
                 except Exception as e:
                     print 'Error: {}. Usage: p <axis>,<value>'.format(e)
@@ -460,12 +553,13 @@ def main():
                     axis = parts[0].strip()
                     value = float(parts[1].strip())
                     move_joint(axis, value)
+                    move_history.append(('j', axis, value))
                     show_pose()
                 except Exception as e:
                     print 'Error: {}. Usage: j <axis>,<value>'.format(e)
 
             else:
-                print 'Unknown: {}. (p/j/c/cycle/setz/up/go/gc/show/speed/q)'.format(cmd)
+                print 'Unknown: {}. (p/j/c/c1/c2/cycle/undo/setz/up/go/gc/show/speed/q)'.format(cmd)
 
         print '\nTotal captures: {}'.format(capture_count)
 

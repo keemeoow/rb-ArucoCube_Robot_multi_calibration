@@ -29,7 +29,7 @@ Workflow:
   3. Repeat 2 for different positions
 
 Usage:
-  [Robot]    python teach_and_capture.py
+  [Robot]    python robot_calb.py
   [PC] python Step2_to_capture_capture.py \
                --root_folder ./data/session_manual \
                --intrinsics_dir ./intrinsics \
@@ -455,6 +455,70 @@ def main():
                 print '====== CYCLE DONE ======'.format()
                 print '  Total captures: {}'.format(capture_count)
                 print '  Move to next position, then type "cycle" again'
+                print ''
+
+            # ─── SCAN: auto cycle with rotations ───
+            # scan                    : c1 → c → c2 (1 capture, no rotation)
+            # scan ry,15              : c1 → c → ry+15 → c → undo → c2
+            # scan ry,15 rz,-20      : c1 → c → ry+15 → c → undo → rz-20 → c → undo → c2
+            elif cmd_lower.startswith('scan'):
+                # Parse rotation arguments
+                rotations = []
+                parts = cmd.split()
+                for part in parts[1:]:
+                    try:
+                        ax, val = part.split(',')
+                        rotations.append((ax.strip(), float(val.strip())))
+                    except Exception:
+                        print 'Invalid rotation: {}. Format: axis,value'.format(part)
+
+                # --- C1: Place cube ---
+                grip_tcp = get_tcp()
+                grip_offset_z = CUBE_GRIP_Z_ABOVE + CUBE_SIZE_MM / 2.0
+                cube_center_6dof = list(grip_tcp)
+                cube_center_6dof[2] = grip_tcp[2] - grip_offset_z
+
+                n_shots = 1 + len(rotations)
+                print ''
+                print '====== SCAN (captures={}) ======'.format(n_shots)
+                print '  Cube center: [{:.1f}, {:.1f}, {:.1f}]'.format(
+                    cube_center_6dof[0], cube_center_6dof[1], cube_center_6dof[2])
+                if rotations:
+                    print '  Rotations: {}'.format(
+                        ['{}={}'.format(a, v) for a, v in rotations])
+
+                gripper_open()
+                move_z_offset(CUBE_LIFT_Z)
+
+                # --- Base capture (no rotation) ---
+                print '--- Shot 1/{}: base ---'.format(n_shots)
+                ok = do_capture(conn, capture_count, cube_center_6dof)
+                if not ok:
+                    break
+                capture_count += 1
+
+                # --- Rotated captures ---
+                for i, (ax, val) in enumerate(rotations):
+                    print '--- Shot {}/{}: {} {} ---'.format(i + 2, n_shots, ax, val)
+                    move_tcp(ax, val)
+                    ok = do_capture(conn, capture_count, cube_center_6dof)
+                    if not ok:
+                        break
+                    capture_count += 1
+                    # Undo this rotation
+                    move_tcp(ax, -val)
+                else:
+                    ok = True
+
+                if not ok:
+                    break
+
+                # --- C2: Pickup cube ---
+                move_z_offset(-CUBE_LIFT_Z)
+                gripper_close()
+
+                print '====== SCAN DONE ({} captures) ======'.format(n_shots)
+                print '  Total: {}'.format(capture_count)
                 print ''
 
             # ─── CAPTURE only (no move/gripper) ───

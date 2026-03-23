@@ -224,7 +224,7 @@ def main():
     parser.add_argument("--waypoint_file", type=str, default=None,
                         help="JSON file with list of {place, capture} waypoint pairs")
     parser.add_argument("--manual_robot", action="store_true",
-                        help="Manual robot mode: server sends capture commands interactively (use with teach_and_capture.py)")
+                        help="Manual robot mode: server sends capture commands interactively (use with robot_calb.py)")
     parser.add_argument("--settle_time", type=float, default=1.5,
                         help="Wait time (s) after robot signals capture before taking images")
 
@@ -492,7 +492,7 @@ def main():
 
     try:
         if args.use_robot and args.manual_robot:
-            # ─── Manual Robot mode (with teach_and_capture.py server) ───
+            # ─── Manual Robot mode (with robot_calb.py server) ───
             print("[MODE] Manual Robot - waiting for server capture commands")
             print("[INFO] Move robot on server side, press 'c' to capture\n")
 

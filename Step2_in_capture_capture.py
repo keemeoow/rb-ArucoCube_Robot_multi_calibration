@@ -10,7 +10,7 @@ Workflow:
 
 Usage:
   Server (robot controller):
-    python teach_and_capture.py
+    python robot_calb.py
 
   Client (pc):
     python Step2_in_capture_capture.py \
@@ -231,25 +231,89 @@ def main():
     print(f"[INFO] Move gripper camera over the ChArUco board")
     print(f"[INFO] Press 'c' on server to capture, vary ROTATION between captures\n")
 
-    # Live preview thread
+    # Live preview thread (all cameras quad view)
     preview_running = True
-    latest_annotated = [None]
+
+    def annotate_fixed_cam(bgr, cube_det, ci, K_c, D_c):
+        """Annotate fixed camera with ArUco cube detection."""
+        out = bgr.copy()
+        corners_list, ids = cube_det.detect(out)
+        n = 0 if ids is None else len(ids)
+
+        if ids is not None and len(corners_list) > 0:
+            try:
+                draw_ids = ids.reshape(-1, 1) if getattr(ids, "ndim", 1) == 1 else ids
+                cv2.aruco.drawDetectedMarkers(out, corners_list, draw_ids)
+            except Exception:
+                pass
+
+            # Draw cube axes if PnP works
+            pnp_ok, rvec, tvec, _, reproj = cube_det.solve_pnp_cube(
+                bgr, K_c, D_c, use_ransac=False, min_markers=1,
+                reproj_thr_mean_px=6.0, return_reproj=True,
+            )
+            if pnp_ok and rvec is not None:
+                cv2.drawFrameAxes(out, K_c, D_c, rvec, tvec, 0.03)
+
+        ids_txt = ",".join(str(int(x)) for x in ids) if ids is not None else "-"
+        lines = [f"cam{ci} [FIXED]", f"markers={n} ids={ids_txt}"]
+        y = 24
+        for line in lines:
+            (tw, th), _ = cv2.getTextSize(line, cv2.FONT_HERSHEY_SIMPLEX, 0.55, 2)
+            cv2.rectangle(out, (4, y - 18), (10 + tw, y + 4), (0, 0, 0), -1)
+            cv2.putText(out, line, (8, y), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 255, 0), 2)
+            y += 22
+        return out
+
+    def build_quad_preview():
+        """Build 2x2 quad image from all cameras."""
+        cam_order = sorted(cams.keys())
+        tiles = []
+        tile_h, tile_w = 480, 640
+
+        for ci in cam_order:
+            color, _, _ = cams[ci].get_latest()
+            if color is None:
+                blank = np.zeros((tile_h, tile_w, 3), dtype=np.uint8)
+                cv2.putText(blank, f"cam{ci} N/A", (20, tile_h // 2),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 0, 255), 2)
+                tiles.append(blank)
+                continue
+
+            tile_h, tile_w = color.shape[:2]
+
+            if ci == gi:
+                # Gripper camera: ChArUco detection
+                ok, rvec, tvec, n_corners, reproj = charuco.estimate_pose(color, K, D)
+                ann = annotate_charuco(color, charuco, K, D, ci, n_corners,
+                                       rvec if ok else None,
+                                       tvec if ok else None,
+                                       reproj)
+                tiles.append(ann)
+            elif cube is not None and ci in K_map:
+                # Fixed camera: ArUco cube detection
+                ann = annotate_fixed_cam(color, cube, ci, K_map[ci], D_map[ci])
+                tiles.append(ann)
+            else:
+                tiles.append(color)
+
+        # Pad to 4 tiles
+        while len(tiles) < 4:
+            tiles.append(np.zeros((tile_h, tile_w, 3), dtype=np.uint8))
+        tiles = tiles[:4]
+
+        top = cv2.hconcat([tiles[0], tiles[1]])
+        bottom = cv2.hconcat([tiles[2], tiles[3]])
+        return cv2.vconcat([top, bottom])
 
     def preview_loop():
         while preview_running:
-            color, _, _ = cam.get_latest()
-            if color is None:
-                continue
-
-            ok, rvec, tvec, n_corners, reproj = charuco.estimate_pose(color, K, D)
-            ann = annotate_charuco(color, charuco, K, D, gi, n_corners,
-                                   rvec if ok else None,
-                                   tvec if ok else None,
-                                   reproj)
-            latest_annotated[0] = ann
-
-            preview = cv2.resize(ann, (0, 0), fx=0.8, fy=0.8)
-            cv2.imshow("ChArUco Gripper Camera", preview)
+            quad = build_quad_preview()
+            # Resize for display
+            ph = int(quad.shape[0] * 0.5)
+            pw = int(quad.shape[1] * 0.5)
+            preview = cv2.resize(quad, (pw, ph))
+            cv2.imshow("Live Preview (all cameras)", preview)
             key = cv2.waitKey(100) & 0xFF
             if key == 27 or key == ord('q'):
                 break
@@ -257,7 +321,7 @@ def main():
     if args.show:
         t = threading.Thread(target=preview_loop, daemon=True)
         t.start()
-        print("[INFO] Live preview started")
+        print("[INFO] Live quad preview started (gripper: ChArUco, fixed: ArUco cube)")
 
     # Main capture loop
     try:

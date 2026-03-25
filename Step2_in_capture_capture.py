@@ -60,33 +60,55 @@ def load_intrinsics(intr_dir: str, cam_idx: int):
     return d["color_K"].astype(np.float64), d["color_D"].astype(np.float64)
 
 
-def annotate_charuco(bgr, charuco, K, D, cam_idx, n_corners, rvec, tvec, reproj_err):
-    """Draw ChArUco detection overlay."""
+def annotate_charuco(bgr, K, D, cam_idx, n_corners, rvec, tvec, reproj_err,
+                     charuco_corners=None, charuco_ids=None):
+    """Draw ChArUco overlay using already-computed results."""
     out = bgr.copy()
 
-    # Draw detected corners
-    charuco_corners, charuco_ids, n, _, _ = charuco.detect(bgr)
-    if charuco_corners is not None:
-        cv2.aruco.drawDetectedCornersCharuco(out, charuco_corners, charuco_ids)
+    # Draw detected corners only if provided
+    if charuco_corners is not None and charuco_ids is not None:
+        try:
+            cv2.aruco.drawDetectedCornersCharuco(out, charuco_corners, charuco_ids)
+        except Exception:
+            pass
 
     # Draw axis if pose available
-    if rvec is not None:
-        cv2.drawFrameAxes(out, K, D, rvec, tvec, 0.05)
+    if rvec is not None and tvec is not None:
+        try:
+            cv2.drawFrameAxes(out, K, D, rvec, tvec, 0.05)
+        except Exception:
+            pass
 
-    # Info text
+    # Safe reproj text
+    if reproj_err is None:
+        reproj_txt = "reproj=N/A"
+    else:
+        try:
+            reproj_txt = f"reproj={float(reproj_err):.2f}px" if float(reproj_err) < 1000 else "reproj=N/A"
+        except Exception:
+            reproj_txt = "reproj=N/A"
+
     lines = [
         f"cam{cam_idx} [GRIPPER]",
         f"corners={n_corners}",
-        f"reproj={reproj_err:.2f}px" if reproj_err < 1000 else "reproj=N/A",
+        reproj_txt,
     ]
+
     y = 24
     for line in lines:
         (tw, th), _ = cv2.getTextSize(line, cv2.FONT_HERSHEY_SIMPLEX, 0.55, 2)
         cv2.rectangle(out, (4, y - 18), (10 + tw, y + 4), (0, 0, 0), -1)
         cv2.putText(out, line, (8, y), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255, 255, 255), 2)
         y += 22
+
     return out
 
+def safe_estimate_charuco(charuco, color, K, D):
+    try:
+        return charuco.estimate_pose(color, K, D)
+    except Exception as e:
+        print(f"[WARN] ChArUco estimate failed: {e}")
+        return False, None, None, 0, None
 
 def main():
     parser = argparse.ArgumentParser(
@@ -197,6 +219,13 @@ def main():
           f"square={charuco_cfg.square_length_m*1000:.0f}mm, "
           f"marker={charuco_cfg.marker_length_m*1000:.0f}mm, "
           f"marker_id_start={charuco_cfg.marker_id_start}")
+    
+    def safe_estimate_charuco(charuco, color, K, D):
+        try:
+            return charuco.estimate_pose(color, K, D)
+        except Exception as e:
+            print(f"[WARN] ChArUco estimate failed: {e}")
+            return False, None, None, 0, None
 
     # ArUco cube target (for fixed cameras)
     cube = None
@@ -227,10 +256,21 @@ def main():
     # Connect to robot server
     import socket as _sock
     sock = _sock.socket(_sock.AF_INET, _sock.SOCK_STREAM)
-    sock.settimeout(None)
-    sock.connect((args.robot_ip, args.robot_port))
-    print(f"[INFO] Connected to robot server {args.robot_ip}:{args.robot_port}")
-
+    sock.settimeout(3.0)
+    try:
+        sock.connect((args.robot_ip, args.robot_port))
+    except ConnectionRefusedError:
+        raise RuntimeError(
+            f"Robot server refused connection: {args.robot_ip}:{args.robot_port}. "
+            f"서버 미실행 / 포트 불일치 / 로봇 에러상태 가능성"
+        )
+    except TimeoutError:
+        raise RuntimeError(
+            f"Robot server timeout: {args.robot_ip}:{args.robot_port}. "
+            f"IP 오타 / 네트워크 문제 가능성"
+        )
+    finally:
+        sock.settimeout(None)
     print(f"\n[MODE] ChArUco Eye-in-Hand Capture")
     print(f"[INFO] Move gripper camera over the ChArUco board")
     print(f"[INFO] Press 'c' on server to capture, vary ROTATION between captures\n")
@@ -287,12 +327,13 @@ def main():
             tile_h, tile_w = color.shape[:2]
 
             if ci == gi:
-                # Gripper camera: ChArUco detection
-                ok, rvec, tvec, n_corners, reproj = charuco.estimate_pose(color, K, D)
-                ann = annotate_charuco(color, charuco, K, D, ci, n_corners,
-                                       rvec if ok else None,
-                                       tvec if ok else None,
-                                       reproj)
+                ok, rvec, tvec, n_corners, reproj = safe_estimate_charuco(charuco, color, K, D)
+                ann = annotate_charuco(
+                    color, K, D, ci, n_corners,
+                    rvec if ok else None,
+                    tvec if ok else None,
+                    reproj
+                )
                 tiles.append(ann)
             elif cube is not None and ci in K_map:
                 # Fixed camera: ArUco cube detection
@@ -312,15 +353,18 @@ def main():
 
     def preview_loop():
         while preview_running:
-            quad = build_quad_preview()
-            # Resize for display
-            ph = int(quad.shape[0] * 0.5)
-            pw = int(quad.shape[1] * 0.5)
-            preview = cv2.resize(quad, (pw, ph))
-            cv2.imshow("Live Preview (all cameras)", preview)
-            key = cv2.waitKey(100) & 0xFF
-            if key == 27 or key == ord('q'):
-                break
+            try:
+                quad = build_quad_preview()
+                ph = int(quad.shape[0] * 0.5)
+                pw = int(quad.shape[1] * 0.5)
+                preview = cv2.resize(quad, (pw, ph))
+                cv2.imshow("Live Preview (all cameras)", preview)
+                key = cv2.waitKey(100) & 0xFF
+                if key == 27 or key == ord('q'):
+                    break
+            except Exception as e:
+                print(f"[ERROR] preview_loop crashed: {e}")
+                time.sleep(0.2)
 
     if args.show:
         t = threading.Thread(target=preview_loop, daemon=True)
@@ -366,6 +410,20 @@ def main():
 
                 if not ok or n_corners < args.min_corners:
                     print(f"[SKIP] Not enough corners: {n_corners} (min={args.min_corners})")
+                    resp = json.dumps({"action": "captured", "status": "skipped"})
+                    sock.sendall(resp.encode("utf-8"))
+                    continue
+
+                ok, rvec, tvec, n_corners, reproj = safe_estimate_charuco(charuco, color, K, D)
+
+                if not ok or n_corners < args.min_corners:
+                    print(f"[SKIP] Not enough corners: {n_corners} (min={args.min_corners})")
+                    resp = json.dumps({"action": "captured", "status": "skipped"})
+                    sock.sendall(resp.encode("utf-8"))
+                    continue
+
+                if reproj is None:
+                    print("[SKIP] Reprojection error unavailable")
                     resp = json.dumps({"action": "captured", "status": "skipped"})
                     sock.sendall(resp.encode("utf-8"))
                     continue
@@ -448,7 +506,7 @@ def main():
                             "rgb_path": fc_rgb_rel,
                             "depth_path": fc_depth_rel,
                             "n_markers": n_mkr,
-                            "marker_ids": [] if ids is None else [int(x) for x in ids],
+                            "marker_ids": [] if ids is None else [int(x) for x in np.array(ids).flatten()],
                         }
 
                         # Cube PnP
@@ -462,7 +520,7 @@ def main():
                                 T_cam_cube = rodrigues_to_Rt(c_rvec, c_tvec)
                                 fc_rec["cube_pnp"] = {
                                     "ok": True,
-                                    "used_ids": [int(x) for x in used_ids],
+                                    "used_ids": [int(x) for x in np.array(used_ids).flatten()],
                                     "reproj_mean_px": c_reproj["err_mean"],
                                     "rvec": c_rvec.flatten().tolist(),
                                     "tvec": c_tvec.flatten().tolist(),

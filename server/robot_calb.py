@@ -102,7 +102,7 @@ DEFAULT_CAPTURE_Z_OFFSET = 200.0
 # Cube grip parameters
 CUBE_SIZE_MM = 30.0         # cube side length (mm)
 CUBE_GRIP_Z_ABOVE = 2.0    # grip 2mm above cube top
-# c1/c2 lift height: cube half (15) + grip offset (2) + margin (5) = 22mm
+# co/cc lift height: cube half (15) + grip offset (2) + margin (5) = 22mm
 CUBE_LIFT_Z = 22.0
 
 
@@ -330,6 +330,7 @@ def main():
         capture_count = 0
         move_history = []       # [(type, axis, value), ...] for undo
         cube_center_6dof = None # cube center position when placed (grip corrected)
+        holding_cube = True     # True: cube in gripper, False: cube placed
 
         print ''
         print '=========================================='
@@ -342,29 +343,25 @@ def main():
         print '  show              : Show current pose'
         print '  speed <0-100>     : Set speed'
         print ''
-        print '--- Capture ---'
-        print '  c                 : Capture only (just trigger cameras)'
+        print '--- Phase 2a: Cube Zone (holding cube) ---'
+        print '  c                 : Capture (cube held -> auto compute center)'
         print ''
-        print '--- Cube Place/Pickup (co/cc) ---'
-        print '  co                : Place cube: open gripper -> z +22mm'
-        print '  cc                : Pickup cube: z -22mm -> close gripper'
+        print '--- Phase 2b: Bridge Zone (place cube near board) ---'
+        print '  scan              : Place -> capture -> pickup'
+        print '  scan ry,15 rz,-20 : Place -> capture -> rotate+capture -> pickup'
+        print '  co                : Place cube (open gripper -> z +22mm)'
+        print '  cc                : Pickup cube (z -22mm -> close gripper)'
         print ''
         print '--- Settings ---'
         print '  setz              : Save current z as place height'
         print '  up <mm>           : Set capture z offset (default: {:.0f})'.format(capture_z_offset)
         print ''
-        print '--- Gripper ---'
-        print '  go                : Gripper open (manual wait)'
-        print '  gc                : Gripper close (manual wait)'
-        print ''
-        print '--- Undo ---'
-        print '  undo              : Reverse last p/j move'
+        print '--- Gripper / Undo ---'
+        print '  go / gc           : Gripper open / close'
+        print '  undo [N|all]      : Reverse last move(s)'
         print ''
         print '  q                 : Quit'
         print '=========================================='
-        print ''
-        print '*** Grip: cube center (x,y), z = cube top + 2mm'
-        print '*** co = place cube (open + z+22), cc = pickup (z-22 + close)'
         print ''
 
         show_pose()
@@ -438,12 +435,14 @@ def main():
             # ─── Gripper open ───
             elif cmd_lower == 'go':
                 gripper_open()
+                holding_cube = False
 
             # ─── Gripper close ───
             elif cmd_lower == 'gc':
                 gripper_close()
+                holding_cube = True
 
-            # ─── SCAN: auto cycle with rotations ───
+            # ─── SCAN: Phase 2b auto cycle with rotations ───
             # scan                    : co → c → cc (1 capture, no rotation)
             # scan ry,15              : co → c → ry+15 → c → undo → cc
             # scan ry,15 rz,-20      : co → c → ry+15 → c → undo → rz-20 → c → undo → cc
@@ -458,7 +457,7 @@ def main():
                     except Exception:
                         print 'Invalid rotation: {}. Format: axis,value'.format(part)
 
-                # --- C1: Place cube ---
+                # --- CO: Place cube ---
                 grip_tcp = get_tcp()
                 grip_offset_z = CUBE_GRIP_Z_ABOVE + CUBE_SIZE_MM / 2.0
                 cube_center_6dof = list(grip_tcp)
@@ -474,6 +473,7 @@ def main():
                         ['{}={}'.format(a, v) for a, v in rotations])
 
                 gripper_open()
+                holding_cube = False
                 move_z_offset(CUBE_LIFT_Z)
 
                 # --- Base capture (no rotation) ---
@@ -499,9 +499,10 @@ def main():
                 if not ok:
                     break
 
-                # --- C2: Pickup cube ---
+                # --- CC: Pickup cube ---
                 move_z_offset(-CUBE_LIFT_Z)
                 gripper_close()
+                holding_cube = True
 
                 print '====== SCAN DONE ({} captures) ======'.format(n_shots)
                 print '  Total: {}'.format(capture_count)
@@ -509,6 +510,14 @@ def main():
 
             # ─── CAPTURE only (no move/gripper) ───
             elif cmd_lower == 'c':
+                if holding_cube:
+                    # Phase 2a: compute cube center from current grip TCP
+                    grip_tcp = get_tcp()
+                    grip_offset_z = CUBE_GRIP_Z_ABOVE + CUBE_SIZE_MM / 2.0
+                    cube_center_6dof = list(grip_tcp)
+                    cube_center_6dof[2] = grip_tcp[2] - grip_offset_z
+                    print '  [Holding] cube center: [{:.1f}, {:.1f}, {:.1f}]'.format(
+                        cube_center_6dof[0], cube_center_6dof[1], cube_center_6dof[2])
                 ok = do_capture(conn, capture_count, cube_center_6dof)
                 if not ok:
                     break
@@ -531,6 +540,7 @@ def main():
 
                 print '--- 1/2: Gripper open ---'
                 gripper_open()
+                holding_cube = False
                 move_history = []  # reset undo history after placing
                 print '--- 2/2: Moving z +{:.0f}mm ---'.format(CUBE_LIFT_Z)
                 move_z_offset(CUBE_LIFT_Z)
@@ -545,6 +555,7 @@ def main():
                 move_z_offset(-CUBE_LIFT_Z)
                 print '--- 2/2: Gripper close ---'
                 gripper_close()
+                holding_cube = True
                 print '--- CC done: cube grabbed ---'
                 print ''
 

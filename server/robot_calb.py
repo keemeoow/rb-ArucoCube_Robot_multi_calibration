@@ -17,9 +17,7 @@
   cc                : 큐브 집기 (z -22mm -> 그리퍼 닫기)
 
   --- 설정 ---
-  setz              : 현재 z를 바닥 높이로 저장
-  setz <값>         : 바닥 높이 직접 지정
-  up <mm>           : 촬영 높이 오프셋 변경 (기본: 200)
+  set               : 현재 TCP를 홈(큐브 잡는) 포즈로 저장
 
   --- 그리퍼 ---
   go                : 그리퍼 열기
@@ -103,14 +101,15 @@ Step 2-2b — Bridge Zone: 연결 (보드 옆에 큐브 놓고 촬영)
 Step 3-1 — Hand-in-eye 캘리브레이션
 ──────────────────────────────────────────────────────────────
   python Step3_in_calibration.py \
-    --session_dir ./data/board_session
+    --charuco_folder ./data/board_session \
+    --intrinsics_dir ./intrinsics \
+    --gripper_cam_idx 2
 
 Step 3-2 — Hand-to-eye 캘리브레이션
 ──────────────────────────────────────────────────────────────
   python Step3_to_calibration.py \
-    --cube_session_dir ./data/cube_session \
-    --bridge_session_dir ./data/bridge_session \
-    --handeye_result ./data/board_session/calib_out_handeye
+    --root_folder ./data/cube_session \
+    --intrinsics_dir ./intrinsics
 
 """
 #!/usr/bin/python
@@ -134,8 +133,6 @@ PORT = 12348
 GRIPPER_IO_PORT = 48
 GRIPPER_TIMEOUT_SEC = 5.0
 
-# Default capture height offset (mm above place z)
-DEFAULT_CAPTURE_Z_OFFSET = 200.0
 
 # Cube grip parameters
 CUBE_SIZE_MM = 30.0         # cube side length (mm)
@@ -363,12 +360,11 @@ def main():
         print "Client connected: {}".format(addr)
 
         # ─── State ───
-        place_z = None          # table z height (set with 'setz')
-        capture_z_offset = DEFAULT_CAPTURE_Z_OFFSET
         capture_count = 0
         move_history = []       # [(type, axis, value), ...] for undo
         cube_center_6dof = None # cube center position when placed (grip corrected)
         holding_cube = True     # True: cube in gripper, False: cube placed
+        home_pose = None        # saved TCP pose from 'set' command
 
         print ''
         print '=========================================='
@@ -391,12 +387,13 @@ def main():
         print '  cc                : Pickup cube (z -22mm -> close gripper)'
         print ''
         print '--- Settings ---'
-        print '  setz              : Save current z as place height'
-        print '  up <mm>           : Set capture z offset (default: {:.0f})'.format(capture_z_offset)
+        print '  set               : Save current TCP as home (cube grip) pose'
         print ''
         print '--- Gripper / Undo ---'
         print '  go / gc           : Gripper open / close'
         print '  undo [N|all]      : Reverse last move(s)'
+        print '  undo <axis...>    : Reverse axis moves (undo x ry rz)'
+        print '  undo set          : Return to saved home pose'
         print ''
         print '  q                 : Quit'
         print '=========================================='
@@ -423,12 +420,10 @@ def main():
             # ─── Show pose ───
             elif cmd_lower == 'show':
                 show_pose()
-                if place_z is not None:
-                    print '  [Saved] place_z = {:.3f}'.format(place_z)
-                    print '  [Saved] capture_z_offset = {:.1f}'.format(capture_z_offset)
-                    print '  [Saved] capture_z = {:.3f}'.format(place_z + capture_z_offset)
-                else:
-                    print '  [!] place_z not set. Use "setz" first.'
+                if home_pose is not None:
+                    print '  [Home] [{:.1f}, {:.1f}, {:.1f}, {:.1f}, {:.1f}, {:.1f}]'.format(
+                        home_pose[0], home_pose[1], home_pose[2],
+                        home_pose[3], home_pose[4], home_pose[5])
                 print ''
 
             # ─── Speed ───
@@ -440,35 +435,16 @@ def main():
                 except Exception:
                     print 'Usage: speed <0-100>'
 
-            # ─── Set place Z ───
-            elif cmd_lower.startswith('setz'):
-                parts = cmd.split()
-                if len(parts) >= 2:
-                    try:
-                        place_z = float(parts[1])
-                    except ValueError:
-                        print('Usage: setz or setz <value>')
-                        continue
-                else:
-                    tcp = get_tcp()
-                    place_z = tcp[2]
+            # ─── Set home pose ───
+            elif cmd_lower == 'set':
+                home_pose = get_tcp()
+                move_history = []
                 print ''
-                print '*** Place Z saved: {:.3f} ***'.format(place_z)
-                print '    Capture Z will be: {:.3f} (offset +{:.0f})'.format(
-                    place_z + capture_z_offset, capture_z_offset)
+                print '*** Home pose saved ***'
+                print '  [{:.1f}, {:.1f}, {:.1f}, {:.1f}, {:.1f}, {:.1f}]'.format(
+                    home_pose[0], home_pose[1], home_pose[2],
+                    home_pose[3], home_pose[4], home_pose[5])
                 print ''
-
-            # ─── Set capture Z offset ───
-            elif cmd_lower.startswith('up'):
-                try:
-                    parts = cmd.split()
-                    if len(parts) >= 2:
-                        capture_z_offset = float(parts[1])
-                    print 'Capture Z offset set to: {:.1f} mm'.format(capture_z_offset)
-                    if place_z is not None:
-                        print 'Capture Z will be: {:.3f}'.format(place_z + capture_z_offset)
-                except Exception:
-                    print 'Usage: up <mm> (e.g., up 200)'
 
             # ─── Gripper open ───
             elif cmd_lower == 'go':
@@ -598,38 +574,120 @@ def main():
                 print ''
 
             # ─── UNDO: reverse moves ───
-            # undo      : reverse last 1 move
-            # undo 3    : reverse last 3 moves (in reverse order)
-            # undo all  : reverse ALL moves since last co/c
+            # undo              : reverse last 1 move
+            # undo 3            : reverse last 3 moves
+            # undo all          : reverse ALL moves
+            # undo x            : reverse all x moves
+            # undo x ry rz      : reverse all x, ry, rz moves
             elif cmd_lower.startswith('undo'):
-                if not move_history:
+                parts = cmd.lower().split()
+                args_list = parts[1:]
+
+                # ─── undo set: return to saved home pose ───
+                if len(args_list) == 1 and args_list[0] == 'set':
+                    if home_pose is None:
+                        print 'No home pose saved. Use "set" first.'
+                    else:
+                        tcp = get_tcp()
+                        current = Position(tcp[0], tcp[1], tcp[2],
+                                           tcp[3], tcp[4], tcp[5])
+                        target = Position(home_pose[0], home_pose[1], home_pose[2],
+                                          home_pose[3], home_pose[4], home_pose[5])
+                        print ''
+                        print '--- Returning to home pose ---'
+                        print '  from: [{:.1f}, {:.1f}, {:.1f}, {:.1f}, {:.1f}, {:.1f}]'.format(
+                            tcp[0], tcp[1], tcp[2], tcp[3], tcp[4], tcp[5])
+                        print '  to:   [{:.1f}, {:.1f}, {:.1f}, {:.1f}, {:.1f}, {:.1f}]'.format(
+                            home_pose[0], home_pose[1], home_pose[2],
+                            home_pose[3], home_pose[4], home_pose[5])
+                        rb.line(target)
+                        move_history = []
+                        print '--- Home pose reached ---'
+                        show_pose()
+
+                elif not move_history:
                     print 'Nothing to undo.'
                 else:
-                    parts = cmd.split()
-                    if len(parts) >= 2 and parts[1].lower() == 'all':
-                        count = len(move_history)
-                    elif len(parts) >= 2:
-                        try:
-                            count = int(parts[1])
-                        except ValueError:
-                            print 'Usage: undo / undo <N> / undo all'
-                            continue
-                    else:
-                        count = 1
+                    valid_axes = set(['x', 'y', 'z', 'rx', 'ry', 'rz',
+                                      'd1', 'd2', 'd3', 'd4', 'd5', 'd6'])
 
-                    count = min(count, len(move_history))
-                    print ''
-                    print '--- Undoing {} move(s) ---'.format(count)
-                    for i in range(count):
+                    if len(args_list) == 0:
+                        # undo: last 1
                         last = move_history.pop()
                         mtype, maxis, mvalue = last
                         reverse = -mvalue
-                        print '  [{}/{}] {} {},{} -> {}'.format(
-                            i + 1, count, mtype, maxis, mvalue, reverse)
+                        print ''
+                        print '--- Undoing 1 move ---'
+                        print '  {} {},{} -> {}'.format(mtype, maxis, mvalue, reverse)
                         if mtype == 'p':
                             move_tcp(maxis, reverse)
                         elif mtype == 'j':
                             move_joint(maxis, reverse)
+
+                    elif args_list[0] == 'all':
+                        # undo all
+                        count = len(move_history)
+                        print ''
+                        print '--- Undoing ALL {} move(s) ---'.format(count)
+                        for i in range(count):
+                            last = move_history.pop()
+                            mtype, maxis, mvalue = last
+                            reverse = -mvalue
+                            print '  [{}/{}] {} {},{} -> {}'.format(
+                                i + 1, count, mtype, maxis, mvalue, reverse)
+                            if mtype == 'p':
+                                move_tcp(maxis, reverse)
+                            elif mtype == 'j':
+                                move_joint(maxis, reverse)
+
+                    elif args_list[0] in valid_axes:
+                        # undo x / undo x ry rz
+                        axis_set = set([a for a in args_list if a in valid_axes])
+                        targets = []
+                        for i in range(len(move_history)):
+                            h = move_history[i]
+                            if h[1] in axis_set:
+                                targets.append((i, h))
+                        if not targets:
+                            print 'No [{}] moves to undo.'.format(','.join(sorted(axis_set)))
+                        else:
+                            label = ','.join(sorted(axis_set))
+                            print ''
+                            print '--- Undoing {} move(s) on [{}] ---'.format(
+                                len(targets), label)
+                            for idx in range(len(targets) - 1, -1, -1):
+                                item = targets[idx]
+                                mtype, maxis, mvalue = item[1]
+                                reverse = -mvalue
+                                step = len(targets) - idx
+                                print '  [{}/{}] {} {},{} -> {}'.format(
+                                    step, len(targets), mtype, maxis, mvalue, reverse)
+                                if mtype == 'p':
+                                    move_tcp(maxis, reverse)
+                                elif mtype == 'j':
+                                    move_joint(maxis, reverse)
+                                move_history.pop(item[0])
+
+                    else:
+                        try:
+                            count = int(args_list[0])
+                        except ValueError:
+                            print 'Usage: undo / undo <N> / undo all / undo <axis...>'
+                            continue
+                        count = min(count, len(move_history))
+                        print ''
+                        print '--- Undoing {} move(s) ---'.format(count)
+                        for i in range(count):
+                            last = move_history.pop()
+                            mtype, maxis, mvalue = last
+                            reverse = -mvalue
+                            print '  [{}/{}] {} {},{} -> {}'.format(
+                                i + 1, count, mtype, maxis, mvalue, reverse)
+                            if mtype == 'p':
+                                move_tcp(maxis, reverse)
+                            elif mtype == 'j':
+                                move_joint(maxis, reverse)
+
                     print '--- Undo complete ---'
                     show_pose()
 
@@ -658,7 +716,7 @@ def main():
                     print 'Error: {}. Usage: j <axis>,<value>'.format(e)
 
             else:
-                print 'Unknown: {}. (p/j/c/co/cc/scan/undo/setz/up/go/gc/show/speed/q)'.format(cmd)
+                print 'Unknown: {}. (p/j/c/co/cc/scan/set/undo/go/gc/show/speed/q)'.format(cmd)
 
         print '\nTotal captures: {}'.format(capture_count)
 

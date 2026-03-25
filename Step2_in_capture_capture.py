@@ -60,38 +60,76 @@ def load_intrinsics(intr_dir: str, cam_idx: int):
     return d["color_K"].astype(np.float64), d["color_D"].astype(np.float64)
 
 
-def annotate_charuco(bgr, K, D, cam_idx, n_corners, rvec, tvec, reproj_err,
-                     charuco_corners=None, charuco_ids=None):
-    """Draw ChArUco overlay using already-computed results."""
+def annotate_gripper(bgr, K, D, cam_idx, charuco, cube_det,
+                     charuco_result=None, cube_result=None):
+    """Draw ChArUco + ArUco cube overlay on gripper camera image.
+
+    charuco_result: (ok, rvec, tvec, n_corners, reproj, charuco_corners, charuco_ids)
+    cube_result:    (pnp_ok, rvec, tvec, cube_corners_list, cube_ids)
+    If None, detect from bgr on the fly (for live preview).
+    """
     out = bgr.copy()
 
-    # Draw detected corners only if provided
-    if charuco_corners is not None and charuco_ids is not None:
-        try:
-            cv2.aruco.drawDetectedCornersCharuco(out, charuco_corners, charuco_ids)
-        except Exception:
-            pass
-
-    # Draw axis if pose available
-    if rvec is not None and tvec is not None:
-        try:
-            cv2.drawFrameAxes(out, K, D, rvec, tvec, 0.05)
-        except Exception:
-            pass
-
-    # Safe reproj text
-    if reproj_err is None:
-        reproj_txt = "reproj=N/A"
+    # --- ChArUco detection ---
+    if charuco_result is not None:
+        ch_ok, ch_rvec, ch_tvec, n_corners, reproj, ch_corners, ch_ids = charuco_result
     else:
-        try:
-            reproj_txt = f"reproj={float(reproj_err):.2f}px" if float(reproj_err) < 1000 else "reproj=N/A"
-        except Exception:
-            reproj_txt = "reproj=N/A"
+        ch_corners, ch_ids, n_corners, _, _ = charuco.detect(bgr)
+        ch_ok, ch_rvec, ch_tvec = False, None, None
+        reproj = None
+        if ch_corners is not None and n_corners >= 4:
+            ch_ok, ch_rvec, ch_tvec, n_corners, reproj = charuco.estimate_pose(bgr, K, D)
 
+    if ch_corners is not None and ch_ids is not None:
+        try:
+            cv2.aruco.drawDetectedCornersCharuco(out, ch_corners, ch_ids)
+        except Exception:
+            pass
+    if ch_ok and ch_rvec is not None:
+        try:
+            cv2.drawFrameAxes(out, K, D, ch_rvec, ch_tvec, 0.05)
+        except Exception:
+            pass
+
+    # --- ArUco cube detection ---
+    if cube_result is not None:
+        cu_ok, cu_rvec, cu_tvec, cu_corners, cu_ids = cube_result
+    else:
+        cu_corners, cu_ids = cube_det.detect(bgr)
+        cu_ok, cu_rvec, cu_tvec = False, None, None
+        if cu_ids is not None and len(cu_ids) >= 1:
+            pnp_ok, rv, tv, _, _ = cube_det.solve_pnp_cube(
+                bgr, K, D, use_ransac=False, min_markers=1,
+                reproj_thr_mean_px=6.0, return_reproj=True,
+            )
+            if pnp_ok:
+                cu_ok, cu_rvec, cu_tvec = True, rv, tv
+
+    if cu_ids is not None and len(cu_corners) > 0:
+        try:
+            draw_ids = cu_ids.reshape(-1, 1) if getattr(cu_ids, "ndim", 1) == 1 else cu_ids
+            cv2.aruco.drawDetectedMarkers(out, cu_corners, draw_ids)
+        except Exception:
+            pass
+    if cu_ok and cu_rvec is not None:
+        try:
+            cv2.drawFrameAxes(out, K, D, cu_rvec, cu_tvec, 0.03)
+        except Exception:
+            pass
+
+    # --- Text overlay ---
+    reproj_txt = "reproj=N/A"
+    if reproj is not None:
+        try:
+            reproj_txt = f"reproj={float(reproj):.2f}px" if float(reproj) < 1000 else "reproj=N/A"
+        except Exception:
+            pass
+
+    n_cube = 0 if cu_ids is None else len(cu_ids)
     lines = [
         f"cam{cam_idx} [GRIPPER]",
-        f"corners={n_corners}",
-        reproj_txt,
+        f"charuco={n_corners} {reproj_txt}",
+        f"cube={n_cube}mkr",
     ]
 
     y = 24
@@ -124,8 +162,6 @@ def main():
 
     parser.add_argument("--min_corners", type=int, default=6,
                         help="Minimum ChArUco corners to accept capture")
-    parser.add_argument("--reproj_max_px", type=float, default=2.0,
-                        help="Max reprojection error to accept")
 
     parser.add_argument("--show", action="store_true")
     parser.add_argument("--save_depth", action="store_true")
@@ -227,13 +263,11 @@ def main():
             print(f"[WARN] ChArUco estimate failed: {e}")
             return False, None, None, 0, None
 
-    # ArUco cube target (for fixed cameras)
-    cube = None
-    if args.also_detect_cube:
-        cube_cfg = CubeConfig()
-        cube = ArucoCubeTarget(cube_cfg)
-        print(f"[INFO] ArUco cube: side={cube_cfg.cube_side_m*1000:.0f}mm, "
-              f"marker={cube_cfg.marker_size_m*1000:.0f}mm")
+    # ArUco cube target (gripper always detects cube + fixed cameras when enabled)
+    cube_cfg = CubeConfig()
+    cube = ArucoCubeTarget(cube_cfg)
+    print(f"[INFO] ArUco cube: side={cube_cfg.cube_side_m*1000:.0f}mm, "
+          f"marker={cube_cfg.marker_size_m*1000:.0f}mm")
 
     # Meta
     meta = {
@@ -327,13 +361,7 @@ def main():
             tile_h, tile_w = color.shape[:2]
 
             if ci == gi:
-                ok, rvec, tvec, n_corners, reproj = safe_estimate_charuco(charuco, color, K, D)
-                ann = annotate_charuco(
-                    color, K, D, ci, n_corners,
-                    rvec if ok else None,
-                    tvec if ok else None,
-                    reproj
-                )
+                ann = annotate_gripper(color, K, D, ci, charuco, cube)
                 tiles.append(ann)
             elif cube is not None and ci in K_map:
                 # Fixed camera: ArUco cube detection
@@ -406,7 +434,12 @@ def main():
                     sock.sendall(resp.encode("utf-8"))
                     continue
 
-                ok, rvec, tvec, n_corners, reproj = charuco.estimate_pose(color, K, D)
+                # --- ChArUco detection (gripper camera) ---
+                ch_corners, ch_ids, n_corners, _, _ = charuco.detect(color)
+                ok, rvec, tvec = False, None, None
+                reproj = None
+                if ch_corners is not None and n_corners >= 4:
+                    ok, rvec, tvec, n_corners, reproj = safe_estimate_charuco(charuco, color, K, D)
 
                 if not ok or n_corners < args.min_corners:
                     print(f"[SKIP] Not enough corners: {n_corners} (min={args.min_corners})")
@@ -414,25 +447,17 @@ def main():
                     sock.sendall(resp.encode("utf-8"))
                     continue
 
-                ok, rvec, tvec, n_corners, reproj = safe_estimate_charuco(charuco, color, K, D)
-
-                if not ok or n_corners < args.min_corners:
-                    print(f"[SKIP] Not enough corners: {n_corners} (min={args.min_corners})")
-                    resp = json.dumps({"action": "captured", "status": "skipped"})
-                    sock.sendall(resp.encode("utf-8"))
-                    continue
-
-                if reproj is None:
-                    print("[SKIP] Reprojection error unavailable")
-                    resp = json.dumps({"action": "captured", "status": "skipped"})
-                    sock.sendall(resp.encode("utf-8"))
-                    continue
-
-                if reproj > args.reproj_max_px:
-                    print(f"[SKIP] Reproj too high: {reproj:.2f}px (max={args.reproj_max_px})")
-                    resp = json.dumps({"action": "captured", "status": "skipped"})
-                    sock.sendall(resp.encode("utf-8"))
-                    continue
+                # --- ArUco cube detection (gripper camera) ---
+                cu_corners, cu_ids = cube.detect(color)
+                cu_ok, cu_rvec, cu_tvec, cu_reproj = False, None, None, None
+                n_cube = 0 if cu_ids is None else len(cu_ids)
+                if cu_ids is not None and n_cube >= 1:
+                    pnp_ok, rv, tv, used_ids, c_reproj = cube.solve_pnp_cube(
+                        color, K, D, use_ransac=False, min_markers=1,
+                        reproj_thr_mean_px=6.0, return_reproj=True,
+                    )
+                    if pnp_ok:
+                        cu_ok, cu_rvec, cu_tvec, cu_reproj = True, rv, tv, c_reproj
 
                 # Save image
                 fid = int(event_id)
@@ -445,7 +470,10 @@ def main():
                     cv2.imwrite(os.path.join(root, depth_rel), depth)
 
                 # Save annotated image
-                ann = annotate_charuco(color, charuco, K, D, gi, n_corners, rvec, tvec, reproj)
+                charuco_result = (ok, rvec, tvec, n_corners, reproj, ch_corners, ch_ids)
+                cube_result = (cu_ok, cu_rvec, cu_tvec, cu_corners, cu_ids)
+                ann = annotate_gripper(color, K, D, gi, charuco, cube,
+                                       charuco_result=charuco_result, cube_result=cube_result)
                 ann_rel = f"cam{gi}/annotated_{fid:05d}.jpg"
                 cv2.imwrite(os.path.join(root, ann_rel), ann)
 
@@ -458,20 +486,37 @@ def main():
                     T_base_gripper = euler_deg_to_matrix(*capture_tcp)
 
                 # Record
-                cap_rec = {
-                    "event_id": fid,
-                    "pose_index": pose_idx,
-                    "saved": True,
-                    "gripper": {
-                        "rgb_path": rgb_rel,
-                        "depth_path": depth_rel,
-                        "annotated_path": ann_rel,
+                gripper_rec = {
+                    "rgb_path": rgb_rel,
+                    "depth_path": depth_rel,
+                    "annotated_path": ann_rel,
+                    "charuco": {
                         "n_corners": n_corners,
                         "reproj_error_px": reproj,
                         "rvec": rvec.flatten().tolist(),
                         "tvec": tvec.flatten().tolist(),
                         "T_cam_board_4x4": T_cam_board.tolist(),
                     },
+                }
+
+                # Gripper cube detection result
+                if cu_ok and cu_rvec is not None:
+                    T_cam_cube = rodrigues_to_Rt(cu_rvec, cu_tvec)
+                    gripper_rec["cube_pnp"] = {
+                        "ok": True,
+                        "n_markers": n_cube,
+                        "marker_ids": [int(x) for x in np.array(cu_ids).flatten()],
+                        "reproj_mean_px": cu_reproj["err_mean"] if cu_reproj else None,
+                        "rvec": cu_rvec.flatten().tolist(),
+                        "tvec": cu_tvec.flatten().tolist(),
+                        "T_cam_cube_4x4": T_cam_cube.tolist(),
+                    }
+
+                cap_rec = {
+                    "event_id": fid,
+                    "pose_index": pose_idx,
+                    "saved": True,
+                    "gripper": gripper_rec,
                     "fixed_cams": {},
                 }
 
@@ -481,7 +526,7 @@ def main():
                     cap_rec["T_base_gripper_4x4"] = T_base_gripper.tolist()
 
                 # --- Fixed cameras: detect ArUco cube ---
-                if args.also_detect_cube and cube is not None:
+                if args.also_detect_cube:
                     for ci in fixed_cam_ids:
                         if ci not in cams or ci not in K_map:
                             continue
@@ -543,7 +588,9 @@ def main():
                         parts.append(f"cam{ci_str}:{n}mkr{'✓' if has_pnp else ''}")
                     fixed_summary = " | fixed: " + " ".join(parts)
 
-                print(f"[SAVE] event={fid} corners={n_corners} reproj={reproj:.3f}px{fixed_summary}")
+                reproj_txt = f"reproj={reproj:.3f}px" if reproj is not None else "reproj=N/A"
+                cube_txt = f"cube={n_cube}mkr" + ("✓" if cu_ok else "")
+                print(f"[SAVE] event={fid} corners={n_corners} {reproj_txt} {cube_txt}{fixed_summary}")
                 event_id += 1
 
                 resp = json.dumps({"action": "captured", "status": "success"})

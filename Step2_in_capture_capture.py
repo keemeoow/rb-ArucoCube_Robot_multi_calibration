@@ -1,24 +1,26 @@
 # Step2_in_capture_capture.py
 """
-Step 2B: ChArUco board capture for eye-in-hand (gripper camera) calibration.
+Step 2: hand-in-eye (그리퍼 카메라) 캘리브레이션을 위한 ChArUco 보드 촬영.
+  --also_detect_cube 옵션 시, 고정 카메라에서 ArUco 큐브도 동시 검출.
 
-Workflow:
-  1. Place ChArUco board flat on table (fixed position)
-  2. Robot moves gripper camera to various poses above the board
-  3. At each pose: capture image + record robot TCP
-  4. Requires ROTATION DIVERSITY for accurate hand-eye calibration
+파이프라인:
+  1. ChArUco 보드를 테이블에 고정 배치 (+ ArUco 큐브도 옆에 배치)
+  2. 로봇이 그리퍼 카메라를 보드 위 다양한 자세로 이동
+  3. 각 자세에서: 이미지 촬영 + 로봇 TCP 기록
+  4. 정확한 Hand-eye 캘리브레이션을 위해 회전 다양성 필수
 
-Usage:
-  Server (robot controller):
+실행 명령어:
+  서버 (로봇 컨트롤러):
     python robot_calb.py
 
-  Client (pc):
+  클라이언트 (컴퓨터):
     python Step2_in_capture_capture.py \
       --root_folder ./data/charuco_session \
       --intrinsics_dir ./intrinsics \
       --gripper_cam_idx 2 \
       --robot_ip 192.168.0.23 --robot_port 12348 \
-      --show
+      --show \
+      --also_detect_cube
 """
 
 import os
@@ -193,7 +195,8 @@ def main():
     charuco = CharucoTarget(charuco_cfg)
     print(f"[INFO] ChArUco board: {charuco_cfg.squares_x}x{charuco_cfg.squares_y}, "
           f"square={charuco_cfg.square_length_m*1000:.0f}mm, "
-          f"marker={charuco_cfg.marker_length_m*1000:.0f}mm")
+          f"marker={charuco_cfg.marker_length_m*1000:.0f}mm, "
+          f"marker_id_start={charuco_cfg.marker_id_start}")
 
     # ArUco cube target (for fixed cameras)
     cube = None
@@ -214,6 +217,7 @@ def main():
             "square_length_m": charuco_cfg.square_length_m,
             "marker_length_m": charuco_cfg.marker_length_m,
             "dictionary": charuco_cfg.dictionary_name,
+            "marker_id_start": charuco_cfg.marker_id_start,
         },
         "captures": [],
     }

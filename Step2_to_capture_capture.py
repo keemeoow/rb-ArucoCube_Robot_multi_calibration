@@ -1,21 +1,21 @@
 # Step2_to_capture_capture.py
 """
-Step 2 v2: Place-and-Capture calibration with gripper camera + fixed cameras.
+Step 2 (hand-to-eye): 그리퍼 카메라 + 고정 카메라를 이용한 Place-and-Capture 캘리브레이션.
 
-Workflow:
-  1. Robot places ArUco cube at a position on the workspace
-  2. Robot moves up so gripper camera can see the cube from above
-  3. ALL cameras (gripper + fixed) capture simultaneously
-  4. Per-marker and full-cube PnP is computed and saved
-  5. Robot picks up cube, moves to next position
-  6. Repeat
+파이프라인:
+  1. 로봇이 ArUco 큐브를 작업 공간의 특정 위치에 놓음
+  2. 로봇이 위로 이동하여 그리퍼 카메라가 큐브를 위에서 볼 수 있게 함
+  3. 모든 카메라 (그리퍼 + 고정)가 동시에 촬영
+  4. 마커별 및 큐브 전체 PnP를 계산하고 저장
+  5. 로봇이 큐브를 집어 다음 위치로 이동
+  6. 반복
 
-This enables accurate transformation matrix computation using:
-  - Per-marker camera-to-cube transforms (even 1 marker is useful)
-  - Robot kinematics (capture TCP pose = gripper camera position)
-  - Multi-view constraints across gripper + fixed cameras
+정확한 변환 행렬 계산을 위해 다음을 활용:
+  - 마커별 카메라-큐브 변환 (마커 1개만으로도 유효)
+  - 로봇 기구학 (촬영 TCP 포즈 = 그리퍼 카메라 위치)
+  - 그리퍼 + 고정 카메라 간 다시점 제약 조건
 
-Usage:
+실행 명령어:
   python Step2_to_capture_capture.py \
     --root_folder ./data/session_v2 \
     --intrinsics_dir ./intrinsics \
@@ -51,7 +51,7 @@ def ensure_dir(p: str) -> str:
 
 
 def annotate_image(bgr, cube, cam_idx, is_gripper, n_markers, ids, corners):
-    """Draw marker overlay and info text on image."""
+    """마커 오버레이 및 정보 텍스트를 이미지에 그림."""
     out = bgr.copy()
     if ids is not None and len(corners) > 0:
         try:
@@ -76,7 +76,7 @@ def annotate_image(bgr, cube, cam_idx, is_gripper, n_markers, ids, corners):
 
 
 def make_quad_image(frames_dict, cam_order, cube, gripper_cam_idx):
-    """Create 2x2 quad image from 4 cameras with marker overlay."""
+    """4개 카메라로부터 마커 오버레이가 포함된 2x2 분할 이미지를 생성."""
     tiles = []
     tile_h, tile_w = None, None
 
@@ -123,7 +123,7 @@ def load_device_map(intr_dir: str):
 
 
 def load_intrinsics(intr_dir: str, cam_idx: int) -> Tuple[np.ndarray, np.ndarray]:
-    """Load camera intrinsic matrix K and distortion coefficients D."""
+    """카메라 내부 파라미터 행렬 K와 왜곡 계수 D를 로드."""
     p = os.path.join(intr_dir, f"cam{cam_idx}.npz")
     if not os.path.exists(p):
         raise FileNotFoundError(f"Intrinsics not found: {p}")
@@ -141,10 +141,10 @@ def estimate_per_marker_poses(
     D: np.ndarray,
 ) -> List[dict]:
     """
-    Estimate individual marker poses using known cube geometry.
-    Even a single marker gives a camera-to-cube transform estimate.
+    알려진 큐브 형상을 이용하여 개별 마커의 포즈를 추정.
+    마커 1개만으로도 카메라-큐브 변환을 추정할 수 있음.
 
-    Returns list of per-marker results with rvec, tvec, reprojection error.
+    마커별 결과 리스트 (rvec, tvec, 재투영 오차 포함)를 반환.
     """
     results = []
     if ids is None or len(ids) == 0:
@@ -155,10 +155,10 @@ def estimate_per_marker_poses(
         if mid not in cube.cfg.id_to_face:
             continue
 
-        obj_pts = cube.model.marker_corners_in_rig(mid)  # (4, 3) in cube frame
+        obj_pts = cube.model.marker_corners_in_rig(mid)  # (4, 3) 큐브 좌표계 기준
         img_pts = c.reshape(4, 2).astype(np.float64)
 
-        # Corner reorder for marker 3 (matches aruco_cube.py convention)
+        # 마커 3번의 코너 순서 재정렬 (aruco_cube.py 규칙에 맞춤)
         if mid == 3:
             img_pts = img_pts[[1, 2, 3, 0]]
 
@@ -172,11 +172,11 @@ def estimate_per_marker_poses(
         if not ok:
             continue
 
-        # Reprojection error
+        # 재투영 오차 계산
         proj, _ = cv2.projectPoints(obj_pts, rvec, tvec, K, D)
         err = np.linalg.norm(proj.reshape(-1, 2) - img_pts, axis=1)
 
-        # Camera-to-cube transform from this single marker
+        # 단일 마커로부터 카메라-큐브 변환 행렬 생성
         T_cam_cube = rodrigues_to_Rt(rvec, tvec)
 
         results.append({
@@ -200,24 +200,24 @@ def main():
     parser.add_argument("--root_folder", required=True)
     parser.add_argument("--intrinsics_dir", required=True)
 
-    # Stream config
+    # 스트림 설정
     parser.add_argument("--fps", type=int, default=15)
     parser.add_argument("--width", type=int, default=640)
     parser.add_argument("--height", type=int, default=480)
 
-    # Detection
+    # 검출 설정
     parser.add_argument("--min_markers", type=int, default=1,
                         help="Min markers per camera to count as 'cube visible'")
     parser.add_argument("--min_cams_with_cube", type=int, default=1,
                         help="Min cameras that must see cube to accept capture")
 
-    # Depth
+    # 뎁스 저장
     parser.add_argument("--save_depth", action="store_true")
 
-    # Display
+    # 화면 표시
     parser.add_argument("--show", action="store_true")
 
-    # Robot mode
+    # 로봇 모드
     parser.add_argument("--use_robot", action="store_true")
     parser.add_argument("--robot_ip", type=str, default="192.168.0.23")
     parser.add_argument("--robot_port", type=int, default=12348)
@@ -233,7 +233,7 @@ def main():
     root = ensure_dir(args.root_folder)
     intr_dir = args.intrinsics_dir
 
-    # ─── Load device map ───
+    # ─── 디바이스 맵 로드 ───
     serial_to_idx, gripper_cam_idx, _ = load_device_map(intr_dir)
     devs = RealSenseCamera.list_devices()
     if len(devs) == 0:
@@ -274,7 +274,7 @@ def main():
 
     print(f"[INFO] Fixed cameras: {n_fixed}, Gripper cameras: {n_gripper}")
 
-    # ─── Load intrinsics for PnP ───
+    # ─── PnP용 내부 파라미터 로드 ───
     cam_intrinsics: Dict[int, Tuple[np.ndarray, np.ndarray]] = {}
     for ci, _ in idx_serial_pairs:
         try:
@@ -284,7 +284,7 @@ def main():
         except FileNotFoundError:
             print(f"[WARN] No intrinsics for cam{ci}. Per-marker PnP will be skipped.")
 
-    # ─── Start cameras ───
+    # ─── 카메라 시작 ───
     cams: Dict[int, RealSenseCamera] = {}
     for ci, serial in idx_serial_pairs:
         cam = RealSenseCamera(
@@ -304,20 +304,20 @@ def main():
     cfg = CubeConfig()
     cube = ArucoCubeTarget(cfg)
 
-    # ─── Load waypoints ───
+    # ─── 웨이포인트 로드 ───
     waypoint_list: List[dict] = []
     if args.waypoint_file:
         with open(args.waypoint_file, "r") as f:
             waypoint_list = json.load(f)
         print(f"[INFO] Loaded {len(waypoint_list)} waypoints from {args.waypoint_file}")
 
-    # ─── Robot client ───
+    # ─── 로봇 클라이언트 ───
     robot_client: Optional[PlaceCaptureClient] = None
     if args.use_robot and not args.manual_robot:
         robot_client = PlaceCaptureClient(args.robot_ip, args.robot_port)
         robot_client.connect()
 
-    # ─── Meta ───
+    # ─── 메타 데이터 ───
     meta = {
         "root_folder": os.path.abspath(root),
         "gripper_cam_idx": gripper_cam_idx,
@@ -340,10 +340,10 @@ def main():
         place_pose_6dof: Optional[List[float]] = None,
         pose_index: Optional[int] = None,
     ) -> bool:
-        """Capture from ALL cameras with per-marker pose estimation."""
+        """모든 카메라에서 마커별 포즈 추정과 함께 촬영."""
         nonlocal event_id
 
-        # Wait for settle
+        # 안정화 대기
         if args.settle_time > 0 and args.use_robot:
             time.sleep(args.settle_time)
 
@@ -361,16 +361,16 @@ def main():
             if ok:
                 cams_with_cube += 1
 
-            # Per-marker PnP
+            # 마커별 PnP
             marker_poses = []
             cube_pnp = None
             if ci in cam_intrinsics and ids is not None and len(ids) > 0:
                 K, D = cam_intrinsics[ci]
 
-                # Individual marker pose estimation
+                # 개별 마커 포즈 추정
                 marker_poses = estimate_per_marker_poses(cube, corners, ids, K, D)
 
-                # Full cube PnP (uses all visible markers)
+                # 큐브 전체 PnP (보이는 모든 마커 사용)
                 pnp_ok, rvec, tvec, used_ids, reproj = cube.solve_pnp_cube(
                     color, K, D,
                     use_ransac=True,
@@ -405,7 +405,7 @@ def main():
             print(f"[SKIP] Only {cams_with_cube}/{args.min_cams_with_cube} cams see cube.")
             return False
 
-        # ─── Save ───
+        # ─── 저장 ───
         fid = int(event_id)
         cap_rec: dict = {
             "event_id": fid,
@@ -413,9 +413,9 @@ def main():
             "cams": {},
         }
 
-        # Robot pose data
-        # capture_pose = current robot TCP when images are taken
-        # Step3 looks for: robot_pose_6dof / robot_pose_matrix_4x4
+        # 로봇 포즈 데이터
+        # capture_pose = 이미지 촬영 시 현재 로봇 TCP
+        # Step3에서 참조: robot_pose_6dof / robot_pose_matrix_4x4
         robot_tcp = capture_pose_6dof or place_pose_6dof
         if robot_tcp is not None:
             tcp_f = [float(x) for x in robot_tcp]
@@ -469,17 +469,17 @@ def main():
         with open(meta_path, "w") as f:
             json.dump(meta, f, indent=2)
 
-        # Save 2x2 quad image with marker overlay
+        # 마커 오버레이가 포함된 2x2 분할 이미지 저장
         quad = make_quad_image(frames, cam_order, cube, gripper_cam_idx)
         quad_path = os.path.join(quad_dir, f"frame_{fid:05d}.jpg")
         cv2.imwrite(quad_path, quad)
 
-        # Show quad image
+        # 분할 이미지 표시
         if args.show:
             cv2.imshow("Capture Quad", quad)
             cv2.waitKey(500)
 
-        # Print summary
+        # 요약 출력
         cam_summary = []
         for ci in sorted(frames.keys()):
             fr = frames[ci]
@@ -492,7 +492,7 @@ def main():
 
     try:
         if args.use_robot and args.manual_robot:
-            # ─── Manual Robot mode (with robot_calb.py server) ───
+            # ─── 수동 로봇 모드 (robot_calb.py 서버 사용) ───
             print("[MODE] Manual Robot - waiting for server capture commands")
             print("[INFO] Move robot on server side, press 'c' to capture\n")
 

@@ -1,24 +1,25 @@
 # Step3_in_calibration.py
 """
-Step 3B: Eye-in-hand calibration using ChArUco board captures.
+Step 3: hand-in-eye 캘리브레이션 (ChArUco 보드 촬영 데이터 활용).
+  그리퍼-카메라 변환행렬 (T_gripper_cam)을 계산.
 
-Solves for T_gripper_cam using:
-  - Robot TCP poses (T_base_gripper) from each capture
-  - ChArUco board poses (T_cam_board) from each capture
-  - cv2.calibrateHandEye (AX=XB)
+풀이 방법:
+  - 각 촬영의 로봇 TCP 포즈 (T_base_gripper)
+  - 각 촬영의 ChArUco 보드 포즈 (T_cam_board)
+  - cv2.calibrateHandEye (AX=XB) 로 T_gripper_cam 산출
 
-Requires rotation diversity in robot poses.
+주의: 로봇 포즈에 회전 다양성이 필수.
 
-Usage:
+실행 명령어:
   python Step3_in_calibration.py \
     --charuco_folder ./data/charuco_session \
     --intrinsics_dir ./intrinsics \
     --gripper_cam_idx 2
 
-  # Combine with cube calibration:
+  # hand-in-eye 결과와 병합:
   python Step3_in_calibration.py \
     --charuco_folder ./data/charuco_session \
-    --cube_calib_dir ./data/session_manual/calib_out_direct \
+    --cube_calib_dir ./data/session_cube/calib_out_kinematic \
     --intrinsics_dir ./intrinsics \
     --gripper_cam_idx 2
 """

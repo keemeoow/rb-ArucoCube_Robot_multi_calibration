@@ -1,9 +1,9 @@
 # charuco_utils.py
 """
-ChArUco board detection and pose estimation utilities.
-Used for eye-in-hand (gripper camera) calibration.
+ChArUco 보드 검출 및 포즈 추정 유틸리티.
+Eye-in-hand (그리퍼 카메라) 캘리브레이션에 사용.
 
-Board spec: 7x11, square=22mm, marker=16mm, DICT_4X4_250
+보드 사양: 7x11, 체커 22mm, 마커 16mm, DICT_4X4_250
 """
 
 import cv2
@@ -30,24 +30,9 @@ class CharucoTarget:
         else:
             self.dictionary = cv2.aruco.Dictionary_get(dict_id)
 
-        # Create CharucoBoard
-        if hasattr(cv2.aruco, "CharucoBoard"):
-            # OpenCV 4.7+
-            self.board = cv2.aruco.CharucoBoard(
-                (self.cfg.squares_x, self.cfg.squares_y),
-                self.cfg.square_length_m,
-                self.cfg.marker_length_m,
-                self.dictionary,
-            )
-        else:
-            # Older OpenCV
-            self.board = cv2.aruco.CharucoBoard_create(
-                self.cfg.squares_x,
-                self.cfg.squares_y,
-                self.cfg.square_length_m,
-                self.cfg.marker_length_m,
-                self.dictionary,
-            )
+        self.board_ids = self._make_board_ids()
+        self.board = self._create_charuco_board()
+        self.board_id_set = set(int(x) for x in self.board_ids.tolist())
 
         # Detector parameters
         if hasattr(cv2.aruco, "DetectorParameters"):
@@ -60,6 +45,87 @@ class CharucoTarget:
         if hasattr(cv2.aruco, "ArucoDetector"):
             self.detector = cv2.aruco.ArucoDetector(self.dictionary, self.det_params)
 
+    def _make_board_ids(self) -> np.ndarray:
+        """Build sequential marker IDs for this board."""
+        start_id = int(self.cfg.marker_id_start)
+        if start_id < 0:
+            raise ValueError(f"marker_id_start must be >= 0, got {start_id}")
+
+        num_markers = (int(self.cfg.squares_x) * int(self.cfg.squares_y)) // 2
+        if num_markers <= 0:
+            raise ValueError("Invalid board size; number of markers must be > 0")
+
+        board_ids = np.arange(start_id, start_id + num_markers, dtype=np.int32)
+        dict_size = int(self.dictionary.bytesList.shape[0])
+        if int(board_ids[-1]) >= dict_size:
+            raise ValueError(
+                f"ChArUco marker IDs [{board_ids[0]}..{board_ids[-1]}] exceed "
+                f"dictionary capacity ({dict_size} markers)"
+            )
+        return board_ids
+
+    def _create_charuco_board(self):
+        """Create ChArUco board with explicit marker IDs when supported."""
+        if hasattr(cv2.aruco, "CharucoBoard"):
+            try:
+                return cv2.aruco.CharucoBoard(
+                    (self.cfg.squares_x, self.cfg.squares_y),
+                    self.cfg.square_length_m,
+                    self.cfg.marker_length_m,
+                    self.dictionary,
+                    self.board_ids,
+                )
+            except TypeError:
+                board = cv2.aruco.CharucoBoard(
+                    (self.cfg.squares_x, self.cfg.squares_y),
+                    self.cfg.square_length_m,
+                    self.cfg.marker_length_m,
+                    self.dictionary,
+                )
+        else:
+            try:
+                board = cv2.aruco.CharucoBoard_create(
+                    self.cfg.squares_x,
+                    self.cfg.squares_y,
+                    self.cfg.square_length_m,
+                    self.cfg.marker_length_m,
+                    self.dictionary,
+                    self.board_ids,
+                )
+            except TypeError:
+                board = cv2.aruco.CharucoBoard_create(
+                    self.cfg.squares_x,
+                    self.cfg.squares_y,
+                    self.cfg.square_length_m,
+                    self.cfg.marker_length_m,
+                    self.dictionary,
+                )
+
+        if hasattr(board, "setIds"):
+            board.setIds(self.board_ids)
+            return board
+
+        if int(self.cfg.marker_id_start) != 0:
+            raise RuntimeError(
+                "This OpenCV build does not support custom ChArUco marker IDs. "
+                "Please use OpenCV with CharucoBoard ids support."
+            )
+        return board
+
+    def _filter_board_markers(self, marker_corners, marker_ids):
+        """Keep only ArUco markers that belong to this ChArUco board."""
+        if marker_ids is None or len(marker_ids) == 0:
+            return None, None
+
+        ids_flat = np.asarray(marker_ids).reshape(-1)
+        keep_idx = [i for i, mid in enumerate(ids_flat) if int(mid) in self.board_id_set]
+        if not keep_idx:
+            return None, None
+
+        kept_corners = [marker_corners[i] for i in keep_idx]
+        kept_ids = np.array([int(ids_flat[i]) for i in keep_idx], dtype=np.int32).reshape(-1, 1)
+        return kept_corners, kept_ids
+
     def detect(self, bgr: np.ndarray):
         """
         Detect ChArUco corners in image.
@@ -68,8 +134,8 @@ class CharucoTarget:
             charuco_corners: (N, 1, 2) array of corner positions, or None
             charuco_ids: (N, 1) array of corner IDs, or None
             n_corners: number of detected corners
-            marker_corners: raw ArUco marker corners
-            marker_ids: raw ArUco marker IDs
+            marker_corners: board-filtered ArUco marker corners
+            marker_ids: board-filtered ArUco marker IDs
         """
         gray = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY)
 
@@ -81,6 +147,7 @@ class CharucoTarget:
                 gray, self.dictionary, parameters=self.det_params
             )
 
+        marker_corners, marker_ids = self._filter_board_markers(marker_corners, marker_ids)
         if marker_ids is None or len(marker_ids) == 0:
             return None, None, 0, None, None
 

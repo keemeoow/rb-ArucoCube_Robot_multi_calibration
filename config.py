@@ -1,7 +1,7 @@
 # config.py
 """
-Shared configuration for the unified calibration pipeline.
-Edit this file to match your hardware setup.
+캘리브레이션 파이프라인 공통 설정.
+실제 하드웨어에 맞게 값을 수정하여 사용.
 """
 
 from dataclasses import dataclass, field
@@ -37,9 +37,10 @@ class CharucoBoardConfig:
     """ChArUco board target configuration (for eye-in-hand / gripper camera)."""
     squares_x: int = 11           # number of squares in X
     squares_y: int = 7            # number of squares in Y
-    square_length_m: float = 0.022   # checker square side (m) - 22mm
-    marker_length_m: float = 0.016   # ArUco marker side (m) - 16mm
+    square_length_m: float = 0.025   # checker square side (m) - 25mm
+    marker_length_m: float = 0.018   # ArUco marker side (m) - 18mm
     dictionary_name: str = "DICT_4X4_250"  # 7x11 board needs ~39 markers
+    marker_id_start: int = 5      # reserve cube IDs 0~4
 
 
 @dataclass

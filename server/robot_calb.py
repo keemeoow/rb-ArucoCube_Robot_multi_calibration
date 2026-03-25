@@ -1,42 +1,79 @@
 """
-Teach-and-Capture Server:
-  setting.py 스타일로 로봇을 수동 조작하면서,
-  원하는 위치에서 큐브를 내려놓고 위로 올라가서 촬영하는 사이클.
+로봇 캘리브레이션 서버 (Teach-and-Capture):
+  수동 조작으로 로봇을 이동/회전하면서 촬영하는 서버.
 
-Commands:
-  --- Movement ---
-  p <axis>,<value>  : TCP move (e.g., "p z,50" or "p z,-10")
-  j <axis>,<value>  : Joint move (e.g., "j d1,10")
-  show              : Show current TCP pose & joints
-  speed <0-100>     : Set speed override
+명령어:
+  --- 이동 ---
+  p <축>,<값>       : TCP 이동 (예: "p z,50", "p rz,15")
+  j <축>,<값>       : 관절 이동 (예: "j d1,10")
+  show              : 현재 TCP 포즈 및 관절 값 표시
+  speed <0-100>     : 속도 설정 (클수록 빠름)
 
-  --- Place-Capture Cycle ---
-  setz              : Save current z as table/place height
-  up <mm>           : Set capture height offset (default: 200)
-  cycle             : Full cycle: gripper open -> z up -> capture -> z down -> gripper close
-  c                 : Capture only (no gripper/move, just trigger cameras)
+  --- 촬영 ---
+  scan              : 자동 사이클: 놓기 -> 촬영 -> 집기
+  scan ry,15 rz,-20 : 자동 사이클 + 회전 촬영 추가
+  c                 : 현재 위치에서 촬영만
+  co                : 큐브 놓기 (그리퍼 열기 -> z +22mm)
+  cc                : 큐브 집기 (z -22mm -> 그리퍼 닫기)
 
-  --- Manual gripper ---
-  go                : Gripper open (manual: 3s wait)
-  gc                : Gripper close (manual: 3s wait)
+  --- 설정 ---
+  setz              : 현재 z를 바닥 높이로 저장
+  setz <값>         : 바닥 높이 직접 지정
+  up <mm>           : 촬영 높이 오프셋 변경 (기본: 200)
 
-  --- Quit ---
-  q                 : Quit
+  --- 그리퍼 ---
+  go                : 그리퍼 열기
+  gc                : 그리퍼 닫기
 
-Workflow:
-  1. Move robot to where cube touches table -> "setz"
-  2. Move to next XY position -> "cycle" (auto: open, up, capture, down, close)
-  3. Repeat 2 for different positions
+  --- 되돌리기 ---
+  undo              : 마지막 이동 1회 되돌리기
+  undo <N>          : 마지막 N회 되돌리기
+  undo all          : 전체 되돌리기
 
-Usage:
-  [Robot]    python robot_calb.py
-  [PC] python Step2_to_capture_capture.py \
-               --root_folder ./data/session_manual \
-               --intrinsics_dir ./intrinsics \
-               --use_robot --manual_robot \
-               --robot_ip 192.168.0.23 --robot_port 12348 \
-               --save_depth --show --min_markers 1 --min_cams_with_cube 1
-               
+  --- 종료 ---
+  q                 : 종료
+
+──────────────────────────────────────────────────────────────
+Phase 2a — Cube Zone (큐브를 쥔 채로 촬영, hand-to-eye용)
+──────────────────────────────────────────────────────────────
+  큐브를 그리퍼로 쥔 상태에서 다양한 자세로 이동하며 촬영.
+  고정 카메라들이 큐브의 여러 면을 관측 → T_base_fixedcam 추정.
+
+  플로우:
+    1. 큐브를 쥐고 원하는 위치로 이동
+    2. "c" → 촬영 (쥔 채로, 고정 카메라가 큐브 관측)
+    3. "p rz,30" 등으로 자세 변경 → "c" 반복
+    4. 다른 위치로 이동 후 반복
+
+  [로봇]    python robot_calb.py
+  [컴퓨터]  python Step2_to_capture_capture.py \
+              --root_folder ./data/cube_session \
+              --intrinsics_dir ./intrinsics \
+              --gripper_cam_idx 2 \
+              --robot_ip 192.168.0.23 --robot_port 12348 \
+              --show
+
+──────────────────────────────────────────────────────────────
+Phase 2b — Bridge Zone (보드 옆에 큐브를 놓고 촬영, 두 캘리브 연결용)
+──────────────────────────────────────────────────────────────
+  큐브를 보드 옆에 놓고 그리퍼 카메라를 높이 올려서
+  보드 + 큐브를 동시 검출 → T_board_cube 획득.
+  고정 카메라도 큐브를 관측 → 두 캘리브레이션을 연결하는 구속 조건.
+
+  플로우:
+    1. 큐브를 잡고 보드 옆 위치로 이동
+    2. "scan" → 자동으로 놓기/촬영/집기
+       (그리퍼 카메라가 보드+큐브 동시 촬영, 고정 카메라가 큐브 촬영)
+    3. 다른 위치로 이동 후 반복
+
+  [로봇]    python robot_calb.py
+  [컴퓨터]  python Step2_in_capture_capture.py \
+              --root_folder ./data/bridge_session \
+              --intrinsics_dir ./intrinsics \
+              --gripper_cam_idx 2 \
+              --robot_ip 192.168.0.23 --robot_port 12348 \
+              --show --also_detect_cube
+
 """
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
@@ -305,15 +342,16 @@ def main():
         print '  show              : Show current pose'
         print '  speed <0-100>     : Set speed'
         print ''
-        print '--- Place-Capture Cycle ---'
-        print '  setz              : Save current z as place height'
-        print '  up <mm>           : Set capture z offset (default: {:.0f})'.format(capture_z_offset)
-        print '  cycle             : Full: open -> up -> capture -> down -> close'
+        print '--- Capture ---'
         print '  c                 : Capture only (just trigger cameras)'
         print ''
-        print '--- Cube Place/Pickup (c1/c2) ---'
-        print '  c1                : Place cube: open gripper -> z +22mm'
-        print '  c2                : Pickup cube: z -22mm -> close gripper'
+        print '--- Cube Place/Pickup (co/cc) ---'
+        print '  co                : Place cube: open gripper -> z +22mm'
+        print '  cc                : Pickup cube: z -22mm -> close gripper'
+        print ''
+        print '--- Settings ---'
+        print '  setz              : Save current z as place height'
+        print '  up <mm>           : Set capture z offset (default: {:.0f})'.format(capture_z_offset)
         print ''
         print '--- Gripper ---'
         print '  go                : Gripper open (manual wait)'
@@ -326,7 +364,7 @@ def main():
         print '=========================================='
         print ''
         print '*** Grip: cube center (x,y), z = cube top + 2mm'
-        print '*** c1 = place cube (open + z+22), c2 = pickup (z-22 + close)'
+        print '*** co = place cube (open + z+22), cc = pickup (z-22 + close)'
         print ''
 
         show_pose()
@@ -405,62 +443,10 @@ def main():
             elif cmd_lower == 'gc':
                 gripper_close()
 
-            # ─── CYCLE: full place-capture-pickup ───
-            elif cmd_lower == 'cycle':
-                if place_z is None:
-                    print '[ERROR] place_z not set! Move to table height and type "setz" first.'
-                    continue
-
-                current_tcp = get_tcp()
-                capture_z = place_z + capture_z_offset
-
-                print ''
-                print '====== CYCLE START (#{}) ======'.format(capture_count)
-                print '  Current z: {:.1f}'.format(current_tcp[2])
-                print '  Place z:   {:.1f}'.format(place_z)
-                print '  Capture z: {:.1f} (+{:.0f})'.format(capture_z, capture_z_offset)
-                print ''
-
-                # 1. Move down to place z (if not already there)
-                if abs(current_tcp[2] - place_z) > 1.0:
-                    print '--- 1/6: Moving down to place z ---'
-                    move_z_to(place_z)
-                else:
-                    print '--- 1/6: Already at place z ---'
-
-                # 2. Gripper open (release cube)
-                print '--- 2/6: Gripper open ---'
-                gripper_open()
-
-                # 3. Move up to capture z
-                print '--- 3/6: Moving up to capture z ---'
-                move_z_to(capture_z)
-                time.sleep(0.5)
-
-                # 4. Capture
-                print '--- 4/6: Capturing ---'
-                ok = do_capture(conn, capture_count, cube_center_6dof)
-                if not ok:
-                    break
-                capture_count += 1
-
-                # 5. Move down to place z
-                print '--- 5/6: Moving down to place z ---'
-                move_z_to(place_z)
-
-                # 6. Gripper close (grab cube)
-                print '--- 6/6: Gripper close ---'
-                gripper_close()
-
-                print '====== CYCLE DONE ======'.format()
-                print '  Total captures: {}'.format(capture_count)
-                print '  Move to next position, then type "cycle" again'
-                print ''
-
             # ─── SCAN: auto cycle with rotations ───
-            # scan                    : c1 → c → c2 (1 capture, no rotation)
-            # scan ry,15              : c1 → c → ry+15 → c → undo → c2
-            # scan ry,15 rz,-20      : c1 → c → ry+15 → c → undo → rz-20 → c → undo → c2
+            # scan                    : co → c → cc (1 capture, no rotation)
+            # scan ry,15              : co → c → ry+15 → c → undo → cc
+            # scan ry,15 rz,-20      : co → c → ry+15 → c → undo → rz-20 → c → undo → cc
             elif cmd_lower.startswith('scan'):
                 # Parse rotation arguments
                 rotations = []
@@ -528,10 +514,10 @@ def main():
                     break
                 capture_count += 1
 
-            # ─── C1: Place cube (open gripper -> z up 22mm) ───
-            elif cmd_lower == 'c1':
+            # ─── CO: Place cube (open gripper -> z up 22mm) ───
+            elif cmd_lower == 'co':
                 print ''
-                print '--- C1: Place cube ---'
+                print '--- CO: Place cube ---'
 
                 # Record grip TCP BEFORE opening (cube is still held)
                 grip_tcp = get_tcp()
@@ -548,24 +534,24 @@ def main():
                 move_history = []  # reset undo history after placing
                 print '--- 2/2: Moving z +{:.0f}mm ---'.format(CUBE_LIFT_Z)
                 move_z_offset(CUBE_LIFT_Z)
-                print '--- C1 done: cube placed, gripper above ---'
+                print '--- CO done: cube placed, gripper above ---'
                 print ''
 
-            # ─── C2: Pickup cube (z down 22mm -> close gripper) ───
-            elif cmd_lower == 'c2':
+            # ─── CC: Pickup cube (z down 22mm -> close gripper) ───
+            elif cmd_lower == 'cc':
                 print ''
-                print '--- C2: Pickup cube ---'
+                print '--- CC: Pickup cube ---'
                 print '--- 1/2: Moving z -{:.0f}mm ---'.format(CUBE_LIFT_Z)
                 move_z_offset(-CUBE_LIFT_Z)
                 print '--- 2/2: Gripper close ---'
                 gripper_close()
-                print '--- C2 done: cube grabbed ---'
+                print '--- CC done: cube grabbed ---'
                 print ''
 
             # ─── UNDO: reverse moves ───
             # undo      : reverse last 1 move
             # undo 3    : reverse last 3 moves (in reverse order)
-            # undo all  : reverse ALL moves since last c1/c/cycle
+            # undo all  : reverse ALL moves since last co/c
             elif cmd_lower.startswith('undo'):
                 if not move_history:
                     print 'Nothing to undo.'
@@ -623,7 +609,7 @@ def main():
                     print 'Error: {}. Usage: j <axis>,<value>'.format(e)
 
             else:
-                print 'Unknown: {}. (p/j/c/c1/c2/cycle/undo/setz/up/go/gc/show/speed/q)'.format(cmd)
+                print 'Unknown: {}. (p/j/c/co/cc/scan/undo/setz/up/go/gc/show/speed/q)'.format(cmd)
 
         print '\nTotal captures: {}'.format(capture_count)
 

@@ -1,21 +1,20 @@
 # Step3_to_calibration.py
 """
-Step 3 (Refined): Kinematics + ArUco cube unified calibration.
+Step 3: hand-to-eye 캘리브레이션 (로봇 기구학 + ArUco 큐브).
+  고정 카메라의 로봇 베이스 좌표계 변환행렬 (T_base_cam)을 계산.
 
-Compared to Step3_calibrate_all.py:
-  1) Uses absolute poses for cv2.calibrateHandEye (correct input convention).
-  2) Robust + weighted SE(3) averaging using reprojection confidence.
-  3) Supports robot poses from either:
-       - meta.json (robot_pose_matrix_4x4 / robot_pose_6dof)
-       - external robot_poses_file
-  4) Produces diagnostics for hand-eye consistency and per-transform stability.
+주요 기능:
+  1) cv2.calibrateHandEye에 절대 포즈 입력 (올바른 규약)
+  2) 재투영 신뢰도 기반 가중 SE(3) 평균 (로버스트)
+  3) 로봇 포즈 소스: meta.json 또는 외부 robot_poses_file
+  4) Hand-eye 일관성 및 변환 안정성 진단 출력
 
-Usage:
+실행 명령어:
   python Step3_to_calibration.py \
-    --root_folder ./data/session_01 \
+    --root_folder ./data/session_cube \
     --intrinsics_dir ./intrinsics \
-    --gripper_cam_idx 0 \
-    --ref_fixed_cam_idx 1
+    --gripper_cam_idx 2 \
+    --ref_fixed_cam_idx 0
 """
 
 import os

@@ -136,9 +136,16 @@ GRIPPER_TIMEOUT_SEC = 5.0
 
 # Cube grip parameters
 CUBE_SIZE_MM = 30.0         # cube side length (mm)
-CUBE_GRIP_Z_ABOVE = 2.0    # grip 2mm above cube top
-# co/cc lift height: cube half (15) + grip offset (2) + margin (5) = 22mm
-CUBE_LIFT_Z = 22.0
+CUBE_EDGE_MM = 2.0          # edge protrusion height (mm)
+CUBE_GRIP_DEPTH_MM = 2.0    # fingertip enters 2mm below cube top
+# TCP(fingertip) to cube center (along tool z): 15mm - 2mm = 13mm
+CUBE_CENTER_OFFSET_Z = CUBE_SIZE_MM / 2.0 - CUBE_GRIP_DEPTH_MM
+# co/cc lift height: grip depth(2) + edge(2) + margin(5) = 9mm above cube top
+CUBE_LIFT_Z = CUBE_GRIP_DEPTH_MM + CUBE_EDGE_MM + 5.0
+
+# Tool frame offsets (from robot flange)
+TOOL_GRIPPER_Z = 150.0                                  # tool 3: fingertip
+TOOL_CUBE_CENTER_Z = TOOL_GRIPPER_Z - CUBE_CENTER_OFFSET_Z  # tool 4: cube center (137mm)
 
 
 # ──────────────────────────────────────────────────────────────
@@ -172,6 +179,15 @@ def recv_json(conn):
 def get_tcp():
     pose = rb.getpos()
     vals = pose.pos2list()
+    return [vals[0], vals[1], vals[2], vals[3], vals[4], vals[5]]
+
+
+def get_cube_center():
+    """Read cube center TCP via tool 4 (accounts for grip depth + rotation)."""
+    rb.changetool(4)
+    pose = rb.getpos()
+    vals = pose.pos2list()
+    rb.changetool(3)
     return [vals[0], vals[1], vals[2], vals[3], vals[4], vals[5]]
 
 
@@ -294,17 +310,18 @@ def gripper_close():
 def do_capture(conn, capture_count, cube_center_6dof=None):
     """Send capture command and wait for response."""
     tcp = get_tcp()
+    cube_tcp = get_cube_center()
     print ''
     print '*** CAPTURING *** (pose_index={})'.format(capture_count)
-    print '  TCP: [{:.1f}, {:.1f}, {:.1f}, {:.1f}, {:.1f}, {:.1f}]'.format(
+    print '  TCP(fingertip):   [{:.1f}, {:.1f}, {:.1f}, {:.1f}, {:.1f}, {:.1f}]'.format(
         tcp[0], tcp[1], tcp[2], tcp[3], tcp[4], tcp[5])
-    if cube_center_6dof is not None:
-        print '  Cube center: [{:.1f}, {:.1f}, {:.1f}]'.format(
-            cube_center_6dof[0], cube_center_6dof[1], cube_center_6dof[2])
+    print '  TCP(cube center): [{:.1f}, {:.1f}, {:.1f}, {:.1f}, {:.1f}, {:.1f}]'.format(
+        cube_tcp[0], cube_tcp[1], cube_tcp[2], cube_tcp[3], cube_tcp[4], cube_tcp[5])
 
     msg = {
         "command": "capture",
         "capture_pose_6dof": tcp,
+        "cube_center_pose_6dof": cube_tcp,
         "pose_index": capture_count
     }
     if cube_center_6dof is not None:
@@ -345,8 +362,9 @@ def main():
 
         rb.settool(1, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
         rb.settool(2, 0.0, 35.0, 330.0, 0.0, 0.0, 0.0)
-        rb.settool(3, 0.0, 0.0, 150.0, 0.0, 0.0, 0.0)
-        rb.changetool(3)
+        rb.settool(3, 0.0, 0.0, TOOL_GRIPPER_Z, 0.0, 0.0, 0.0)
+        rb.settool(4, 0.0, 0.0, TOOL_CUBE_CENTER_Z, 0.0, 0.0, 0.0)
+        rb.changetool(3)  # default: fingertip
         rb.use_mt(True)
 
         # ─── Start server ───
@@ -471,11 +489,8 @@ def main():
                     except Exception:
                         print 'Invalid rotation: {}. Format: axis,value'.format(part)
 
-                # --- CO: Place cube ---
-                grip_tcp = get_tcp()
-                grip_offset_z = CUBE_GRIP_Z_ABOVE + CUBE_SIZE_MM / 2.0
-                cube_center_6dof = list(grip_tcp)
-                cube_center_6dof[2] = grip_tcp[2] - grip_offset_z
+                # --- CO: Place cube (read cube center via tool 4) ---
+                cube_center_6dof = get_cube_center()
 
                 n_shots = 1 + len(rotations)
                 print ''
@@ -526,10 +541,7 @@ def main():
             elif cmd_lower == 'c':
                 if holding_cube:
                     # Phase 2a: compute cube center from current grip TCP
-                    grip_tcp = get_tcp()
-                    grip_offset_z = CUBE_GRIP_Z_ABOVE + CUBE_SIZE_MM / 2.0
-                    cube_center_6dof = list(grip_tcp)
-                    cube_center_6dof[2] = grip_tcp[2] - grip_offset_z
+                    cube_center_6dof = get_cube_center()
                     print '  [Holding] cube center: [{:.1f}, {:.1f}, {:.1f}]'.format(
                         cube_center_6dof[0], cube_center_6dof[1], cube_center_6dof[2])
                 ok = do_capture(conn, capture_count, cube_center_6dof)
@@ -542,15 +554,10 @@ def main():
                 print ''
                 print '--- CO: Place cube ---'
 
-                # Record grip TCP BEFORE opening (cube is still held)
-                grip_tcp = get_tcp()
-                # Cube center = grip point - 2mm (above top) - 15mm (half cube)
-                grip_offset_z = CUBE_GRIP_Z_ABOVE + CUBE_SIZE_MM / 2.0  # 17mm
-                cube_center_6dof = list(grip_tcp)
-                cube_center_6dof[2] = grip_tcp[2] - grip_offset_z
-                print '  Grip TCP z:     {:.1f}'.format(grip_tcp[2])
-                print '  Cube center z:  {:.1f} (TCP - {:.0f}mm)'.format(
-                    cube_center_6dof[2], grip_offset_z)
+                # Read cube center via tool 4 BEFORE opening (cube is still held)
+                cube_center_6dof = get_cube_center()
+                print '  Cube center: [{:.1f}, {:.1f}, {:.1f}]'.format(
+                    cube_center_6dof[0], cube_center_6dof[1], cube_center_6dof[2])
 
                 print '--- 1/2: Gripper open ---'
                 gripper_open()

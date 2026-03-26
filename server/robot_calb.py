@@ -37,78 +37,66 @@
 
 Step 1 — 카메라 내부 파라미터 (intrinsics)
 ──────────────────────────────────────────────────────────────
+  [PC]
   python Step1_dump_all_intrinsics.py \
     --out_dir ./intrinsics \
     --gripper_serial <그리퍼_카메라_시리얼>
 
-Step 2-1 — Board Zone: hand-in-eye (그리퍼 카메라 → 보드)
+Step 2a — 큐브 쥔 채로 촬영
 ──────────────────────────────────────────────────────────────
-  그리퍼 카메라로 ChArUco 보드를 다양한 각도에서 촬영.
-  → T_gripper_cam 추정용 데이터 수집.
+  큐브를 그리퍼로 쥔 상태에서 다양한 위치/자세로 이동하며 촬영.
+  - 그리퍼 카메라: ChArUco 보드 + ArUco 큐브 검출
+  - 고정 카메라: ArUco 큐브만 검출
 
   플로우:
-    1. 큐브 없이, 그리퍼를 보드 위 다양한 자세로 이동
-    2. "c" → 촬영 (그리퍼 카메라가 보드 촬영)
-    3. "p ry,15" 등으로 자세 변경 → "c" 반복
-
-  [로봇]    python robot_calb.py
-  [컴퓨터]  python Step2_in_capture_capture.py \
-              --root_folder ./data/board_session \
-              --intrinsics_dir ./intrinsics \
-              --gripper_cam_idx 2 \
-              --robot_ip 192.168.0.23 --robot_port 12348 \
-              --show
-
-Step 2-2a — Cube Zone: hand-to-eye (큐브 쥔 채로 촬영)
-──────────────────────────────────────────────────────────────
-  큐브를 그리퍼로 쥔 상태에서 다양한 자세로 이동하며 촬영.
-  고정 카메라들이 큐브의 여러 면을 관측 → T_base_fixedcam 추정.
-
-  플로우:
-    1. 큐브를 쥐고 원하는 위치로 이동
-    2. "c" → 촬영 (쥔 채로, 고정 카메라가 큐브 관측)
-    3. "p rz,30" 등으로 자세 변경 → "c" 반복
+    1. 큐브를 쥐고 보드가 보이는 위치로 이동
+    2. "c" → 촬영 (그리퍼캠: 보드+큐브, 고정캠: 큐브)
+    3. "p ry,15" / "p rz,30" 등으로 자세 변경 → "c" 반복
     4. 다른 위치로 이동 후 반복
 
-  [로봇]    python robot_calb.py
-  [컴퓨터]  python Step2_to_capture_capture.py \
-              --root_folder ./data/cube_session \
-              --intrinsics_dir ./intrinsics \
-              --manual_robot \
-              --robot_ip 192.168.0.23 --robot_port 12348 \
-              --show
+  [로봇-서버]
+  python robot_calb.py
 
-Step 2-2b — Bridge Zone: 연결 (보드 옆에 큐브 놓고 촬영)
+  [PC]
+  python Step2_in_capture_capture.py \
+    --root_folder ./data/session_a \
+    --intrinsics_dir ./intrinsics \
+    --gripper_cam_idx 2 \
+    --robot_ip 192.168.0.23 --robot_port 12348 \
+    --show --also_detect_cube
+
+Step 2b — 큐브 놓으면서 촬영 (보드 가장자리)
 ──────────────────────────────────────────────────────────────
-  큐브를 보드 옆에 놓고 그리퍼 카메라를 높이 올려서
-  보드 + 큐브를 동시 검출 → T_board_cube 획득.
-  고정 카메라도 큐브를 관측 → 두 캘리브레이션을 연결하는 구속 조건.
+  큐브를 보드 가장자리에 놓고 그리퍼를 올려서 촬영.
+  - 그리퍼 카메라: ChArUco 보드 + ArUco 큐브 동시 검출
+  - 고정 카메라: ArUco 큐브 검출
 
   플로우:
-    1. 큐브를 잡고 보드 옆 위치로 이동
+    1. 큐브를 잡고 보드 가장자리로 이동
     2. "scan" → 자동으로 놓기/촬영/집기
-       (그리퍼 카메라가 보드+큐브 동시 촬영, 고정 카메라가 큐브 촬영)
     3. 다른 위치로 이동 후 반복
 
-  [로봇]    python robot_calb.py
-  [컴퓨터]  python Step2_in_capture_capture.py \
-              --root_folder ./data/bridge_session \
-              --intrinsics_dir ./intrinsics \
-              --gripper_cam_idx 2 \
-              --robot_ip 192.168.0.23 --robot_port 12348 \
-              --show --also_detect_cube
+  [로봇-서버]
+  python robot_calb.py
 
-Step 3-1 — Hand-in-eye 캘리브레이션
+  [PC]
+  python Step2_in_capture_capture.py \
+    --root_folder ./data/session_b \
+    --intrinsics_dir ./intrinsics \
+    --gripper_cam_idx 2 \
+    --robot_ip 192.168.0.23 --robot_port 12348 \
+    --show --also_detect_cube
+
+Step 3 — 캘리브레이션
 ──────────────────────────────────────────────────────────────
+  [PC]
   python Step3_in_calibration.py \
-    --charuco_folder ./data/board_session \
+    --charuco_folder ./data/session_a \
     --intrinsics_dir ./intrinsics \
     --gripper_cam_idx 2
 
-Step 3-2 — Hand-to-eye 캘리브레이션
-──────────────────────────────────────────────────────────────
   python Step3_to_calibration.py \
-    --root_folder ./data/cube_session \
+    --root_folder ./data/session_a \
     --intrinsics_dir ./intrinsics
 
 """

@@ -313,9 +313,22 @@ def main():
     preview_running = True
 
     def annotate_fixed_cam(bgr, cube_det, ci, K_c, D_c):
-        """Annotate fixed camera with ArUco cube detection."""
+        """Annotate fixed camera with ArUco cube detection (cube IDs only)."""
         out = bgr.copy()
         corners_list, ids = cube_det.detect(out)
+
+        # Filter to cube marker IDs only (0~4)
+        cube_marker_ids = set(cube_cfg.marker_ids)
+        if ids is not None and len(corners_list) > 0:
+            filtered_corners = []
+            filtered_ids = []
+            for c, mid in zip(corners_list, ids):
+                if int(mid) in cube_marker_ids:
+                    filtered_corners.append(c)
+                    filtered_ids.append(int(mid))
+            corners_list = filtered_corners
+            ids = np.array(filtered_ids) if filtered_ids else None
+
         n = 0 if ids is None else len(ids)
 
         if ids is not None and len(corners_list) > 0:
@@ -334,7 +347,7 @@ def main():
                 cv2.drawFrameAxes(out, K_c, D_c, rvec, tvec, 0.03)
 
         ids_txt = ",".join(str(int(x)) for x in ids) if ids is not None else "-"
-        lines = [f"cam{ci} [FIXED]", f"markers={n} ids={ids_txt}"]
+        lines = [f"cam{ci} [FIXED]", f"cube={n}mkr"]
         y = 24
         for line in lines:
             (tw, th), _ = cv2.getTextSize(line, cv2.FONT_HERSHEY_SIMPLEX, 0.55, 2)

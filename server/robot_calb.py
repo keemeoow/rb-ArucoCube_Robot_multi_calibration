@@ -19,6 +19,13 @@
   --- 설정 ---
   set               : 현재 TCP를 홈(큐브 잡는) 포즈로 저장
 
+  --- 정렬 (Visual Servoing) ---
+  detect            : 그리퍼 카메라로 큐브 검출, tvec 출력
+  dset              : detect + 현재 tvec를 타겟으로 저장
+  align             : XY 비주얼 서보잉 (타겟 tvec으로 수렴)
+  alignz            : XY + Z 서보잉
+  agrab             : align + Z 하강 + 그리퍼 닫기 (자동 잡기)
+
   --- 그리퍼 ---
   go                : 그리퍼 열기
   gc                : 그리퍼 닫기
@@ -35,6 +42,28 @@
 전체 파이프라인
 ══════════════════════════════════════════════════════════════
 
+Step 0 — 축 매핑 캘리브레이션 (최초 1회)
+──────────────────────────────────────────────────────────────
+  그리퍼 카메라의 축과 로봇 TCP 축 간 매핑을 확인한다.
+  이 매핑은 SERVO_CAM_X / SERVO_CAM_Y / SERVO_CAM_Z 상수로 설정.
+
+  [로봇-서버]  python robot_calb.py
+  [PC]         python Step2_in_capture_capture.py (또는 Step2_to)
+
+  플로우:
+    1. 큐브를 테이블에 놓고 그리퍼를 큐브 위에 대략 위치
+    2. "detect"       → tvec [tx, ty, tz] 확인
+    3. "p x,5"        → 로봇 X축 +5mm 이동
+    4. "detect"       → tvec 변화 확인
+       - tx가 변했으면: cam_x → robot x (부호도 확인)
+       - ty가 변했으면: cam_y → robot x
+    5. "undo"         → 원위치
+    6. "p y,5" 후 "detect" → 같은 방식으로 Y축 확인
+    7. 확인된 매핑을 robot_calb.py 상단 상수에 반영:
+         SERVO_CAM_X = ('y', -1.0)
+         SERVO_CAM_Y = ('x',  1.0)
+         SERVO_CAM_Z = ('z', -1.0)
+
 Step 1 — 카메라 내부 파라미터 (intrinsics)
 ──────────────────────────────────────────────────────────────
   [PC]
@@ -42,61 +71,105 @@ Step 1 — 카메라 내부 파라미터 (intrinsics)
     --out_dir ./intrinsics \
     --gripper_serial <그리퍼_카메라_시리얼>
 
-Step 2a — 큐브 쥔 채로 촬영
+Step 1.5 — 그립 타겟 티칭 (dset)
+──────────────────────────────────────────────────────────────
+  큐브 돌출부의 마커 중점을 그리퍼가 정확히 잡는 위치를 가르친다.
+  이후 agrab 명령으로 동일한 그립을 자동 재현할 수 있다.
+
+  [로봇-서버]  python robot_calb.py
+  [PC]         python Step2_in_capture_capture.py (또는 Step2_to)
+
+  플로우:
+    1. 큐브를 테이블에 놓음
+    2. 수동으로 그리퍼를 큐브 위로 이동 (p x, p y, p z 등)
+    3. 그리퍼 핑거팁이 돌출부(0.5mm)에 정확히 맞닿도록 위치 조정
+       - 큐브 상면에서 2mm 아래로 들어가는 위치
+       - 양쪽 핑거가 마커 중점 기준으로 대칭
+    4. "gc"           → 그리퍼 닫기 (큐브 정확히 잡힘 확인)
+    5. "dset"         → 현재 카메라-큐브 tvec을 타겟으로 저장
+       *** Target tvec saved ***
+       [0.0012, -0.0034, 0.1520] m
+    6. "set"          → 현재 TCP도 홈 포즈로 저장 (선택)
+    7. "go"           → 그리퍼 열기 (큐브 내려놓기)
+
+  이제 다른 위치에서 "agrab"으로 동일한 그립을 자동 재현 가능.
+
+Step 2a — 큐브 쥔 채로 촬영 (eye-in-hand)
 ──────────────────────────────────────────────────────────────
   큐브를 그리퍼로 쥔 상태에서 다양한 위치/자세로 이동하며 촬영.
   - 그리퍼 카메라: ChArUco 보드 + ArUco 큐브 검출
   - 고정 카메라: ArUco 큐브만 검출
 
+  큐브를 잡을 때 "agrab"으로 마커 중점 정렬 후 잡으면
+  Tool 4(큐브 중점)가 실제 마커 중점과 정확히 일치하여
+  캘리브레이션 정확도가 향상된다.
+
   플로우:
-    1. 큐브를 쥐고 보드가 보이는 위치로 이동
-    2. "c" → 촬영 (그리퍼캠: 보드+큐브, 고정캠: 큐브)
-    3. "p ry,15" / "p rz,30" 등으로 자세 변경 → "c" 반복
+    1. 큐브를 테이블에 놓음
+    2. 그리퍼를 큐브 위로 대략 이동
+    3. "agrab"        → 자동 정렬 + 하강 + 잡기
+       (또는 수동: align → cc)
+    4. 보드가 보이는 위치로 이동
+    5. "c"            → 촬영 (그리퍼캠: 보드+큐브, 고정캠: 큐브)
+    6. "p ry,15" / "p rz,30" 등으로 자세 변경 → "c" 반복
+    7. 다른 위치로 이동 후 반복
+
+  [로봇-서버]
+  python robot_calb.py
+
+  [PC]
+  python Step2_in_capture_capture.py \
+    --root_folder ./data/session_a \
+    --intrinsics_dir ./intrinsics \
+    --gripper_cam_idx 2 \
+    --robot_ip 192.168.0.23 --robot_port 12348 \
+    --show --also_detect_cube
+
+Step 2b — 큐브 놓으면서 촬영 (hand-to-eye)
+──────────────────────────────────────────────────────────────
+  큐브를 보드 가장자리에 놓고 그리퍼를 올려서 촬영.
+  - 그리퍼 카메라: ChArUco 보드 + ArUco 큐브 동시 검출
+  - 고정 카메라: ArUco 큐브 검출
+
+  agrab으로 잡은 큐브는 마커 중점에 정렬되어 있으므로
+  놓을 때 기록되는 큐브 중점(Tool 4) 좌표가 정확하다.
+
+  플로우:
+    1. 큐브를 agrab으로 잡은 상태에서 보드 가장자리로 이동
+    2. "scan"         → 자동: 놓기 → 촬영 → 집기
+    3. "scan ry,15"   → 놓기 → 촬영 → 회전촬영 → 집기
     4. 다른 위치로 이동 후 반복
 
   [로봇-서버]
   python robot_calb.py
 
   [PC]
-  python Step2_in_capture_capture.py \
-    --root_folder ./data/session_a \
-    --intrinsics_dir ./intrinsics \
-    --gripper_cam_idx 2 \
-    --robot_ip 192.168.0.23 --robot_port 12348 \
-    --show --also_detect_cube
-
-Step 2b — 큐브 놓으면서 촬영 (보드 가장자리)
-──────────────────────────────────────────────────────────────
-  큐브를 보드 가장자리에 놓고 그리퍼를 올려서 촬영.
-  - 그리퍼 카메라: ChArUco 보드 + ArUco 큐브 동시 검출
-  - 고정 카메라: ArUco 큐브 검출
-
-  플로우:
-    1. 큐브를 잡고 보드 가장자리로 이동
-    2. "scan" → 자동으로 놓기/촬영/집기
-    3. 다른 위치로 이동 후 반복
-
-  [로봇-서버]
-  python robot_calb.py
-
-  [PC]
-  python Step2_in_capture_capture.py \
+  python Step2_to_capture_capture.py \
     --root_folder ./data/session_b \
     --intrinsics_dir ./intrinsics \
-    --gripper_cam_idx 2 \
     --robot_ip 192.168.0.23 --robot_port 12348 \
-    --show --also_detect_cube
+    --manual_robot --use_robot \
+    --show --min_markers 1
 
-Step 3 — 캘리브레이션
+Step 3a — Hand-Eye 캘리브레이션
 ──────────────────────────────────────────────────────────────
+  Step 2a 데이터로 그리퍼↔카메라 변환행렬 계산.
+  → 출력: T_gripper_cam.npy
+
   [PC]
   python Step3_in_calibration.py \
     --charuco_folder ./data/session_a \
     --intrinsics_dir ./intrinsics \
     --gripper_cam_idx 2
 
+Step 3b — 멀티카메라 캘리브레이션
+──────────────────────────────────────────────────────────────
+  Step 2b 데이터로 고정카메라↔로봇베이스 변환행렬 계산.
+  → 출력: T_gripper_cam.npy, T_base_C0~C3.npy, T_C0_C1.npy 등
+
+  [PC]
   python Step3_to_calibration.py \
-    --root_folder ./data/session_a \
+    --root_folder ./data/session_b \
     --intrinsics_dir ./intrinsics
 
 """
@@ -130,6 +203,17 @@ CUBE_GRIP_DEPTH_MM = 2.0    # fingertip enters 2mm below cube top
 CUBE_CENTER_OFFSET_Z = CUBE_SIZE_MM / 2.0 - CUBE_GRIP_DEPTH_MM
 # co/cc lift height: grip depth(2) + edge(2) + margin(5) = 9mm above cube top
 CUBE_LIFT_Z = CUBE_GRIP_DEPTH_MM + CUBE_EDGE_MM + 5.0
+
+# Visual servoing parameters (for 'align' command)
+# Camera-to-TCP axis mapping: (robot_tcp_axis, sign_multiplier)
+# Calibrate once: run 'detect', then 'p x,5', then 'detect' again
+#   — check which tvec component changed and by how much.
+SERVO_CAM_X = ('y', -1.0)    # camera X -> robot TCP (axis, sign)
+SERVO_CAM_Y = ('x',  1.0)    # camera Y -> robot TCP (axis, sign)
+SERVO_CAM_Z = ('z', -1.0)    # camera Z (depth) -> robot TCP (axis, sign)
+SERVO_GAIN = 0.7              # convergence gain (0~1)
+SERVO_TOLERANCE_MM = 0.5      # XY alignment tolerance (mm)
+SERVO_MAX_ITER = 15           # max servo iterations
 
 # Tool frame offsets (from robot flange)
 TOOL_GRIPPER_Z = 150.0                                  # tool 3: fingertip
@@ -328,6 +412,42 @@ def do_capture(conn, capture_count, cube_center_6dof=None):
     return True
 
 
+def do_servo_xy(conn, target_tvec):
+    """Visual servo: move TCP until camera XY aligns with target tvec.
+    Returns (aligned, last_response)."""
+    tgt_x, tgt_y, tgt_z = target_tvec[0], target_tvec[1], target_tvec[2]
+
+    for i in range(SERVO_MAX_ITER):
+        send_json(conn, {"command": "detect"})
+        resp = recv_json(conn)
+
+        if not resp or not resp.get("ok"):
+            print '  [{}/{}] detection failed'.format(i + 1, SERVO_MAX_ITER)
+            return False, resp
+
+        tv = resp["tvec"]
+        ex = (tv[0] - tgt_x) * 1000.0
+        ey = (tv[1] - tgt_y) * 1000.0
+        ez = (tv[2] - tgt_z) * 1000.0
+
+        print '  [{}/{}] err: cx={:.2f} cy={:.2f} cz={:.1f} mm'.format(
+            i + 1, SERVO_MAX_ITER, ex, ey, ez)
+
+        if abs(ex) < SERVO_TOLERANCE_MM and abs(ey) < SERVO_TOLERANCE_MM:
+            print '  XY aligned!'
+            return True, resp
+
+        ax_x, sign_x = SERVO_CAM_X
+        ax_y, sign_y = SERVO_CAM_Y
+        if abs(ex) >= SERVO_TOLERANCE_MM:
+            move_tcp(ax_x, sign_x * ex * SERVO_GAIN)
+        if abs(ey) >= SERVO_TOLERANCE_MM:
+            move_tcp(ax_y, sign_y * ey * SERVO_GAIN)
+
+    print '  Did not converge in {} iterations.'.format(SERVO_MAX_ITER)
+    return False, None
+
+
 # ──────────────────────────────────────────────────────────────
 # Main
 # ──────────────────────────────────────────────────────────────
@@ -371,6 +491,7 @@ def main():
         cube_center_6dof = None # cube center position when placed (grip corrected)
         holding_cube = True     # True: cube in gripper, False: cube placed
         home_pose = None        # saved TCP pose from 'set' command
+        target_tvec = None      # [tx, ty, tz] meters — saved by 'dset'
 
         print ''
         print '=========================================='
@@ -394,6 +515,13 @@ def main():
         print ''
         print '--- Settings ---'
         print '  set               : Save current TCP as home (cube grip) pose'
+        print ''
+        print '--- Align (visual servoing) ---'
+        print '  detect            : Detect cube from gripper cam'
+        print '  dset              : Detect + save as target'
+        print '  align             : Servo XY to target'
+        print '  alignz            : Servo XY + Z to target'
+        print '  agrab             : Align + descend + grip'
         print ''
         print '--- Gripper / Undo ---'
         print '  go / gc           : Gripper open / close'
@@ -710,8 +838,103 @@ def main():
                 except Exception as e:
                     print 'Error: {}. Usage: j <axis>,<value>'.format(e)
 
+            # ─── DETECT: single cube detection from gripper cam ───
+            elif cmd_lower == 'detect':
+                send_json(conn, {"command": "detect"})
+                resp = recv_json(conn)
+                if resp and resp.get("ok"):
+                    tv = resp["tvec"]
+                    print ''
+                    print '=== Cube Detected ==='
+                    print '  tvec: [{:.4f}, {:.4f}, {:.4f}] m'.format(tv[0], tv[1], tv[2])
+                    print '  tvec: [{:.2f}, {:.2f}, {:.2f}] mm'.format(
+                        tv[0] * 1000, tv[1] * 1000, tv[2] * 1000)
+                    print '  markers: {}'.format(resp.get("used_ids", []))
+                    if target_tvec is not None:
+                        ex = (tv[0] - target_tvec[0]) * 1000
+                        ey = (tv[1] - target_tvec[1]) * 1000
+                        ez = (tv[2] - target_tvec[2]) * 1000
+                        print '  err vs target: cx={:.2f} cy={:.2f} cz={:.1f} mm'.format(
+                            ex, ey, ez)
+                    print ''
+                else:
+                    print 'Detection failed: {}'.format(resp)
+
+            # ─── DSET: detect + save target tvec ───
+            elif cmd_lower == 'dset':
+                send_json(conn, {"command": "detect"})
+                resp = recv_json(conn)
+                if resp and resp.get("ok"):
+                    tv = resp["tvec"]
+                    target_tvec = tv
+                    print ''
+                    print '*** Target tvec saved ***'
+                    print '  [{:.4f}, {:.4f}, {:.4f}] m'.format(tv[0], tv[1], tv[2])
+                    print '  [{:.2f}, {:.2f}, {:.2f}] mm'.format(
+                        tv[0] * 1000, tv[1] * 1000, tv[2] * 1000)
+                    print ''
+                else:
+                    print 'Detection failed: {}'.format(resp)
+
+            # ─── ALIGN: visual servoing XY (+ optional Z) ───
+            elif cmd_lower.startswith('align'):
+                if target_tvec is None:
+                    print 'No target. Run "dset" first (grip cube correctly, then dset).'
+                else:
+                    do_z = 'z' in cmd_lower
+                    print ''
+                    print '=== ALIGN{} START ==='.format('+Z' if do_z else '')
+                    print '  target: [{:.2f}, {:.2f}, {:.2f}] mm'.format(
+                        target_tvec[0] * 1000, target_tvec[1] * 1000,
+                        target_tvec[2] * 1000)
+
+                    aligned, resp = do_servo_xy(conn, target_tvec)
+
+                    if aligned and do_z and resp:
+                        tv = resp["tvec"]
+                        ez = (tv[2] - target_tvec[2]) * 1000.0
+                        if abs(ez) > 1.0:
+                            ax_z, sign_z = SERVO_CAM_Z
+                            print '  Z correction: {:.1f}mm'.format(ez)
+                            move_tcp(ax_z, sign_z * ez * SERVO_GAIN)
+
+                    print '=== ALIGN END ==='
+                    print ''
+
+            # ─── AGRAB: align + descend + grip ───
+            elif cmd_lower == 'agrab':
+                if target_tvec is None:
+                    print 'No target. Run "dset" first.'
+                else:
+                    print ''
+                    print '=== AUTO GRAB ==='
+                    print '  target: [{:.2f}, {:.2f}, {:.2f}] mm'.format(
+                        target_tvec[0] * 1000, target_tvec[1] * 1000,
+                        target_tvec[2] * 1000)
+
+                    aligned, resp = do_servo_xy(conn, target_tvec)
+
+                    if not aligned:
+                        print '  XY align failed. Aborting.'
+                        print '=== AUTO GRAB ABORTED ==='
+                    else:
+                        # Z descend to target
+                        send_json(conn, {"command": "detect"})
+                        resp2 = recv_json(conn)
+                        if resp2 and resp2.get("ok"):
+                            ez = (resp2["tvec"][2] - target_tvec[2]) * 1000.0
+                            if abs(ez) > 1.0:
+                                ax_z, sign_z = SERVO_CAM_Z
+                                print '  Z descend: {:.1f}mm'.format(ez)
+                                move_tcp(ax_z, sign_z * ez)
+
+                        gripper_close()
+                        holding_cube = True
+                        print '=== AUTO GRAB DONE ==='
+                    print ''
+
             else:
-                print 'Unknown: {}. (p/j/c/co/cc/scan/set/undo/go/gc/show/speed/q)'.format(cmd)
+                print 'Unknown: {}'.format(cmd)
 
         print '\nTotal captures: {}'.format(capture_count)
 

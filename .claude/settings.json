@@ -4,7 +4,11 @@
       "Bash(grep -n \"device_map\" /Users/woo/Documents/GitHub/Robot-Lab/rb-ArucoCube_Robot_multi_calibration/*.py)",
       "Bash(ls -la /Users/woo/Documents/GitHub/Robot-Lab/rb-ArucoCube_Robot_multi_calibration/*.py)",
       "Bash(ls /Users/woo/Documents/GitHub/Robot-Lab/rb-ArucoCube_Robot_multi_calibration/new2_*)",
-      "Bash(wc -l /Users/woo/Documents/GitHub/Robot-Lab/rb-ArucoCube_Robot_multi_calibration/*.py)"
+      "Bash(wc -l /Users/woo/Documents/GitHub/Robot-Lab/rb-ArucoCube_Robot_multi_calibration/*.py)",
+      "Bash(xargs ls:*)",
+      "Read(//Users/woo/Documents/GitHub/Robot-Lab/rb-ArucoCube_Robot_multi_calibration/**)",
+      "Bash(/tmp/exploration_summary.txt:*)",
+      "Read(//tmp/**)"
     ]
   }
 }

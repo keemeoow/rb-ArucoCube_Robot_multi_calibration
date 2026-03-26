@@ -609,6 +609,32 @@ def main():
                 resp = json.dumps({"action": "captured", "status": "success"})
                 sock.sendall(resp.encode("utf-8"))
 
+            elif cmd == "detect":
+                # Visual servoing: detect cube from gripper camera
+                color_det, _, _ = cam.get_latest()
+                if color_det is None:
+                    resp = json.dumps({"ok": False, "reason": "no_image"})
+                    sock.sendall(resp.encode("utf-8"))
+                    continue
+
+                det_ok, det_rv, det_tv, det_used = cube.solve_pnp_cube(
+                    color_det, K, D, use_ransac=False, min_markers=1,
+                    reproj_thr_mean_px=10.0)
+
+                if det_ok:
+                    resp = json.dumps({
+                        "ok": True,
+                        "tvec": det_tv.flatten().tolist(),
+                        "rvec": det_rv.flatten().tolist(),
+                        "used_ids": [int(x) for x in det_used],
+                    })
+                    print(f"[Detect] tvec=[{det_tv[0][0]:.4f}, {det_tv[1][0]:.4f}, {det_tv[2][0]:.4f}] ids={det_used}")
+                else:
+                    resp = json.dumps({"ok": False, "reason": "detection_failed",
+                                       "n_markers": len(det_used) if det_used else 0})
+                    print(f"[Detect] Failed (markers={det_used})")
+                sock.sendall(resp.encode("utf-8"))
+
     finally:
         preview_running = False
         sock.close()

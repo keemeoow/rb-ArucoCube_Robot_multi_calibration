@@ -1,3 +1,5 @@
+#!/usr/bin/python
+# -*- coding: utf-8 -*-
 """
 로봇 캘리브레이션 서버 (Teach-and-Capture):
   수동 조작으로 로봇을 이동/회전하면서 촬영하는 서버.
@@ -173,8 +175,6 @@ Step 3b — 멀티카메라 캘리브레이션
     --intrinsics_dir ./intrinsics
 
 """
-#!/usr/bin/python
-# -*- coding: utf-8 -*-
 
 from i611_MCS import *
 from teachdata import *
@@ -207,7 +207,7 @@ CUBE_LIFT_Z = CUBE_GRIP_DEPTH_MM + CUBE_EDGE_MM + 5.0
 # Visual servoing parameters (for 'align' command)
 # Camera-to-TCP axis mapping: (robot_tcp_axis, sign_multiplier)
 # Calibrate once: run 'detect', then 'p x,5', then 'detect' again
-#   — check which tvec component changed and by how much.
+#   Check which tvec component changed and by how much.
 SERVO_CAM_X = ('y', -1.0)    # camera X -> robot TCP (axis, sign)
 SERVO_CAM_Y = ('x',  1.0)    # camera Y -> robot TCP (axis, sign)
 SERVO_CAM_Z = ('z', -1.0)    # camera Z (depth) -> robot TCP (axis, sign)
@@ -493,7 +493,7 @@ def main():
         cube_center_6dof = None # cube center position when placed (grip corrected)
         holding_cube = True     # True: cube in gripper, False: cube placed
         home_pose = None        # saved TCP pose from 'set' command
-        target_tvec = None      # [tx, ty, tz] meters — saved by 'dset'
+        target_tvec = None      # [tx, ty, tz] meters, saved by 'dset'
 
         print ''
         print '=========================================='

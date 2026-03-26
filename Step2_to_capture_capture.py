@@ -75,6 +75,21 @@ def annotate_image(bgr, cube, cam_idx, is_gripper, n_markers, ids, corners):
     return out
 
 
+def filter_cube_markers(corners_list, ids, cube_ids_set):
+    """Filter detection results to keep only cube marker IDs (0~4).
+    Board markers (DICT_4X4_250, ID 5+) share patterns with DICT_4X4_50."""
+    if ids is None or len(ids) == 0:
+        return [], None
+    filt_c, filt_i = [], []
+    for c, mid in zip(corners_list, ids):
+        if int(mid) in cube_ids_set:
+            filt_c.append(c)
+            filt_i.append(int(mid))
+    if not filt_i:
+        return [], None
+    return filt_c, np.array(filt_i)
+
+
 def make_quad_image(frames_dict, cam_order, cube, gripper_cam_idx):
     """4개 카메라로부터 마커 오버레이가 포함된 2x2 분할 이미지를 생성."""
     tiles = []
@@ -303,6 +318,7 @@ def main():
 
     cfg = CubeConfig()
     cube = ArucoCubeTarget(cfg)
+    _cube_ids = set(cfg.marker_ids)  # {0,1,2,3,4} — filter out board markers
 
     # ─── 웨이포인트 로드 ───
     waypoint_list: List[dict] = []
@@ -356,6 +372,9 @@ def main():
                 continue
 
             corners, ids = cube.detect(color)
+            # Fixed cameras: cube markers only (exclude board markers)
+            if ci != gripper_cam_idx:
+                corners, ids = filter_cube_markers(corners, ids, _cube_ids)
             n_markers = 0 if ids is None else len(ids)
             ok = n_markers >= args.min_markers
             if ok:
@@ -515,6 +534,9 @@ def main():
                         if color is None:
                             continue
                         corners, ids = cube.detect(color)
+                        # Fixed cameras: cube markers only (exclude board markers)
+                        if ci != gripper_cam_idx:
+                            corners, ids = filter_cube_markers(corners, ids, _cube_ids)
                         n = 0 if ids is None else len(ids)
                         live_frames[ci] = {
                             "color": color,

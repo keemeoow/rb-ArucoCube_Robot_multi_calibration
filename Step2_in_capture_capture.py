@@ -556,15 +556,21 @@ def main():
                             fc_depth_rel = f"cam{ci}/depth_{fid:05d}.png"
                             cv2.imwrite(os.path.join(root, fc_depth_rel), fc_depth)
 
-                        # Detect cube
-                        _, ids = cube.detect(fc_color)
-                        n_mkr = 0 if ids is None else len(ids)
+                        # Detect cube (cube markers only, exclude board markers)
+                        fc_corners, fc_ids = cube.detect(fc_color)
+                        if fc_ids is not None:
+                            cube_id_set = set(cube_cfg.marker_ids)
+                            fc_mask = [int(mid) in cube_id_set for mid in fc_ids]
+                            fc_ids = np.array([int(mid) for mid, m in zip(fc_ids, fc_mask) if m])
+                            if len(fc_ids) == 0:
+                                fc_ids = None
+                        n_mkr = 0 if fc_ids is None else len(fc_ids)
 
                         fc_rec = {
                             "rgb_path": fc_rgb_rel,
                             "depth_path": fc_depth_rel,
                             "n_markers": n_mkr,
-                            "marker_ids": [] if ids is None else [int(x) for x in np.array(ids).flatten()],
+                            "marker_ids": [] if fc_ids is None else [int(x) for x in fc_ids.flatten()],
                         }
 
                         # Cube PnP

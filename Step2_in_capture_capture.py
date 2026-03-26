@@ -70,15 +70,23 @@ def annotate_gripper(bgr, K, D, cam_idx, charuco, cube_det,
     """
     out = bgr.copy()
 
-    # --- ChArUco detection ---
+    # --- ChArUco detection + board ArUco markers ---
     if charuco_result is not None:
         ch_ok, ch_rvec, ch_tvec, n_corners, reproj, ch_corners, ch_ids = charuco_result
+        _, _, _, board_mkr_corners, board_mkr_ids = charuco.detect(bgr)
     else:
-        ch_corners, ch_ids, n_corners, _, _ = charuco.detect(bgr)
+        ch_corners, ch_ids, n_corners, board_mkr_corners, board_mkr_ids = charuco.detect(bgr)
         ch_ok, ch_rvec, ch_tvec = False, None, None
         reproj = None
         if ch_corners is not None and n_corners >= 4:
             ch_ok, ch_rvec, ch_tvec, n_corners, reproj = charuco.estimate_pose(bgr, K, D)
+
+    # Draw board ArUco markers (DICT_4X4_250, ID 5+)
+    if board_mkr_corners is not None and board_mkr_ids is not None:
+        try:
+            cv2.aruco.drawDetectedMarkers(out, board_mkr_corners, board_mkr_ids)
+        except Exception:
+            pass
 
     if ch_corners is not None and ch_ids is not None:
         try:
@@ -126,10 +134,11 @@ def annotate_gripper(bgr, K, D, cam_idx, charuco, cube_det,
             pass
 
     n_cube = 0 if cu_ids is None else len(cu_ids)
+    n_board = 0 if board_mkr_ids is None else len(board_mkr_ids)
     lines = [
         f"cam{cam_idx} [GRIPPER]",
         f"charuco={n_corners} {reproj_txt}",
-        f"cube={n_cube}mkr",
+        f"cube={n_cube}mkr board={n_board}mkr",
     ]
 
     y = 24
@@ -430,8 +439,11 @@ def main():
             if cmd == "capture":
                 capture_tcp = msg.get("capture_pose_6dof")
                 pose_idx = msg.get("pose_index", event_id)
+                g_tvec = msg.get("grip_target_tvec")
 
                 print(f"\n[Capture] Signal received (pose={pose_idx})")
+                if g_tvec:
+                    print(f"  grip_tvec: [{g_tvec[0]:.4f}, {g_tvec[1]:.4f}, {g_tvec[2]:.4f}]")
                 if capture_tcp:
                     print(f"  TCP: [{capture_tcp[0]:.1f}, {capture_tcp[1]:.1f}, {capture_tcp[2]:.1f}, "
                           f"{capture_tcp[3]:.1f}, {capture_tcp[4]:.1f}, {capture_tcp[5]:.1f}]")
@@ -537,6 +549,9 @@ def main():
                     tcp_f = [float(x) for x in capture_tcp]
                     cap_rec["robot_pose_6dof"] = tcp_f
                     cap_rec["T_base_gripper_4x4"] = T_base_gripper.tolist()
+
+                if g_tvec:
+                    cap_rec["grip_target_tvec"] = [float(x) for x in g_tvec]
 
                 # --- Fixed cameras: detect ArUco cube ---
                 if args.also_detect_cube:

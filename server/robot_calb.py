@@ -379,7 +379,7 @@ def gripper_close():
     print 'Gripper closed'
 
 
-def do_capture(conn, capture_count, cube_center_6dof=None):
+def do_capture(conn, capture_count, cube_center_6dof=None, grip_target_tvec=None):
     """Send capture command and wait for response."""
     tcp = get_tcp()
     cube_tcp = get_cube_center()
@@ -398,6 +398,8 @@ def do_capture(conn, capture_count, cube_center_6dof=None):
     }
     if cube_center_6dof is not None:
         msg["cube_center_6dof"] = cube_center_6dof
+    if grip_target_tvec is not None:
+        msg["grip_target_tvec"] = grip_target_tvec
 
     send_json(conn, msg)
 
@@ -623,7 +625,7 @@ def main():
 
                 # --- Base capture (no rotation) ---
                 print '--- Shot 1/{}: base ---'.format(n_shots)
-                ok = do_capture(conn, capture_count, cube_center_6dof)
+                ok = do_capture(conn, capture_count, cube_center_6dof, target_tvec)
                 if not ok:
                     break
                 capture_count += 1
@@ -632,7 +634,7 @@ def main():
                 for i, (ax, val) in enumerate(rotations):
                     print '--- Shot {}/{}: {} {} ---'.format(i + 2, n_shots, ax, val)
                     move_tcp(ax, val)
-                    ok = do_capture(conn, capture_count, cube_center_6dof)
+                    ok = do_capture(conn, capture_count, cube_center_6dof, target_tvec)
                     if not ok:
                         break
                     capture_count += 1
@@ -660,7 +662,7 @@ def main():
                     cube_center_6dof = get_cube_center()
                     print '  [Holding] cube center: [{:.1f}, {:.1f}, {:.1f}]'.format(
                         cube_center_6dof[0], cube_center_6dof[1], cube_center_6dof[2])
-                ok = do_capture(conn, capture_count, cube_center_6dof)
+                ok = do_capture(conn, capture_count, cube_center_6dof, target_tvec)
                 if not ok:
                     break
                 capture_count += 1

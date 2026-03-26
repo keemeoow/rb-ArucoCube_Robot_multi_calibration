@@ -41,7 +41,7 @@ import numpy as np
 
 from camera import RealSenseCamera
 from aruco_cube import ArucoCubeTarget, rodrigues_to_Rt
-from config import CubeConfig
+from config import CubeConfig, CharucoBoardConfig
 from robot_comm import PlaceCaptureClient, euler_deg_to_matrix
 
 
@@ -50,9 +50,27 @@ def ensure_dir(p: str) -> str:
     return p
 
 
-def annotate_image(bgr, cube, cam_idx, is_gripper, n_markers, ids, corners):
+def annotate_image(bgr, cube, cam_idx, is_gripper, n_markers, ids, corners,
+                    board_detector=None):
     """마커 오버레이 및 정보 텍스트를 이미지에 그림."""
     out = bgr.copy()
+
+    # Gripper camera: draw board ArUco markers (DICT_4X4_250)
+    n_board = 0
+    if is_gripper and board_detector is not None:
+        gray = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY)
+        try:
+            bd_corners, bd_ids, _ = board_detector.detectMarkers(gray)
+        except Exception:
+            bd_corners, bd_ids = [], None
+        if bd_ids is not None and len(bd_corners) > 0:
+            n_board = len(bd_ids)
+            try:
+                cv2.aruco.drawDetectedMarkers(out, bd_corners, bd_ids)
+            except Exception:
+                pass
+
+    # Draw cube markers
     if ids is not None and len(corners) > 0:
         try:
             draw_ids = ids.reshape(-1, 1) if getattr(ids, "ndim", 1) == 1 else ids
@@ -62,9 +80,10 @@ def annotate_image(bgr, cube, cam_idx, is_gripper, n_markers, ids, corners):
 
     role = "GRIPPER" if is_gripper else "FIXED"
     ids_txt = ",".join(str(int(x)) for x in ids) if ids is not None and len(ids) > 0 else "-"
+    board_txt = f" board={n_board}mkr" if is_gripper else ""
     lines = [
         f"cam{cam_idx} [{role}]",
-        f"markers={n_markers} ids={ids_txt}",
+        f"markers={n_markers} ids={ids_txt}{board_txt}",
     ]
     y = 24
     for line in lines:
@@ -90,7 +109,7 @@ def filter_cube_markers(corners_list, ids, cube_ids_set):
     return filt_c, np.array(filt_i)
 
 
-def make_quad_image(frames_dict, cam_order, cube, gripper_cam_idx):
+def make_quad_image(frames_dict, cam_order, cube, gripper_cam_idx, board_detector=None):
     """4개 카메라로부터 마커 오버레이가 포함된 2x2 분할 이미지를 생성."""
     tiles = []
     tile_h, tile_w = None, None
@@ -107,6 +126,7 @@ def make_quad_image(frames_dict, cam_order, cube, gripper_cam_idx):
                 n_markers=fr.get("n_markers", 0),
                 ids=fr.get("ids_np"),
                 corners=fr.get("corners", []),
+                board_detector=board_detector,
             )
             tiles.append(annotated)
         else:
@@ -320,6 +340,16 @@ def main():
     cube = ArucoCubeTarget(cfg)
     _cube_ids = set(cfg.marker_ids)  # {0,1,2,3,4} — filter out board markers
 
+    # Board marker detector (DICT_4X4_250) — gripper camera visualization only
+    _board_cfg = CharucoBoardConfig()
+    _board_dict = cv2.aruco.getPredefinedDictionary(
+        getattr(cv2.aruco, _board_cfg.dictionary_name))
+    try:
+        _board_det = cv2.aruco.ArucoDetector(
+            _board_dict, cv2.aruco.DetectorParameters())
+    except AttributeError:
+        _board_det = None
+
     # ─── 웨이포인트 로드 ───
     waypoint_list: List[dict] = []
     if args.waypoint_file:
@@ -355,6 +385,7 @@ def main():
         capture_pose_6dof: Optional[List[float]] = None,
         place_pose_6dof: Optional[List[float]] = None,
         pose_index: Optional[int] = None,
+        grip_target_tvec: Optional[List[float]] = None,
     ) -> bool:
         """모든 카메라에서 마커별 포즈 추정과 함께 촬영."""
         nonlocal event_id
@@ -447,6 +478,9 @@ def main():
             except Exception:
                 pass
 
+        if grip_target_tvec is not None:
+            cap_rec["grip_target_tvec"] = [float(x) for x in grip_target_tvec]
+
         if place_pose_6dof is not None and place_pose_6dof != robot_tcp:
             cap_rec["place_pose_6dof"] = [float(x) for x in place_pose_6dof]
             try:
@@ -489,7 +523,7 @@ def main():
             json.dump(meta, f, indent=2)
 
         # 마커 오버레이가 포함된 2x2 분할 이미지 저장
-        quad = make_quad_image(frames, cam_order, cube, gripper_cam_idx)
+        quad = make_quad_image(frames, cam_order, cube, gripper_cam_idx, _board_det)
         quad_path = os.path.join(quad_dir, f"frame_{fid:05d}.jpg")
         cv2.imwrite(quad_path, quad)
 
@@ -546,7 +580,7 @@ def main():
                         }
 
                     if live_frames:
-                        quad = make_quad_image(live_frames, cam_order, cube, gripper_cam_idx)
+                        quad = make_quad_image(live_frames, cam_order, cube, gripper_cam_idx, _board_det)
                         # Resize for preview
                         ph = int(quad.shape[0] * 0.6)
                         pw = int(quad.shape[1] * 0.6)
@@ -579,14 +613,18 @@ def main():
                     if cmd == "capture":
                         capture_tcp = msg.get("capture_pose_6dof")
                         pose_idx = msg.get("pose_index", event_id)
+                        g_tvec = msg.get("grip_target_tvec")
 
                         print(f"\n[ManualRobot] Capture signal received (pose_index={pose_idx})")
                         if capture_tcp:
                             print(f"  TCP: {capture_tcp}")
+                        if g_tvec:
+                            print(f"  grip_tvec: [{g_tvec[0]:.4f}, {g_tvec[1]:.4f}, {g_tvec[2]:.4f}]")
 
                         saved = do_capture(
                             capture_pose_6dof=capture_tcp,
                             pose_index=pose_idx,
+                            grip_target_tvec=g_tvec,
                         )
 
                         status = "success" if saved else "skipped"

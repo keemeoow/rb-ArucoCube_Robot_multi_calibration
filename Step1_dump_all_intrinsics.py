@@ -12,6 +12,7 @@ python Step1_dump_all_intrinsics.py \
 --color_w 640 \
 --color_h 480 \
 --fps 15
+--gripper_serial 752112070297
 
 결과물:
   intrinsics/

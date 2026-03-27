@@ -1,6 +1,6 @@
-# Step2_to_capture_capture.py
+# Step2_capture_capture.py
 """
-Step 2 (hand-to-eye): 그리퍼 카메라 + 고정 카메라를 이용한 Place-and-Capture 캘리브레이션.
+Step 2 : 그리퍼 카메라 + 고정 카메라를 이용한 Place-and-Capture 캘리브레이션.
 
 파이프라인:
   1. 로봇이 ArUco 큐브를 작업 공간의 특정 위치에 놓음
@@ -16,18 +16,44 @@ Step 2 (hand-to-eye): 그리퍼 카메라 + 고정 카메라를 이용한 Place-
   - 그리퍼 + 고정 카메라 간 다시점 제약 조건
 
 실행 명령어:
-  python Step2_to_capture_capture.py \
-    --root_folder ./data/session_v2 \
+  python Step2_capture_capture.py \
+    --root_folder ./data/session \
     --intrinsics_dir ./intrinsics \
-    --use_robot \
-    --robot_ip 192.168.0.23 \
-    --robot_port 12348 \
-    --waypoint_file new2_waypoints.json \
+    --use_robot --manual_robot \
+    --robot_ip 192.168.0.23 --robot_port 12348 \
     --settle_time 1.5 \
-    --save_depth \
-    --show \
-    --min_markers 1 \
-    --min_cams_with_cube 1
+    --save_depth --show \
+    --min_markers 1 --min_cams_with_cube 1
+
+[서버코드 작동법]
+# ── 1. 큐브 돌출부 정확히 잡고 저장 ──
+> set
+  *** Set saved ***
+  TCP:         [300.0, 100.0, 50.0, ...]
+  Cube center: [300.0, 100.0, 37.0, ...]
+
+# ── 2. 그리퍼 열기 ──
+> go
+
+# ── 3. 촬영 위치로 이동 ──
+> p z,300 (항상 위로 먼저 이동하여 그리퍼 카메라가 큐브를 볼 수 있게)
+> p x,100
+> p y,50
+> p rz,45
+> p x,-80
+
+# ── 4. 촬영 후 다시 처음 위치로──
+> c
+> undo set
+
+# ── 5. 큐브 잡기 ──
+> gc
+
+# ── ... 8~15곳 반복 ...
+
+# ── 8. set 위치로 복귀 ──
+> undo set
+
 """
 
 import os
@@ -41,6 +67,7 @@ import numpy as np
 
 from camera import RealSenseCamera
 from aruco_cube import ArucoCubeTarget, rodrigues_to_Rt
+from charuco_utils import CharucoTarget
 from config import CubeConfig, CharucoBoardConfig
 from robot_comm import PlaceCaptureClient, euler_deg_to_matrix
 
@@ -61,6 +88,21 @@ def annotate_image(bgr, cube, cam_idx, is_gripper, n_markers, ids, corners,
         gray = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY)
         try:
             bd_corners, bd_ids, _ = board_detector.detectMarkers(gray)
+        except Exception:
+            bd_corners, bd_ids = [], None
+        if bd_ids is not None and len(bd_corners) > 0:
+            n_board = len(bd_ids)
+            try:
+                cv2.aruco.drawDetectedMarkers(out, bd_corners, bd_ids)
+            except Exception:
+                pass
+    elif is_gripper and board_detector is None:
+        # Legacy API fallback (OpenCV < 4.7)
+        gray = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY)
+        try:
+            from config import CharucoBoardConfig as _BCfg
+            _bd = cv2.aruco.getPredefinedDictionary(getattr(cv2.aruco, _BCfg().dictionary_name))
+            bd_corners, bd_ids, _ = cv2.aruco.detectMarkers(gray, _bd)
         except Exception:
             bd_corners, bd_ids = [], None
         if bd_ids is not None and len(bd_corners) > 0:
@@ -340,15 +382,26 @@ def main():
     cube = ArucoCubeTarget(cfg)
     _cube_ids = set(cfg.marker_ids)  # {0,1,2,3,4} — filter out board markers
 
+    # ChArUco board target — gripper camera only
+    charuco_cfg = CharucoBoardConfig()
+    charuco = CharucoTarget(charuco_cfg)
+    print(f"[INFO] ChArUco board: {charuco_cfg.squares_x}x{charuco_cfg.squares_y}, "
+          f"marker_id_start={charuco_cfg.marker_id_start}")
+
     # Board marker detector (DICT_4X4_250) — gripper camera visualization only
     _board_cfg = CharucoBoardConfig()
     _board_dict = cv2.aruco.getPredefinedDictionary(
         getattr(cv2.aruco, _board_cfg.dictionary_name))
     try:
-        _board_det = cv2.aruco.ArucoDetector(
-            _board_dict, cv2.aruco.DetectorParameters())
+        _board_params = cv2.aruco.DetectorParameters()
+        _board_det = cv2.aruco.ArucoDetector(_board_dict, _board_params)
     except AttributeError:
+        try:
+            _board_params = cv2.aruco.DetectorParameters_create()
+        except AttributeError:
+            _board_params = None
         _board_det = None
+    print(f"[INFO] Board detector (DICT_4X4_250): {'ArucoDetector' if _board_det else 'legacy API'}")
 
     # ─── 웨이포인트 로드 ───
     waypoint_list: List[dict] = []
@@ -516,6 +569,25 @@ def main():
             if fr["cube_pnp"] is not None:
                 cam_rec["cube_pnp"] = fr["cube_pnp"]
 
+            # Gripper camera: also detect ChArUco board
+            if ci == gripper_cam_idx and ci in cam_intrinsics:
+                g_K, g_D = cam_intrinsics[ci]
+                try:
+                    ch_ok, ch_rvec, ch_tvec, ch_n, ch_reproj = charuco.estimate_pose(
+                        fr["color"], g_K, g_D)
+                except Exception:
+                    ch_ok = False
+                if ch_ok and ch_rvec is not None:
+                    T_cam_board = rodrigues_to_Rt(ch_rvec, ch_tvec)
+                    cam_rec["charuco"] = {
+                        "ok": True,
+                        "n_corners": ch_n,
+                        "reproj_error_px": float(ch_reproj) if ch_reproj else None,
+                        "rvec": ch_rvec.flatten().tolist(),
+                        "tvec": ch_tvec.flatten().tolist(),
+                        "T_cam_board_4x4": T_cam_board.tolist(),
+                    }
+
             cap_rec["cams"][str(ci)] = cam_rec
 
         meta["captures"].append(cap_rec)
@@ -539,7 +611,12 @@ def main():
             tag = "G" if ci == gripper_cam_idx else "F"
             n = fr["n_markers"]
             cam_summary.append(f"cam{ci}({tag}):{n}mkr")
-        print(f"[SAVE] event={fid} | {' '.join(cam_summary)} | quad={quad_path}")
+        charuco_txt = ""
+        gi_rec = cap_rec["cams"].get(str(gripper_cam_idx), {})
+        if "charuco" in gi_rec:
+            ch = gi_rec["charuco"]
+            charuco_txt = f" charuco={ch['n_corners']}cor"
+        print(f"[SAVE] event={fid} | {' '.join(cam_summary)}{charuco_txt}")
         event_id += 1
         return True
 

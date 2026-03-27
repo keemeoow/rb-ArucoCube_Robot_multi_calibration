@@ -78,39 +78,28 @@ def ensure_dir(p: str) -> str:
 
 
 def annotate_image(bgr, cube, cam_idx, is_gripper, n_markers, ids, corners,
-                    board_detector=None):
+                    board_mkr_corners=None, board_mkr_ids=None,
+                    ch_corners=None, ch_ids=None):
     """마커 오버레이 및 정보 텍스트를 이미지에 그림."""
     out = bgr.copy()
 
     # Gripper camera: draw board ArUco markers (DICT_4X4_250)
     n_board = 0
-    if is_gripper and board_detector is not None:
-        gray = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY)
+    if is_gripper and board_mkr_corners is not None and board_mkr_ids is not None:
+        n_board = len(board_mkr_ids)
         try:
-            bd_corners, bd_ids, _ = board_detector.detectMarkers(gray)
+            cv2.aruco.drawDetectedMarkers(out, board_mkr_corners, board_mkr_ids)
         except Exception:
-            bd_corners, bd_ids = [], None
-        if bd_ids is not None and len(bd_corners) > 0:
-            n_board = len(bd_ids)
-            try:
-                cv2.aruco.drawDetectedMarkers(out, bd_corners, bd_ids)
-            except Exception:
-                pass
-    elif is_gripper and board_detector is None:
-        # Legacy API fallback (OpenCV < 4.7)
-        gray = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY)
+            pass
+
+    # Gripper camera: draw ChArUco interpolated corners
+    n_charuco = 0
+    if is_gripper and ch_corners is not None and ch_ids is not None:
+        n_charuco = len(ch_ids)
         try:
-            from config import CharucoBoardConfig as _BCfg
-            _bd = cv2.aruco.getPredefinedDictionary(getattr(cv2.aruco, _BCfg().dictionary_name))
-            bd_corners, bd_ids, _ = cv2.aruco.detectMarkers(gray, _bd)
+            cv2.aruco.drawDetectedCornersCharuco(out, ch_corners, ch_ids)
         except Exception:
-            bd_corners, bd_ids = [], None
-        if bd_ids is not None and len(bd_corners) > 0:
-            n_board = len(bd_ids)
-            try:
-                cv2.aruco.drawDetectedMarkers(out, bd_corners, bd_ids)
-            except Exception:
-                pass
+            pass
 
     # Draw cube markers
     if ids is not None and len(corners) > 0:
@@ -122,7 +111,9 @@ def annotate_image(bgr, cube, cam_idx, is_gripper, n_markers, ids, corners,
 
     role = "GRIPPER" if is_gripper else "FIXED"
     ids_txt = ",".join(str(int(x)) for x in ids) if ids is not None and len(ids) > 0 else "-"
-    board_txt = f" board={n_board}mkr" if is_gripper else ""
+    board_txt = ""
+    if is_gripper:
+        board_txt = f" board={n_board}mkr ch={n_charuco}cor"
     lines = [
         f"cam{cam_idx} [{role}]",
         f"markers={n_markers} ids={ids_txt}{board_txt}",
@@ -151,7 +142,7 @@ def filter_cube_markers(corners_list, ids, cube_ids_set):
     return filt_c, np.array(filt_i)
 
 
-def make_quad_image(frames_dict, cam_order, cube, gripper_cam_idx, board_detector=None):
+def make_quad_image(frames_dict, cam_order, cube, gripper_cam_idx):
     """4개 카메라로부터 마커 오버레이가 포함된 2x2 분할 이미지를 생성."""
     tiles = []
     tile_h, tile_w = None, None
@@ -168,7 +159,10 @@ def make_quad_image(frames_dict, cam_order, cube, gripper_cam_idx, board_detecto
                 n_markers=fr.get("n_markers", 0),
                 ids=fr.get("ids_np"),
                 corners=fr.get("corners", []),
-                board_detector=board_detector,
+                board_mkr_corners=fr.get("board_mkr_corners"),
+                board_mkr_ids=fr.get("board_mkr_ids"),
+                ch_corners=fr.get("ch_corners"),
+                ch_ids=fr.get("ch_ids"),
             )
             tiles.append(annotated)
         else:
@@ -388,20 +382,7 @@ def main():
     print(f"[INFO] ChArUco board: {charuco_cfg.squares_x}x{charuco_cfg.squares_y}, "
           f"marker_id_start={charuco_cfg.marker_id_start}")
 
-    # Board marker detector (DICT_4X4_250) — gripper camera visualization only
-    _board_cfg = CharucoBoardConfig()
-    _board_dict = cv2.aruco.getPredefinedDictionary(
-        getattr(cv2.aruco, _board_cfg.dictionary_name))
-    try:
-        _board_params = cv2.aruco.DetectorParameters()
-        _board_det = cv2.aruco.ArucoDetector(_board_dict, _board_params)
-    except AttributeError:
-        try:
-            _board_params = cv2.aruco.DetectorParameters_create()
-        except AttributeError:
-            _board_params = None
-        _board_det = None
-    print(f"[INFO] Board detector (DICT_4X4_250): {'ArucoDetector' if _board_det else 'legacy API'}")
+    # (Board marker detection uses charuco.detect() directly — no separate detector needed)
 
     # ─── 웨이포인트 로드 ───
     waypoint_list: List[dict] = []
@@ -595,14 +576,11 @@ def main():
             json.dump(meta, f, indent=2)
 
         # 마커 오버레이가 포함된 2x2 분할 이미지 저장
-        quad = make_quad_image(frames, cam_order, cube, gripper_cam_idx, _board_det)
+        quad = make_quad_image(frames, cam_order, cube, gripper_cam_idx)
         quad_path = os.path.join(quad_dir, f"frame_{fid:05d}.jpg")
         cv2.imwrite(quad_path, quad)
 
-        # 분할 이미지 표시
-        if args.show:
-            cv2.imshow("Capture Quad", quad)
-            cv2.waitKey(500)
+        # (프리뷰 스레드와 충돌 방지: imshow 제거, 파일로만 저장)
 
         # 요약 출력
         cam_summary = []
@@ -649,15 +627,29 @@ def main():
                         if ci != gripper_cam_idx:
                             corners, ids = filter_cube_markers(corners, ids, _cube_ids)
                         n = 0 if ids is None else len(ids)
-                        live_frames[ci] = {
+
+                        fr = {
                             "color": color,
                             "n_markers": n,
                             "ids_np": ids,
                             "corners": corners,
                         }
 
+                        # Gripper camera: detect ChArUco board
+                        if ci == gripper_cam_idx:
+                            try:
+                                ch_c, ch_i, ch_n, bd_c, bd_i = charuco.detect(color)
+                                fr["board_mkr_corners"] = bd_c
+                                fr["board_mkr_ids"] = bd_i
+                                fr["ch_corners"] = ch_c
+                                fr["ch_ids"] = ch_i
+                            except Exception:
+                                pass
+
+                        live_frames[ci] = fr
+
                     if live_frames:
-                        quad = make_quad_image(live_frames, cam_order, cube, gripper_cam_idx, _board_det)
+                        quad = make_quad_image(live_frames, cam_order, cube, gripper_cam_idx)
                         # Resize for preview
                         ph = int(quad.shape[0] * 0.6)
                         pw = int(quad.shape[1] * 0.6)

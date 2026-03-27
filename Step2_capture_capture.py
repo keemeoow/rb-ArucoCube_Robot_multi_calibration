@@ -397,19 +397,26 @@ def main():
         robot_client = PlaceCaptureClient(args.robot_ip, args.robot_port)
         robot_client.connect()
 
-    # ─── 메타 데이터 ───
-    meta = {
-        "root_folder": os.path.abspath(root),
-        "gripper_cam_idx": gripper_cam_idx,
-        "n_fixed_cams": n_fixed,
-        "n_gripper_cams": n_gripper,
-        "cam_indices": [ci for ci, _ in idx_serial_pairs],
-        "captures": [],
-    }
+    # ─── 메타 데이터 (기존 meta.json이 있으면 이어서 저장) ───
     meta_path = os.path.join(root, "meta.json")
+    if os.path.exists(meta_path):
+        with open(meta_path, "r") as f:
+            meta = json.load(f)
+        event_id = max((int(c.get("event_id", -1)) for c in meta.get("captures", [])), default=-1) + 1
+        print(f"[INFO] Resuming from existing meta.json ({len(meta['captures'])} captures, next event_id={event_id})")
+    else:
+        meta = {
+            "root_folder": os.path.abspath(root),
+            "gripper_cam_idx": gripper_cam_idx,
+            "n_fixed_cams": n_fixed,
+            "n_gripper_cams": n_gripper,
+            "cam_indices": [ci for ci, _ in idx_serial_pairs],
+            "captures": [],
+        }
+        event_id = 0
+        print("[INFO] New session (meta.json created)")
     quad_dir = ensure_dir(os.path.join(root, "marker_quads"))
     cam_order = sorted(ci for ci, _ in idx_serial_pairs)
-    event_id = 0
 
     print("\nControls:")
     print("  SPACE : manual capture (if in manual mode)")

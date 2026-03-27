@@ -6,8 +6,9 @@
 
 명령어:
   --- 이동 ---
-  p <축>,<값>       : TCP 이동 (예: "p z,50", "p rz,15")
-  j <축>,<값>       : 관절 이동 (예: "j d1,10")
+  p <축>,<값>       : TCP 상대 이동 (예: "p z,50", "p rz,15")
+  j <축>,<값>       : 관절 상대 이동 (예: "j d1,10")
+  goto x,y,z,rz,ry,rx : TCP 절대 좌표로 이동
   show              : 현재 TCP 포즈 및 관절 값 표시
   speed <0-100>     : 속도 설정 (클수록 빠름)
 
@@ -549,6 +550,32 @@ def main():
 
                     print '--- Undo complete ---'
                     show_pose()
+
+            # ─── GOTO: absolute TCP position ───
+            elif cmd_lower.startswith('goto '):
+                try:
+                    vals = [float(v.strip()) for v in cmd[5:].strip().split(',')]
+                    if len(vals) == 6:
+                        target = Position(vals[0], vals[1], vals[2],
+                                          vals[3], vals[4], vals[5])
+                        print 'GOTO: [{:.1f}, {:.1f}, {:.1f}, {:.1f}, {:.1f}, {:.1f}]'.format(
+                            vals[0], vals[1], vals[2], vals[3], vals[4], vals[5])
+                        rb.line(target)
+                        print 'Move complete'
+                        show_pose()
+                    elif len(vals) == 3:
+                        tcp = get_tcp()
+                        target = Position(vals[0], vals[1], vals[2],
+                                          tcp[3], tcp[4], tcp[5])
+                        print 'GOTO: [{:.1f}, {:.1f}, {:.1f}] (rotation unchanged)'.format(
+                            vals[0], vals[1], vals[2])
+                        rb.line(target)
+                        print 'Move complete'
+                        show_pose()
+                    else:
+                        print 'Usage: goto x,y,z  or  goto x,y,z,rz,ry,rx'
+                except Exception as e:
+                    print 'Error: {}. Usage: goto x,y,z,rz,ry,rx'.format(e)
 
             # ─── TCP move ───
             elif cmd_lower.startswith('p '):

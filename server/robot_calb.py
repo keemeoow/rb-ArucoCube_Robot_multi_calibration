@@ -82,6 +82,9 @@ Step 3 -- 캘리브레이션
 
 """
 
+#!/usr/bin/python
+# -*- coding: utf-8 -*-
+
 from i611_MCS import *
 from teachdata import *
 from i611_extend import *

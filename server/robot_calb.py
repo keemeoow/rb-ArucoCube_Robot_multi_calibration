@@ -1,5 +1,3 @@
-#!/usr/bin/python
-# -*- coding: utf-8 -*-
 """
 로봇 캘리브레이션 서버 (Teach-and-Capture):
   수동 조작으로 로봇을 이동/회전하면서 촬영하는 서버.
@@ -448,24 +446,24 @@ def main():
                 parts = cmd.lower().split()
                 args_list = parts[1:]
 
-                # undo set: return to saved TCP
+                # undo set: return to set XY/rotation, Z=0
                 if len(args_list) == 1 and args_list[0] == 'set':
                     if home_pose is None:
                         print 'No set saved. Use "set" first.'
                     else:
                         tcp = get_tcp()
-                        target = Position(home_pose[0], home_pose[1], home_pose[2],
+                        target = Position(home_pose[0], home_pose[1], 0.0,
                                           home_pose[3], home_pose[4], home_pose[5])
                         print ''
-                        print '--- Returning to set position ---'
+                        print '--- Returning to set position (z=0) ---'
                         print '  from: [{:.1f}, {:.1f}, {:.1f}, {:.1f}, {:.1f}, {:.1f}]'.format(
                             tcp[0], tcp[1], tcp[2], tcp[3], tcp[4], tcp[5])
                         print '  to:   [{:.1f}, {:.1f}, {:.1f}, {:.1f}, {:.1f}, {:.1f}]'.format(
-                            home_pose[0], home_pose[1], home_pose[2],
+                            home_pose[0], home_pose[1], 0.0,
                             home_pose[3], home_pose[4], home_pose[5])
                         rb.line(target)
                         move_history = []
-                        print '--- Set position reached ---'
+                        print '--- Set position reached (z=0) ---'
                         show_pose()
 
                 elif not move_history:

@@ -468,6 +468,11 @@ def main():
                     min_markers=1,
                     return_reproj=True,
                 )
+                tag = "G" if ci == gripper_cam_idx else "F"
+                if pnp_ok:
+                    print(f"  [PnP] cam{ci}({tag}): OK ids={used_ids} reproj={reproj['err_mean']:.2f}px")
+                else:
+                    print(f"  [PnP] cam{ci}({tag}): FAILED (detected_ids={[int(x) for x in ids] if ids is not None else []})")
                 if pnp_ok and rvec is not None:
                     T_cam_cube = rodrigues_to_Rt(rvec, tvec)
                     cube_pnp = {
@@ -561,10 +566,17 @@ def main():
             if ci == gripper_cam_idx and ci in cam_intrinsics:
                 g_K, g_D = cam_intrinsics[ci]
                 try:
-                    ch_ok, ch_rvec, ch_tvec, ch_n, ch_reproj = charuco.estimate_pose(
-                        fr["color"], g_K, g_D)
-                except Exception:
+                    ch_corners, ch_ids, ch_n, bd_corners, bd_ids = charuco.detect(
+                        fr["color"])
+                    print(f"  [ChArUco] detect: corners={ch_n} board_mkr={'0' if bd_ids is None else len(bd_ids)}")
+                    if ch_corners is not None and ch_n >= 4:
+                        ch_ok, ch_rvec, ch_tvec, ch_n, ch_reproj = charuco.estimate_pose(
+                            fr["color"], g_K, g_D)
+                    else:
+                        ch_ok = False
+                except Exception as e:
                     ch_ok = False
+                    print(f"  [ChArUco] ERROR: {e}")
                 if ch_ok and ch_rvec is not None:
                     T_cam_board = rodrigues_to_Rt(ch_rvec, ch_tvec)
                     cam_rec["charuco"] = {
@@ -575,6 +587,9 @@ def main():
                         "tvec": ch_tvec.flatten().tolist(),
                         "T_cam_board_4x4": T_cam_board.tolist(),
                     }
+                    print(f"  [ChArUco] OK: {ch_n} corners, reproj={ch_reproj:.3f}px")
+                else:
+                    print(f"  [ChArUco] FAILED (corners={ch_n if 'ch_n' in dir() else '?'})")
 
             cap_rec["cams"][str(ci)] = cam_rec
 

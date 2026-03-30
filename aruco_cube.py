@@ -117,8 +117,10 @@ class ArucoCubeTarget:
         return corners, ids.flatten().astype(int)
 
     def build_correspondences(self, corners_list, ids, min_markers: int = 1,
-                              only_ids: Optional[List[int]] = None):
+                              only_ids: Optional[List[int]] = None,
+                              min_aspect: float = 0.3):
         """Build 2D-3D correspondences from detected markers.
+        min_aspect: reject markers with aspect ratio below this (0=no filter).
         Returns (obj_pts, img_pts, used_ids) or (None, None, [])."""
         obj_pts, img_pts, used = [], [], []
         only_set = set(only_ids) if only_ids is not None else None
@@ -137,6 +139,14 @@ class ArucoCubeTarget:
             if mid == 3:
                 img = img[[1, 2, 3, 0]]
 
+            # Skip markers seen at extreme oblique angles (nearly edge-on)
+            if min_aspect > 0:
+                edge_w = np.linalg.norm(img[1] - img[0])
+                edge_h = np.linalg.norm(img[3] - img[0])
+                aspect = min(edge_w, edge_h) / (max(edge_w, edge_h) + 1e-6)
+                if aspect < min_aspect:
+                    continue
+
             obj_pts.append(obj)
             img_pts.append(img)
             used.append(mid)
@@ -153,9 +163,11 @@ class ArucoCubeTarget:
                        min_markers: int = 1,
                        reproj_thr_mean_px: float = 10.0,
                        only_ids: Optional[List[int]] = None,
-                       return_reproj: bool = False):
+                       return_reproj: bool = False,
+                       min_aspect: float = 0.3):
         """
         Full detect + PnP solve.
+        min_aspect: reject oblique markers (0=no filter, 0.3=default).
         Returns:
           (ok, rvec, tvec, used_ids)  if return_reproj=False
           (ok, rvec, tvec, used_ids, reproj_dict)  if return_reproj=True
@@ -164,7 +176,8 @@ class ArucoCubeTarget:
         if ids is None:
             return (False, None, None, [], None) if return_reproj else (False, None, None, [])
 
-        obj_pts, img_pts, used = self.build_correspondences(corners_list, ids, min_markers, only_ids)
+        obj_pts, img_pts, used = self.build_correspondences(
+            corners_list, ids, min_markers, only_ids, min_aspect=min_aspect)
         if obj_pts is None:
             return (False, None, None, used, None) if return_reproj else (False, None, None, used)
 

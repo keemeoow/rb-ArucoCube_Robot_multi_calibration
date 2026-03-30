@@ -182,12 +182,10 @@ class CharucoTarget:
         charuco_corners, charuco_ids = None, None
         n_corners = 0
 
-        # Preferred new API
+        # Preferred new API (OpenCV 4.7+): detectBoard takes image only
         if self.charuco_detector is not None and not self._using_id_remap:
             try:
-                charuco_corners, charuco_ids, _, _ = self.charuco_detector.detectBoard(
-                    gray, marker_corners, marker_ids_for_board
-                )
+                charuco_corners, charuco_ids, _, _ = self.charuco_detector.detectBoard(gray)
                 n_corners = 0 if charuco_ids is None else len(charuco_ids)
             except Exception:
                 charuco_corners, charuco_ids, n_corners = None, None, 0

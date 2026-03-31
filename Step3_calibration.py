@@ -280,28 +280,25 @@ def main():
             cpnp = cinfo.get("cube_pnp")
             if cpnp and cpnp.get("ok"):
                 err = float(cpnp.get("reproj_mean_px", 99.0))
-                # Gripper camera: more lenient (views cube from above, multi-face)
-                # Fixed cameras: strict (reject oblique false matches)
                 max_err = 5.0 if ci == gripper_cam_idx else 3.0
-                if err > max_err:
-                    continue
-                T44 = cpnp.get("T_cam_cube_4x4")
-                if T44 is not None:
-                    pnp_obs[ci][eid] = {
-                        "T_C_O": np.asarray(T44, dtype=np.float64),
-                        "err_mean": err,
-                        "n_points": int(cpnp.get("n_points", 4)),
-                        "used_ids": cpnp.get("used_ids", []),
-                    }
-                    continue
+                if err <= max_err:
+                    T44 = cpnp.get("T_cam_cube_4x4")
+                    if T44 is not None:
+                        pnp_obs[ci][eid] = {
+                            "T_C_O": np.asarray(T44, dtype=np.float64),
+                            "err_mean": err,
+                            "n_points": int(cpnp.get("n_points", 4)),
+                            "used_ids": cpnp.get("used_ids", []),
+                        }
+                        continue
 
             # Fallback: re-detect from image, try per-marker PnP
             rgb_path = os.path.join(root, cinfo.get("rgb_path", ""))
             img = cv2.imread(rgb_path)
             if img is None:
                 continue
-            thr = 5.0 if ci == gripper_cam_idx else 3.0
-            asp = 0.0 if ci == gripper_cam_idx else 0.3
+            thr = 5.0
+            asp = 0.0  # no aspect filter (correct face mapping handles oblique)
 
             # First try all markers together
             ok, rvec, tvec, used, reproj = cube.solve_pnp_cube(
@@ -322,21 +319,22 @@ def main():
             corners_list, ids = cube.detect(img)
             if ids is None:
                 continue
-            candidates = []  # [(T_C_O, err, marker_id), ...]
+            candidates = []
+            raw_obj, raw_img = [], []
             for c, mid in zip(corners_list, ids):
                 mid = int(mid)
                 if mid not in cube.cfg.id_to_face:
                     continue
                 obj = cube.model.marker_corners_in_rig(mid)
                 img_pts = c.reshape(4, 2).astype(np.float64)
-                if mid == 3:
-                    img_pts = img_pts[[1, 2, 3, 0]]
-                if asp > 0:
-                    ew = np.linalg.norm(img_pts[1] - img_pts[0])
-                    eh = np.linalg.norm(img_pts[3] - img_pts[0])
-                    if min(ew, eh) / (max(ew, eh) + 1e-6) < asp:
-                        continue
-                # Get ALL solutions (IPPE returns 2)
+                _reorder = getattr(cube.cfg, 'corner_reorder', {}).get(mid)
+                if _reorder is not None:
+                    img_pts = img_pts[_reorder]
+
+                raw_obj.append(obj)
+                raw_img.append(img_pts)
+
+                # Per-marker IPPE (both solutions)
                 n_sol, rvecs, tvecs, reproj_errs = cv2.solvePnPGeneric(
                     obj.reshape(-1, 1, 3), img_pts.reshape(-1, 1, 2),
                     K_map[ci], D_map[ci], flags=cv2.SOLVEPNP_IPPE)
@@ -347,16 +345,17 @@ def main():
                         candidates.append((T_sol, err_val, mid))
 
             if candidates:
-                # Store all candidates; Step D will pick the right one
-                # using T_base_O rotation from gripper camera
                 best = min(candidates, key=lambda x: x[1])
                 pnp_obs[ci][eid] = {
                     "T_C_O": best[0],
                     "err_mean": best[1],
                     "n_points": 4,
                     "used_ids": [best[2]],
-                    "_candidates": candidates,  # all IPPE solutions
+                    "_candidates": candidates,
                 }
+                if raw_obj:
+                    pnp_obs[ci][eid]["_raw_obj"] = np.concatenate(raw_obj)
+                    pnp_obs[ci][eid]["_raw_img"] = np.concatenate(raw_img)
 
     for ci in all_cam_ids:
         errs = [r["err_mean"] for r in pnp_obs[ci].values()]
@@ -583,19 +582,78 @@ def main():
     print(f"  T_base_O.npy ({len(common_cube)} events)")
 
     # ══════════════════════════════════════════════════════════
-    # STEP D: Fixed cameras in robot base frame (cube PnP chaining)
-    # T_base_Ci = T_B_O[eid] @ inv(T_Ci_O[eid])
+    # STEP D: Fixed cameras in robot base frame
+    # D-1: Board-based (T_base_board[eid] @ inv(T_Ci_board)) - precise
+    # D-2: Cube PnP chaining - fallback for cameras that can't see board
     # ══════════════════════════════════════════════════════════
     print("\n" + "=" * 60)
-    print("[STEP-D] Fixed cameras in robot base frame (cube PnP)")
+    print("[STEP-D] Fixed cameras in robot base frame")
     print("=" * 60)
+
+    from charuco_utils import CharucoTarget as _CT
+    from config import CharucoBoardConfig as _CBC
+    charuco_det = _CT(_CBC())
+
+    # Per-event T_base_board from gripper camera (precise!)
+    T_base_board_per_event = {}
+    for eid in common_he:
+        if eid not in charuco_obs or eid not in robot_T:
+            continue
+        T_base_board_per_event[eid] = robot_T[eid] @ T_gTc @ charuco_obs[eid]["T_cam_board"]
 
     T_base_Ci = {}
     base_stats = {}
+    calibrated_board = set()
+
+    # D-1: Board-based calibration
+    print("  --- D-1: Board-based (ChArUco) ---")
+    for ci in fixed_cam_ids:
+        if ci not in K_map:
+            continue
+        Ts, ws = [], []
+        for cap in meta.get("captures", []):
+            eid = int(cap.get("event_id", -1))
+            if eid not in T_base_board_per_event:
+                continue
+            cinfo = cap.get("cams", {}).get(str(ci), {})
+            rgb_path = os.path.join(root, cinfo.get("rgb_path", ""))
+            img = cv2.imread(rgb_path)
+            if img is None:
+                continue
+            try:
+                ok, rv, tv, n_cor, reproj = charuco_det.estimate_pose(img, K_map[ci], D_map[ci])
+            except Exception:
+                ok = False
+            if ok and n_cor >= 6:
+                T_cam_board = rodrigues_to_Rt(rv, tv)
+                T_est = T_base_board_per_event[eid] @ inv_T(T_cam_board)
+                Ts.append(T_est)
+                ws.append(1.0 / max(float(reproj), 1e-9))
+
+        if len(Ts) >= 3:
+            T_avg, st = robust_weighted_se3_average(Ts, ws, return_stats=True)
+            T_base_Ci[ci] = T_avg
+            base_stats[f"T_base_C{ci}"] = st
+            calibrated_board.add(ci)
+            np.save(os.path.join(out_dir, f"T_base_C{ci}.npy"), T_avg)
+            print(f"  T_base_C{ci}: {st['num_inliers']}/{len(Ts)}fr (board) "
+                  f"rot={st['rotation_std_deg']:.3f}deg trans={st['translation_std_mm']:.2f}mm")
+
+            # Expand T_B_O using this camera
+            expanded = 0
+            for eid in pnp_obs[ci]:
+                if eid not in T_B_O_by_event:
+                    T_B_O_by_event[eid] = T_base_Ci[ci] @ pnp_obs[ci][eid]["T_C_O"]
+                    expanded += 1
+            if expanded:
+                print(f"  [chain] cam{ci} -> +{expanded} T_base_O events")
+        else:
+            print(f"  cam{ci}: board not visible ({len(Ts)} frames)")
+
+    # D-2: Cube PnP chaining for remaining cameras
+    remaining = [ci for ci in fixed_cam_ids if ci not in calibrated_board]
 
     def _pick_candidate(ci, eid, T_B_O, T_ref=None):
-        """Pick best IPPE solution for a fixed camera observation.
-        T_ref: approximate T_base_Ci from pass 1 (if available)."""
         candidates = pnp_obs[ci][eid].get("_candidates")
         if not candidates or len(candidates) <= 1:
             return pnp_obs[ci][eid]["T_C_O"]
@@ -612,33 +670,39 @@ def main():
                 best_T = T_sol
         return best_T
 
-    for ci in fixed_cam_ids:
-        common = sorted(set(pnp_obs[ci].keys()) & set(T_B_O_by_event.keys()))
-        if not common:
-            print(f"  [WARN] cam{ci}: no overlap")
-            continue
+    if remaining:
+        print(f"  --- D-2: Cube PnP chaining for {remaining} ---")
+        for ci in remaining:
+            common = sorted(set(pnp_obs[ci].keys()) & set(T_B_O_by_event.keys()))
+            if not common:
+                print(f"  [WARN] cam{ci}: no overlap")
+                continue
 
-        # Pass 1: rough estimate (z-axis heuristic)
-        Ts1, ws1 = [], []
-        for eid in common:
-            T_C_O = _pick_candidate(ci, eid, T_B_O_by_event[eid])
-            Ts1.append(T_B_O_by_event[eid] @ inv_T(T_C_O))
-            ws1.append(1.0 / max(pnp_obs[ci][eid]["err_mean"], 1e-9))
-        T_rough = robust_weighted_se3_average(Ts1, ws1)
+            Ts1, ws1 = [], []
+            for eid in common:
+                T_C_O = _pick_candidate(ci, eid, T_B_O_by_event[eid])
+                Ts1.append(T_B_O_by_event[eid] @ inv_T(T_C_O))
+                ws1.append(1.0 / max(pnp_obs[ci][eid]["err_mean"], 1e-9))
+            T_rough = robust_weighted_se3_average(Ts1, ws1)
 
-        # Pass 2: refine with rotation consistency
-        Ts2, ws2 = [], []
-        for eid in common:
-            T_C_O = _pick_candidate(ci, eid, T_B_O_by_event[eid], T_ref=T_rough)
-            Ts2.append(T_B_O_by_event[eid] @ inv_T(T_C_O))
-            ws2.append(1.0 / max(pnp_obs[ci][eid]["err_mean"], 1e-9))
+            Ts2, ws2 = [], []
+            for eid in common:
+                T_C_O = _pick_candidate(ci, eid, T_B_O_by_event[eid], T_ref=T_rough)
+                Ts2.append(T_B_O_by_event[eid] @ inv_T(T_C_O))
+                ws2.append(1.0 / max(pnp_obs[ci][eid]["err_mean"], 1e-9))
 
-        T_avg, st = robust_weighted_se3_average(Ts2, ws2, return_stats=True)
-        T_base_Ci[ci] = T_avg
-        base_stats[f"T_base_C{ci}"] = st
-        np.save(os.path.join(out_dir, f"T_base_C{ci}.npy"), T_avg)
-        print(f"  T_base_C{ci}: {len(Ts2)}fr "
-              f"rot={st['rotation_std_deg']:.3f}deg trans={st['translation_std_mm']:.2f}mm")
+            T_avg, st = robust_weighted_se3_average(Ts2, ws2, return_stats=True)
+            T_base_Ci[ci] = T_avg
+            base_stats[f"T_base_C{ci}"] = st
+            np.save(os.path.join(out_dir, f"T_base_C{ci}.npy"), T_avg)
+            print(f"  T_base_C{ci}: {len(Ts2)}fr (cube) "
+                  f"rot={st['rotation_std_deg']:.3f}deg trans={st['translation_std_mm']:.2f}mm")
+
+    # (Step E joint optimization requires correct face mapping for all markers.
+    #  Current id=1 has attachment error — revisit after re-printing cube.)
+
+    # ══════════════════════════════════════════════════════════
+    # (Step E deferred — requires correct id=1 marker attachment)
 
     # ══════════════════════════════════════════════════════════
     # Summary

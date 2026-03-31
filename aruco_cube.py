@@ -135,9 +135,10 @@ class ArucoCubeTarget:
             obj = self.model.marker_corners_in_rig(mid)
             img = c.reshape(4, 2)
 
-            # Corner reorder for specific markers if needed
-            if mid == 3:
-                img = img[[1, 2, 3, 0]]
+            # Corner reorder per marker (from config)
+            reorder = getattr(self.cfg, 'corner_reorder', {}).get(mid)
+            if reorder is not None:
+                img = img[reorder]
 
             # Skip markers seen at extreme oblique angles (nearly edge-on)
             if min_aspect > 0:

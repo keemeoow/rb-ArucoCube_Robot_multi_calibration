@@ -18,12 +18,22 @@ class CubeConfig:
     marker_ids: Tuple[int, ...] = (0, 1, 2, 3, 4)
 
     # marker_id -> face name
+    # Verified by brute-force PnP optimization (2.5px, 15 multi-marker events)
     id_to_face: Dict[int, str] = field(default_factory=lambda: {
         0: "+Y",
-        1: "+Z",
+        1: "-Z",
         2: "+X",
-        3: "-Z",
+        3: "+Z",
         4: "-X",
+    })
+
+    # Corner reorder per marker (brute-force verified)
+    corner_reorder: Dict[int, list] = field(default_factory=lambda: {
+        0: [1,2,3,0],
+        1: [3,0,1,2],
+        2: [2,3,0,1],
+        3: [2,3,0,1],
+        4: [2,3,0,1],
     })
 
     # per-marker in-plane rotation (deg) if physically rotated

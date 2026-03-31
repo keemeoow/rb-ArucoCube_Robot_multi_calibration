@@ -10,7 +10,9 @@
       "Bash(/tmp/exploration_summary.txt:*)",
       "Read(//tmp/**)",
       "Bash(ls /Users/woo/Documents/GitHub/Robot-Lab/rb-ArucoCube_Robot_multi_calibration/data/session/cam*/rgb_*.jpg)",
-      "Bash(python Step3_calibration.py --root_folder ./data/session --intrinsics_dir ./intrinsics)"
+      "Bash(python Step3_calibration.py --root_folder ./data/session --intrinsics_dir ./intrinsics)",
+      "Bash(ls ./data/session/cam*/depth_*.png)",
+      "Bash(wait)"
     ]
   }
 }

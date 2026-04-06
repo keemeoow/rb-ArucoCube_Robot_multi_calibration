@@ -18,28 +18,34 @@ class CubeConfig:
     marker_ids: Tuple[int, ...] = (0, 1, 2, 3, 4)
 
     # marker_id -> face name
-    # Verified by brute-force PnP optimization (2.5px, 15 multi-marker events)
+    # Verified from session data and marker gallery inspection.
     id_to_face: Dict[int, str] = field(default_factory=lambda: {
         0: "+Y",
-        1: "-Z",
+        1: "+Z",
         2: "+X",
-        3: "+Z",
+        3: "-Z",
         4: "-X",
     })
 
-    # Corner reorder per marker (brute-force verified)
+    # Reorder detected marker corners to the canonical [0,1,2,3] object order.
     corner_reorder: Dict[int, list] = field(default_factory=lambda: {
-        0: [1,2,3,0],
-        1: [3,0,1,2],
-        2: [2,3,0,1],
-        3: [2,3,0,1],
-        4: [2,3,0,1],
+        0: [0, 1, 2, 3],
+        1: [0, 1, 2, 3],
+        2: [0, 1, 2, 3],
+        3: [3, 0, 1, 2],
+        4: [0, 1, 2, 3],
     })
 
     # per-marker in-plane rotation (deg) if physically rotated
     face_roll_deg: Dict[int, float] = field(default_factory=lambda: {
         0: 0.0, 1: 0.0, 2: 0.0, 3: 0.0, 4: 0.0
     })
+
+    # Optional explicit rigid pose of each marker in the cube/object frame.
+    # When present, this overrides face-based geometry construction for that
+    # marker. corner_reorder is still used to map detector corners to the
+    # marker's local [0,1,2,3] order.
+    marker_pose_4x4: Dict[int, list] = field(default_factory=dict)
 
 
 @dataclass

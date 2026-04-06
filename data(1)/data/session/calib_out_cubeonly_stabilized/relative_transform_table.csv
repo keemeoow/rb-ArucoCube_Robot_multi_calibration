@@ -1,0 +1,3 @@
+transform,status,x_mm,y_mm,z_mm,rz_deg,ry_deg,rx_deg,status_reason,notes
+T_C0_C1,PASS,209.761,-141.809,750.627,-171.815,-39.500,159.274,derived from PASS T_base_C0 and T_base_C1,derived from T_base_C0 and T_base_C1
+T_C0_C3,FAIL,-495.653,-112.391,677.638,167.153,68.279,153.417,derived from T_base_C0 and T_base_C3,derived from T_base_C0 and T_base_C3

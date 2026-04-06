@@ -1,0 +1,80 @@
+{
+  "cross_camera": {
+    "events_with_2plus_cams": 18,
+    "num_errors": 72,
+    "mean_mm": 6.135488380363378,
+    "median_mm": 5.28258502015301,
+    "max_mm": 22.853722458176723,
+    "std_mm": 4.048083748050715,
+    "pass": false
+  },
+  "reprojection": {
+    "total_observations": 72,
+    "mean_px": 1.5895239373993375,
+    "median_px": 1.2301271053395426,
+    "max_px": 3.691019490090723,
+    "lt_1px_count": 31,
+    "pass": true
+  },
+  "handeye": {
+    "frames": 18,
+    "board_position_std_mm": 1.5904748411413072,
+    "board_position_max_mm": 6.227154870329307,
+    "board_rotation_mean_deg": 0.8049358485829172,
+    "board_rotation_max_deg": 1.3709511704114477,
+    "pass": true
+  },
+  "board_reprojection": {
+    "total_frames": 53,
+    "mean_px": 0.4018088621350954,
+    "median_px": 0.31724056601524353,
+    "max_px": 0.8174095153808594,
+    "pass": true,
+    "per_camera": {
+      "cam0": {
+        "frames": 18,
+        "mean_px": 0.6332913041114807
+      },
+      "cam1": {
+        "frames": 17,
+        "mean_px": 0.2524792806190603
+      },
+      "cam2": {
+        "frames": 18,
+        "mean_px": 0.3113599138127433
+      },
+      "cam3": {
+        "frames": 0,
+        "mean_px": null
+      }
+    }
+  },
+  "pose_repeatability": {
+    "num_events": 18,
+    "mean_dt_mm": 6.217458290550742,
+    "mean_dr_deg": 2.034142691802519,
+    "max_dt_mm": 25.74607369799386,
+    "max_dr_deg": 10.062068016318966,
+    "pass": false
+  },
+  "mesh_alignment": {
+    "usable_clouds": 63,
+    "usable_events": 18,
+    "mean_rmse_mm": 3.6966846474156405,
+    "median_rmse_mm": 3.813111377282445,
+    "max_rmse_mm": 4.932865043449414,
+    "pass": true
+  },
+  "dimension_accuracy": {
+    "usable_events": 15,
+    "mean_abs_err_mm": 4.0485127236058265,
+    "median_abs_err_mm": 3.1470194966168044,
+    "max_abs_err_mm": 8.172322223987845,
+    "pass": false
+  },
+  "candidate_summary": {
+    "total": 383,
+    "selected": 72,
+    "accepted": 0
+  }
+}

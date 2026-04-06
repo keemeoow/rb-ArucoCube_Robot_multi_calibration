@@ -6,7 +6,7 @@ Reusable across all calibration steps.
 
 import cv2
 import numpy as np
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional, Tuple, List, Dict, Any
 
 from config import CubeConfig
@@ -45,6 +45,64 @@ def rot_axis_angle(axis: np.ndarray, angle: float) -> np.ndarray:
     return np.eye(3, dtype=np.float64) + np.sin(angle) * K + (1 - np.cos(angle)) * (K @ K)
 
 
+@dataclass
+class MarkerObservation:
+    marker_id: int
+    face_name: str
+    corners_2d: np.ndarray
+    corners_2d_reordered: np.ndarray
+    obj_corners_3d: np.ndarray
+    aspect_ratio: float
+    T_object_marker: np.ndarray
+
+
+@dataclass
+class CubeObservationSet:
+    marker_observations: List[MarkerObservation] = field(default_factory=list)
+
+    @property
+    def marker_ids(self) -> List[int]:
+        return [int(obs.marker_id) for obs in self.marker_observations]
+
+    @property
+    def face_names(self) -> List[str]:
+        return [str(obs.face_name) for obs in self.marker_observations]
+
+    @property
+    def num_markers(self) -> int:
+        return int(len(self.marker_observations))
+
+    @property
+    def num_faces(self) -> int:
+        return int(len(set(self.face_names)))
+
+    def stack_object_points(self) -> np.ndarray:
+        if not self.marker_observations:
+            return np.empty((0, 1, 3), dtype=np.float64)
+        return np.concatenate(
+            [obs.obj_corners_3d for obs in self.marker_observations],
+            axis=0,
+        ).reshape(-1, 1, 3).astype(np.float64)
+
+    def stack_image_points(self) -> np.ndarray:
+        if not self.marker_observations:
+            return np.empty((0, 1, 2), dtype=np.float64)
+        return np.concatenate(
+            [obs.corners_2d_reordered for obs in self.marker_observations],
+            axis=0,
+        ).reshape(-1, 1, 2).astype(np.float64)
+
+    def image_bbox(self, pad_px: float = 0.0) -> Optional[Tuple[int, int, int, int]]:
+        if not self.marker_observations:
+            return None
+        pts = np.concatenate([obs.corners_2d for obs in self.marker_observations], axis=0)
+        x0 = int(np.floor(np.min(pts[:, 0]) - float(pad_px)))
+        y0 = int(np.floor(np.min(pts[:, 1]) - float(pad_px)))
+        x1 = int(np.ceil(np.max(pts[:, 0]) + float(pad_px)))
+        y1 = int(np.ceil(np.max(pts[:, 1]) + float(pad_px)))
+        return x0, y0, x1, y1
+
+
 # ─────────────────────── Cube Geometry ───────────────────────
 
 class ArucoCubeModel:
@@ -58,30 +116,81 @@ class ArucoCubeModel:
         # face definitions: (center, u-axis, v-axis, normal) in object frame
         self.face_defs = {
             "+Z": (np.array([0, 0, d]), np.array([1, 0, 0]), np.array([0, 1, 0]), np.array([0, 0, 1])),
-            "-Z": (np.array([0, 0, -d]), np.array([1, 0, 0]), np.array([0, 1, 0]), np.array([0, 0, -1])),
+            "-Z": (np.array([0, 0, -d]), np.array([-1, 0, 0]), np.array([0, 1, 0]), np.array([0, 0, -1])),
             "+X": (np.array([d, 0, 0]), np.array([0, 0, -1]), np.array([0, 1, 0]), np.array([1, 0, 0])),
             "-X": (np.array([-d, 0, 0]), np.array([0, 0, 1]), np.array([0, 1, 0]), np.array([-1, 0, 0])),
             "+Y": (np.array([0, d, 0]), np.array([1, 0, 0]), np.array([0, 0, -1]), np.array([0, 1, 0])),
+            "-Y": (np.array([0, -d, 0]), np.array([1, 0, 0]), np.array([0, 0, 1]), np.array([0, -1, 0])),
         }
 
         self.local_corners = np.array([
             [-s, -s, 0], [s, -s, 0], [s, s, 0], [-s, s, 0]
         ], dtype=np.float64)
 
-    def marker_corners_in_rig(self, marker_id: int) -> np.ndarray:
-        """4 corners of marker_id in the cube (object/rig) frame. Shape (4,3)."""
-        face = self.cfg.id_to_face[int(marker_id)]
+    def has_marker(self, marker_id: int) -> bool:
+        mid = int(marker_id)
+        return mid in getattr(self.cfg, "marker_pose_4x4", {}) or mid in self.cfg.id_to_face
+
+    def marker_face_name(self, marker_id: int) -> str:
+        mid = int(marker_id)
+        if mid in getattr(self.cfg, "marker_pose_4x4", {}):
+            return str(self.cfg.id_to_face.get(mid, f"marker_{mid}"))
+        return str(self.cfg.id_to_face[mid])
+
+    def uses_explicit_marker_pose(self, marker_id: int) -> bool:
+        return int(marker_id) in getattr(self.cfg, "marker_pose_4x4", {})
+
+    def marker_pose_in_rig(self, marker_id: int) -> np.ndarray:
+        mid = int(marker_id)
+        if self.uses_explicit_marker_pose(mid):
+            return np.asarray(self.cfg.marker_pose_4x4[mid], dtype=np.float64).reshape(4, 4)
+
+        face = self.cfg.id_to_face[mid]
         c, u, v, n = self.face_defs[face]
 
-        roll = np.deg2rad(float(self.cfg.face_roll_deg.get(int(marker_id), 0.0)))
+        roll = np.deg2rad(float(self.cfg.face_roll_deg.get(mid, 0.0)))
         Rr = rot_axis_angle(n, roll)
         u2 = (Rr @ u.reshape(3, 1)).reshape(3)
         v2 = (Rr @ v.reshape(3, 1)).reshape(3)
+        n2 = np.cross(u2, v2)
+        n2 = n2 / (np.linalg.norm(n2) + 1e-12)
 
+        T = np.eye(4, dtype=np.float64)
+        T[:3, 0] = u2 / (np.linalg.norm(u2) + 1e-12)
+        T[:3, 1] = v2 / (np.linalg.norm(v2) + 1e-12)
+        T[:3, 2] = n2
+        T[:3, 3] = c
+        return T
+
+    def marker_corners_in_rig(self, marker_id: int) -> np.ndarray:
+        """4 corners of marker_id in the cube (object/rig) frame. Shape (4,3)."""
+        T_OM = self.marker_pose_in_rig(marker_id)
         pts = []
         for p in self.local_corners:
-            pts.append(c + u2 * p[0] + v2 * p[1])
+            ph = np.array([p[0], p[1], p[2], 1.0], dtype=np.float64)
+            pts.append((T_OM @ ph)[:3])
         return np.asarray(pts, dtype=np.float64)
+
+    def reorder_image_corners(self, marker_id: int, img_pts: np.ndarray) -> np.ndarray:
+        mid = int(marker_id)
+        out = np.asarray(img_pts, dtype=np.float64).reshape(4, 2)
+        reorder = getattr(self.cfg, "corner_reorder", {}).get(mid)
+        if reorder is not None:
+            out = out[reorder]
+        return out
+
+    def cube_vertices_in_rig(self) -> np.ndarray:
+        d = float(self.cfg.cube_side_m) / 2.0
+        return np.asarray([
+            [-d, -d, -d],
+            [d, -d, -d],
+            [d, d, -d],
+            [-d, d, -d],
+            [-d, -d, d],
+            [d, -d, d],
+            [d, d, d],
+            [-d, d, d],
+        ], dtype=np.float64)
 
 
 # ──────────────────── Detection + PnP ────────────────────────
@@ -116,6 +225,44 @@ class ArucoCubeTarget:
             return [], None
         return corners, ids.flatten().astype(int)
 
+    def collect_observations(self, bgr: np.ndarray,
+                             only_ids: Optional[List[int]] = None,
+                             min_aspect: float = 0.0) -> CubeObservationSet:
+        """Return face/marker-level observations without forcing a single cube pose."""
+        corners_list, ids = self.detect(bgr)
+        only_set = set(int(x) for x in only_ids) if only_ids is not None else None
+        observations: List[MarkerObservation] = []
+        if ids is None:
+            return CubeObservationSet()
+
+        for corners, mid in zip(corners_list, ids):
+            mid = int(mid)
+            if not self.model.has_marker(mid):
+                continue
+            if only_set is not None and mid not in only_set:
+                continue
+
+            raw_img = np.asarray(corners, dtype=np.float64).reshape(4, 2)
+            img = self.model.reorder_image_corners(mid, raw_img)
+
+            edge_w = float(np.linalg.norm(img[1] - img[0]))
+            edge_h = float(np.linalg.norm(img[3] - img[0]))
+            aspect = min(edge_w, edge_h) / (max(edge_w, edge_h) + 1e-6)
+            if min_aspect > 0 and aspect < float(min_aspect):
+                continue
+
+            observations.append(MarkerObservation(
+                marker_id=mid,
+                face_name=self.model.marker_face_name(mid),
+                corners_2d=raw_img,
+                corners_2d_reordered=img,
+                obj_corners_3d=self.model.marker_corners_in_rig(mid),
+                aspect_ratio=float(aspect),
+                T_object_marker=self.model.marker_pose_in_rig(mid),
+            ))
+
+        return CubeObservationSet(observations)
+
     def build_correspondences(self, corners_list, ids, min_markers: int = 1,
                               only_ids: Optional[List[int]] = None,
                               min_aspect: float = 0.3):
@@ -127,18 +274,13 @@ class ArucoCubeTarget:
 
         for c, mid in zip(corners_list, ids):
             mid = int(mid)
-            if mid not in self.cfg.id_to_face:
+            if not self.model.has_marker(mid):
                 continue
             if only_set is not None and mid not in only_set:
                 continue
 
             obj = self.model.marker_corners_in_rig(mid)
-            img = c.reshape(4, 2)
-
-            # Corner reorder per marker (from config)
-            reorder = getattr(self.cfg, 'corner_reorder', {}).get(mid)
-            if reorder is not None:
-                img = img[reorder]
+            img = self.model.reorder_image_corners(mid, c.reshape(4, 2))
 
             # Skip markers seen at extreme oblique angles (nearly edge-on)
             if min_aspect > 0:
@@ -159,6 +301,14 @@ class ArucoCubeTarget:
         img_pts = np.concatenate(img_pts).reshape(-1, 1, 2).astype(np.float64)
         return obj_pts, img_pts, used
 
+    def build_correspondences_from_observations(self, obs_set: CubeObservationSet,
+                                                min_markers: int = 1):
+        if obs_set.num_markers < int(min_markers):
+            return None, None, []
+        obj_pts = obs_set.stack_object_points()
+        img_pts = obs_set.stack_image_points()
+        return obj_pts, img_pts, list(obs_set.marker_ids)
+
     def solve_pnp_cube(self, bgr, K, D,
                        use_ransac: bool = True,
                        min_markers: int = 1,
@@ -177,8 +327,9 @@ class ArucoCubeTarget:
         if ids is None:
             return (False, None, None, [], None) if return_reproj else (False, None, None, [])
 
-        obj_pts, img_pts, used = self.build_correspondences(
-            corners_list, ids, min_markers, only_ids, min_aspect=min_aspect)
+        obs_set = self.collect_observations(bgr, only_ids=only_ids, min_aspect=min_aspect)
+        obj_pts, img_pts, used = self.build_correspondences_from_observations(
+            obs_set, min_markers=min_markers)
         if obj_pts is None:
             return (False, None, None, used, None) if return_reproj else (False, None, None, used)
 
@@ -198,6 +349,8 @@ class ArucoCubeTarget:
         proj2, _ = cv2.projectPoints(obj_pts.reshape(-1, 3), rvec, tvec, K, D)
         proj2 = proj2.reshape(-1, 2)
         err = np.linalg.norm(proj2 - img_pts.reshape(-1, 2), axis=1)
+        if not np.all(np.isfinite(err)):
+            return (False, None, None, used, None) if return_reproj else (False, None, None, used)
 
         reproj = {
             "obj_pts": obj_pts, "img_pts": img_pts, "proj2": proj2, "err": err,
@@ -205,6 +358,8 @@ class ArucoCubeTarget:
             "err_p90": float(np.percentile(err, 90)), "n_points": int(err.size),
             "rvec": rvec, "tvec": tvec,
         }
+        if not np.isfinite(reproj["err_mean"]):
+            return (False, None, None, used, None) if return_reproj else (False, None, None, used)
         ok_final = reproj["err_mean"] <= reproj_thr_mean_px
 
         if return_reproj:

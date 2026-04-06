@@ -69,6 +69,7 @@ from camera import RealSenseCamera
 from aruco_cube import ArucoCubeTarget, rodrigues_to_Rt
 from charuco_utils import CharucoTarget
 from config import CubeConfig, CharucoBoardConfig
+from cube_config_utils import cube_config_to_dict
 from robot_comm import PlaceCaptureClient, euler_deg_to_matrix
 
 
@@ -223,15 +224,11 @@ def estimate_per_marker_poses(
 
     for c, mid in zip(corners_list, ids):
         mid = int(mid)
-        if mid not in cube.cfg.id_to_face:
+        if not cube.model.has_marker(mid):
             continue
 
         obj_pts = cube.model.marker_corners_in_rig(mid)  # (4, 3) 큐브 좌표계 기준
-        img_pts = c.reshape(4, 2).astype(np.float64)
-
-        # 마커 3번의 코너 순서 재정렬 (aruco_cube.py 규칙에 맞춤)
-        if mid == 3:
-            img_pts = img_pts[[1, 2, 3, 0]]
+        img_pts = cube.model.reorder_image_corners(mid, c.reshape(4, 2).astype(np.float64))
 
         ok, rvec, tvec = cv2.solvePnP(
             obj_pts.reshape(-1, 1, 3).astype(np.float64),
@@ -411,10 +408,13 @@ def main():
             "n_fixed_cams": n_fixed,
             "n_gripper_cams": n_gripper,
             "cam_indices": [ci for ci, _ in idx_serial_pairs],
+            "cube_config": cube_config_to_dict(cfg),
             "captures": [],
         }
         event_id = 0
         print("[INFO] New session (meta.json created)")
+    if "cube_config" not in meta:
+        meta["cube_config"] = cube_config_to_dict(cfg)
     quad_dir = ensure_dir(os.path.join(root, "marker_quads"))
     cam_order = sorted(ci for ci, _ in idx_serial_pairs)
 

@@ -1,0 +1,32 @@
+{
+  "cross_camera": {
+    "events_with_2plus_cams": 18,
+    "num_errors": 72,
+    "mean_mm": 10.693826468679557,
+    "median_mm": 8.592093266197299,
+    "max_mm": 30.52980827371214,
+    "std_mm": 6.376206093896821,
+    "pass": false
+  },
+  "reprojection": {
+    "total_observations": 72,
+    "mean_px": 1.5895239373993375,
+    "median_px": 1.2301271053395426,
+    "max_px": 3.691019490090723,
+    "lt_1px_count": 31,
+    "pass": true
+  },
+  "handeye": {
+    "frames": 18,
+    "board_position_std_mm": 1.2108595483974771,
+    "board_position_max_mm": 4.493178799174289,
+    "board_rotation_mean_deg": 0.7779147612720625,
+    "board_rotation_max_deg": 1.298354176233678,
+    "pass": true
+  },
+  "candidate_summary": {
+    "total": 383,
+    "selected": 72,
+    "accepted": 16
+  }
+}

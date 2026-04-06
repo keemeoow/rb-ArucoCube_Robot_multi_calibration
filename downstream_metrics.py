@@ -6,64 +6,17 @@ import cv2
 import numpy as np
 
 from aruco_cube import ArucoCubeTarget, inv_T
+from calibration_runtime_utils import (
+    build_event_cube_selection,
+    get_event_base_camera_transform,
+    load_intrinsics_with_depth_scale,
+)
 from config import CharucoBoardConfig, CubeConfig
 from charuco_utils import CharucoTarget
 from Step3_calibration import (
-    build_cube_pose_candidates,
-    cube_selection_profile_kwargs,
-    get_event_base_camera_transform,
     rotation_error_deg,
-    select_consistent_event_cube_candidates,
     weighted_se3_average,
 )
-
-
-def load_intrinsics_with_depth_scale(intr_dir: str, cam_idx: int):
-    path = os.path.join(intr_dir, f"cam{cam_idx}.npz")
-    data = np.load(path, allow_pickle=True)
-    depth_scale = float(data["depth_scale_m_per_unit"]) if "depth_scale_m_per_unit" in data else 0.001
-    if not np.isfinite(depth_scale):
-        depth_scale = 0.001
-    return data["color_K"].astype(np.float64), data["color_D"].astype(np.float64), float(depth_scale)
-
-
-def _build_event_cube_selection(meta: dict,
-                                transforms: Dict[str, np.ndarray],
-                                intrinsics_dir: str,
-                                root_folder: str,
-                                all_cam_ids: List[int],
-                                gripper_cam_idx: Optional[int],
-                                cube_cfg: CubeConfig,
-                                include_meta: bool = False,
-                                selection_profile: str = "default") -> Dict[int, Dict[int, dict]]:
-    cube = ArucoCubeTarget(cube_cfg)
-    K_map, D_map = {}, {}
-    for ci in all_cam_ids:
-        K_map[ci], D_map[ci], _ = load_intrinsics_with_depth_scale(intrinsics_dir, ci)
-    profile_kwargs = cube_selection_profile_kwargs(selection_profile)
-
-    out: Dict[int, Dict[int, dict]] = {}
-    for cap in meta.get("captures", []):
-        eid = int(cap.get("event_id", -1))
-        if eid < 0:
-            continue
-        candidates_by_cam = {}
-        for ci_str, cinfo in cap.get("cams", {}).items():
-            ci = int(ci_str)
-            if ci not in K_map or not cinfo.get("saved"):
-                continue
-            meta_thr = 5.0 if ci == gripper_cam_idx else 3.0
-            candidates = build_cube_pose_candidates(
-                root_folder, cinfo, K_map[ci], D_map[ci], cube,
-                meta_reproj_thr=meta_thr, solve_reproj_thr=5.0,
-                min_aspect=0.0, include_meta=include_meta)
-            if candidates:
-                candidates_by_cam[ci] = candidates
-        refined = select_consistent_event_cube_candidates(
-            cap, candidates_by_cam, transforms, gripper_cam_idx, **profile_kwargs) if candidates_by_cam else {}
-        if refined:
-            out[int(eid)] = {int(ci): dict(cand) for ci, cand in refined.items()}
-    return out
 
 
 def compute_board_reprojection_metrics(meta: dict,
@@ -111,7 +64,7 @@ def compute_pose_repeatability_metrics(meta: dict,
                                        cube_cfg: CubeConfig,
                                        include_meta: bool = False,
                                        selection_profile: str = "default") -> dict:
-    selection = _build_event_cube_selection(
+    selection = build_event_cube_selection(
         meta, transforms, intrinsics_dir, root_folder, all_cam_ids, gripper_cam_idx,
         cube_cfg, include_meta=include_meta, selection_profile=selection_profile)
     event_dt = []
@@ -275,7 +228,7 @@ def compute_depth_cube_metrics(meta: dict,
                                include_meta: bool = False,
                                selection_profile: str = "default",
                                stride: int = 2) -> dict:
-    selection = _build_event_cube_selection(
+    selection = build_event_cube_selection(
         meta, transforms, intrinsics_dir, root_folder, all_cam_ids, gripper_cam_idx,
         cube_cfg, include_meta=include_meta, selection_profile=selection_profile)
     cube = ArucoCubeTarget(cube_cfg)

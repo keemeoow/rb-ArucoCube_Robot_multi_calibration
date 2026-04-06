@@ -45,6 +45,32 @@ def rot_axis_angle(axis: np.ndarray, angle: float) -> np.ndarray:
     return np.eye(3, dtype=np.float64) + np.sin(angle) * K + (1 - np.cos(angle)) * (K @ K)
 
 
+@dataclass
+class MarkerObservation:
+    marker_id: int
+    face_name: str
+    corners_2d: np.ndarray
+    corners_2d_reordered: np.ndarray
+    obj_corners_3d: np.ndarray
+    aspect_ratio: float
+    T_object_marker: np.ndarray
+
+
+@dataclass
+class CubeObservationSet:
+    marker_observations: List[MarkerObservation]
+
+    def image_bbox(self, pad_px: float = 0.0) -> Optional[Tuple[int, int, int, int]]:
+        if not self.marker_observations:
+            return None
+        pts = np.concatenate([obs.corners_2d for obs in self.marker_observations], axis=0)
+        x0 = int(np.floor(np.min(pts[:, 0]) - float(pad_px)))
+        y0 = int(np.floor(np.min(pts[:, 1]) - float(pad_px)))
+        x1 = int(np.ceil(np.max(pts[:, 0]) + float(pad_px)))
+        y1 = int(np.ceil(np.max(pts[:, 1]) + float(pad_px)))
+        return x0, y0, x1, y1
+
+
 # ─────────────────────── Cube Geometry ───────────────────────
 
 class ArucoCubeModel:
@@ -75,6 +101,12 @@ class ArucoCubeModel:
 
     def uses_explicit_marker_pose(self, marker_id: int) -> bool:
         return int(marker_id) in getattr(self.cfg, "marker_pose_4x4", {})
+
+    def marker_face_name(self, marker_id: int) -> str:
+        mid = int(marker_id)
+        if mid in getattr(self.cfg, "marker_pose_4x4", {}):
+            return str(self.cfg.id_to_face.get(mid, f"marker_{mid}"))
+        return str(self.cfg.id_to_face[mid])
 
     def marker_pose_in_rig(self, marker_id: int) -> np.ndarray:
         mid = int(marker_id)
@@ -147,6 +179,42 @@ class ArucoCubeTarget:
         if ids is None:
             return [], None
         return corners, ids.flatten().astype(int)
+
+    def collect_observations(self, bgr: np.ndarray,
+                             only_ids: Optional[List[int]] = None,
+                             min_aspect: float = 0.0) -> CubeObservationSet:
+        corners_list, ids = self.detect(bgr)
+        only_set = set(int(x) for x in only_ids) if only_ids is not None else None
+        observations: List[MarkerObservation] = []
+        if ids is None:
+            return CubeObservationSet([])
+
+        for corners, mid in zip(corners_list, ids):
+            mid = int(mid)
+            if not self.model.has_marker(mid):
+                continue
+            if only_set is not None and mid not in only_set:
+                continue
+
+            raw_img = np.asarray(corners, dtype=np.float64).reshape(4, 2)
+            img = self.model.reorder_image_corners(mid, raw_img)
+            edge_w = float(np.linalg.norm(img[1] - img[0]))
+            edge_h = float(np.linalg.norm(img[3] - img[0]))
+            aspect = min(edge_w, edge_h) / (max(edge_w, edge_h) + 1e-6)
+            if min_aspect > 0 and aspect < float(min_aspect):
+                continue
+
+            observations.append(MarkerObservation(
+                marker_id=mid,
+                face_name=self.model.marker_face_name(mid),
+                corners_2d=raw_img,
+                corners_2d_reordered=img,
+                obj_corners_3d=self.model.marker_corners_in_rig(mid),
+                aspect_ratio=float(aspect),
+                T_object_marker=self.model.marker_pose_in_rig(mid),
+            ))
+
+        return CubeObservationSet(observations)
 
     def build_correspondences(self, corners_list, ids, min_markers: int = 1,
                               only_ids: Optional[List[int]] = None,

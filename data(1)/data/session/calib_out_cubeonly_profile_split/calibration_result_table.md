@@ -2,13 +2,13 @@
 
 ## Verification Summary
 
-- Cross-camera: FAIL (mean 6.14 mm, median 5.28 mm, max 22.85 mm)
+- Cross-camera: FAIL (mean 6.10 mm, median 5.27 mm, max 22.85 mm)
 - Cube reprojection: PASS (mean 1.590 px, median 1.230 px, max 3.691 px)
 - Hand-eye board stability: PASS (pos std 1.59 mm, rot mean 0.805 deg)
 - Board reprojection: PASS (mean 0.402 px)
-- Mesh alignment: PASS (mean RMSE 3.70 mm)
-- Dimension accuracy: FAIL (mean abs err 4.05 mm)
-- Pose repeatability: FAIL (mean 6.22 mm / 2.034 deg)
+- Mesh alignment: PASS (mean RMSE 3.73 mm)
+- Dimension accuracy: FAIL (mean abs err 3.83 mm)
+- Pose repeatability: FAIL (mean 6.16 mm / 2.057 deg)
 
 ## Camera / Object Transforms
 

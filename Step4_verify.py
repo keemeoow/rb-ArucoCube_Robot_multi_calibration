@@ -28,28 +28,23 @@ import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 
 from aruco_cube import ArucoCubeTarget, ArucoCubeModel, rodrigues_to_Rt, inv_T
-from config import CubeConfig
-from cube_config_utils import (
-    load_auto_cube_config,
-    load_cube_config_from_json_file,
-    load_cube_config_from_calibration_summary,
-    load_fixed_cube_config,
-    load_cube_config_from_meta,
-    load_preferred_cube_config,
+from calibration_runtime_utils import (
+    build_capture_cube_candidate_map,
+    build_cube_pose_candidates,
+    cube_selection_profile_kwargs,
+    get_event_base_camera_transform,
+    load_calib_dir,
+    load_intrinsics_color,
+    load_robot_pose_from_capture,
+    resolve_cube_config_for_run,
+    select_consistent_event_cube_candidates,
 )
+from config import CubeConfig
 from downstream_metrics import (
     compute_board_reprojection_metrics,
     compute_depth_cube_metrics,
     compute_pose_repeatability_metrics,
 )
-from robot_comm import euler_deg_to_matrix
-from Step3_calibration import (
-    build_cube_pose_candidates,
-    cube_selection_profile_kwargs,
-    get_event_base_camera_transform,
-    select_consistent_event_cube_candidates,
-)
-
 DIAG_FACES = ("+Z", "-Z", "+X", "-X", "+Y", "-Y")
 
 
@@ -73,65 +68,13 @@ def build_named_corner_permutations():
 DIAG_CORNER_PERMUTATIONS = build_named_corner_permutations()
 
 
-def load_default_cube_config_for_root(root_folder: str, calib_dir: Optional[str] = None) -> Tuple[CubeConfig, str]:
-    cfg, source, _ = load_fixed_cube_config(CubeConfig())
-    if cfg is not None:
-        return cfg, source
-    cfg, source, _ = load_preferred_cube_config(root_folder, CubeConfig())
-    if cfg is not None:
-        return cfg, source
-    if calib_dir:
-        cfg, source = load_cube_config_from_calibration_summary(calib_dir, CubeConfig())
-        if cfg is not None:
-            return cfg, source
-    return load_cube_config_from_meta(root_folder, CubeConfig())
-
-
-def load_intrinsics(intr_dir: str, cam_idx: int):
-    p = os.path.join(intr_dir, f"cam{cam_idx}.npz")
-    d = np.load(p, allow_pickle=True)
-    return d["color_K"].astype(np.float64), d["color_D"].astype(np.float64)
-
-
 def rotation_error_deg(Ra, Rb):
     dR = Ra @ Rb.T
     c = np.clip((np.trace(dR) - 1.0) / 2.0, -1.0, 1.0)
     return float(np.degrees(np.arccos(c)))
 
 
-def load_robot_pose_from_capture(cap) -> Optional[np.ndarray]:
-    T_B_G = None
-    if "robot_pose_matrix_4x4" in cap:
-        try:
-            T_B_G = np.asarray(cap["robot_pose_matrix_4x4"], dtype=np.float64)
-        except Exception:
-            T_B_G = None
-    if T_B_G is None and "capture_pose_matrix_4x4" in cap:
-        try:
-            T_B_G = np.asarray(cap["capture_pose_matrix_4x4"], dtype=np.float64)
-        except Exception:
-            T_B_G = None
-    if T_B_G is None and "robot_pose_6dof" in cap:
-        try:
-            T_B_G = euler_deg_to_matrix(*cap["robot_pose_6dof"])
-        except Exception:
-            T_B_G = None
-    if T_B_G is None and "capture_pose_6dof" in cap:
-        try:
-            T_B_G = euler_deg_to_matrix(*cap["capture_pose_6dof"])
-        except Exception:
-            T_B_G = None
-    return T_B_G
-
-
-def load_calib(calib_dir: str):
-    """Load all calibration .npy files from directory."""
-    transforms = {}
-    for f in os.listdir(calib_dir):
-        if f.endswith(".npy"):
-            name = f.replace(".npy", "")
-            transforms[name] = np.load(os.path.join(calib_dir, f))
-    return transforms
+load_calib = load_calib_dir
 
 
 def draw_frame(ax, T, label="", scale=30.0, lw=1.5):
@@ -199,7 +142,7 @@ def test_cross_camera_consistency(meta, transforms, all_cam_ids, gripper_cam_idx
     if use_current_cube:
         cube = ArucoCubeTarget(cube_cfg)
         for ci in all_cam_ids:
-            K_map[ci], D_map[ci] = load_intrinsics(intrinsics_dir, ci)
+            K_map[ci], D_map[ci] = load_intrinsics_color(intrinsics_dir, ci)
     profile_kwargs = cube_selection_profile_kwargs(selection_profile)
 
     errors_mm = []
@@ -212,17 +155,9 @@ def test_cross_camera_consistency(meta, transforms, all_cam_ids, gripper_cam_idx
         event_candidate_map = {}
 
         if use_current_cube:
-            for ci_str, cinfo in cap.get("cams", {}).items():
-                ci = int(ci_str)
-                if ci not in K_map or not cinfo.get("saved"):
-                    continue
-                meta_thr = 5.0 if ci == gripper_cam_idx else 3.0
-                candidates = build_cube_pose_candidates(
-                    root_folder, cinfo, K_map[ci], D_map[ci], cube,
-                    meta_reproj_thr=meta_thr, solve_reproj_thr=5.0,
-                    min_aspect=0.0, include_meta=include_meta)
-                if candidates:
-                    event_candidate_map[ci] = candidates
+            event_candidate_map = build_capture_cube_candidate_map(
+                cap, root_folder, K_map, D_map, cube, gripper_cam_idx,
+                include_meta=include_meta)
 
         refined_selection = select_consistent_event_cube_candidates(
             cap, event_candidate_map, tf, gripper_cam_idx, **profile_kwargs) if event_candidate_map else {}
@@ -280,11 +215,11 @@ def test_reprojection(meta, transforms, intrinsics_dir, all_cam_ids, root_folder
     print("[TEST 2] Reprojection verification")
     print("=" * 60)
 
-    cfg = cube_cfg or load_default_cube_config_for_root(root_folder)[0]
+    cfg = cube_cfg or resolve_cube_config_for_run(root_folder, default_cfg=CubeConfig())[0]
     cube = ArucoCubeTarget(cfg)
     K_map, D_map = {}, {}
     for ci in all_cam_ids:
-        K_map[ci], D_map[ci] = load_intrinsics(intrinsics_dir, ci)
+        K_map[ci], D_map[ci] = load_intrinsics_color(intrinsics_dir, ci)
 
     errors_px = []
 
@@ -382,7 +317,7 @@ def test_handeye_consistency(meta, transforms, gripper_cam_idx, root_folder=None
             from charuco_utils import CharucoTarget
             from config import CharucoBoardConfig
 
-            g_K, g_D = load_intrinsics(intrinsics_dir, gripper_cam_idx)
+            g_K, g_D = load_intrinsics_color(intrinsics_dir, gripper_cam_idx)
             charuco_det = CharucoTarget(CharucoBoardConfig())
             print("  No/insufficient ChArUco in metadata, detecting from saved gripper images...")
             for cap in meta.get("captures", []):
@@ -466,28 +401,19 @@ def collect_cube_candidate_diagnostics(meta, transforms, intrinsics_dir, root_fo
         print("  [SKIP] Candidate diagnostics need T_base_O")
         return []
 
-    cfg = cube_cfg or load_default_cube_config_for_root(root_folder)[0]
+    cfg = cube_cfg or resolve_cube_config_for_run(root_folder, default_cfg=CubeConfig())[0]
     cube = ArucoCubeTarget(cfg)
     K_map, D_map = {}, {}
     for ci in all_cam_ids:
-        K_map[ci], D_map[ci] = load_intrinsics(intrinsics_dir, ci)
+        K_map[ci], D_map[ci] = load_intrinsics_color(intrinsics_dir, ci)
     profile_kwargs = cube_selection_profile_kwargs(selection_profile)
 
     rows = []
     for cap in meta.get("captures", []):
         eid = int(cap.get("event_id", -1))
-        event_candidate_map = {}
-        for ci_str, cinfo in cap.get("cams", {}).items():
-            ci = int(ci_str)
-            if ci not in K_map or not cinfo.get("saved"):
-                continue
-            meta_thr = 5.0 if ci == gripper_cam_idx else 3.0
-            candidates = build_cube_pose_candidates(
-                root_folder, cinfo, K_map[ci], D_map[ci], cube,
-                meta_reproj_thr=meta_thr, solve_reproj_thr=5.0,
-                min_aspect=0.0, include_meta=include_meta)
-            if candidates:
-                event_candidate_map[ci] = candidates
+        event_candidate_map = build_capture_cube_candidate_map(
+            cap, root_folder, K_map, D_map, cube, gripper_cam_idx,
+            include_meta=include_meta)
 
         refined_selection = select_consistent_event_cube_candidates(
             cap, event_candidate_map, transforms, gripper_cam_idx, **profile_kwargs) if event_candidate_map else {}
@@ -738,14 +664,14 @@ def collect_marker_override_diagnostics(meta, transforms, intrinsics_dir, root_f
         print("  [SKIP] Override diagnostics need T_base_O")
         return {}
 
-    cfg = cube_cfg or load_default_cube_config_for_root(root_folder)[0]
+    cfg = cube_cfg or resolve_cube_config_for_run(root_folder, default_cfg=CubeConfig())[0]
     model = ArucoCubeModel(cfg)
     cube = ArucoCubeTarget(cfg)
     reorder_to_name = {tuple(v): k for k, v in DIAG_CORNER_PERMUTATIONS.items()}
 
     K_map, D_map = {}, {}
     for ci in all_cam_ids:
-        K_map[ci], D_map[ci] = load_intrinsics(intrinsics_dir, ci)
+        K_map[ci], D_map[ci] = load_intrinsics_color(intrinsics_dir, ci)
 
     face_obj = {}
     for face in DIAG_FACES:
@@ -1220,18 +1146,8 @@ def main():
         for k in cap.get("cams", {}).keys()
     })
     print(f"[INFO] Cameras: {all_cam_ids}, gripper=cam{gripper_cam_idx}")
-    cube_cfg = None
-    cube_cfg_source = "missing"
-    if args.cube_config_json:
-        cube_cfg, cube_cfg_source = load_cube_config_from_json_file(args.cube_config_json, CubeConfig())
-    if cube_cfg is None:
-        cube_cfg, cube_cfg_source, _ = load_fixed_cube_config(CubeConfig())
-    if cube_cfg is None:
-        cube_cfg, cube_cfg_source, _ = load_preferred_cube_config(root, CubeConfig())
-    if cube_cfg is None:
-        cube_cfg, cube_cfg_source = load_cube_config_from_calibration_summary(calib_dir, CubeConfig())
-    if cube_cfg is None:
-        cube_cfg, cube_cfg_source = load_cube_config_from_meta(root, CubeConfig())
+    cube_cfg, cube_cfg_source = resolve_cube_config_for_run(
+        root, calib_dir=calib_dir, cube_config_json=args.cube_config_json, default_cfg=CubeConfig())
     include_meta_candidates = (cube_cfg_source == "meta")
     print(f"[INFO] cube config source: {cube_cfg_source}")
     print(f"[INFO] cube id_to_face: {cube_cfg.id_to_face}")

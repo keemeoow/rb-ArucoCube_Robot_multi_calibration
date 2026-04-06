@@ -14,7 +14,7 @@ Base (Robot)
  │                              │
  │                         sees ArUco Cube
  │                              │
- ├── bTo (cube in base) <──────┘
+ ├── bTo (cube in base) <──────-┘
  │
  └── bTfi (fixed cam i in base)
       ├── Fixed Cam 0 (ref)

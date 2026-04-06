@@ -3,10 +3,10 @@
     "cross_camera": {
       "events_with_2plus_cams": 18,
       "num_errors": 54,
-      "mean_mm": 8.982038197338202,
-      "median_mm": 7.979188725429003,
+      "mean_mm": 8.926399017263371,
+      "median_mm": 8.426315032830438,
       "max_mm": 20.70296399336331,
-      "std_mm": 4.346494570671937,
+      "std_mm": 4.293876398163634,
       "pass": false
     },
     "reprojection": {
@@ -52,25 +52,25 @@
     },
     "pose_repeatability": {
       "num_events": 18,
-      "mean_dt_mm": 9.207417707491478,
-      "mean_dr_deg": 2.236056448292596,
-      "max_dt_mm": 28.20266415419264,
+      "mean_dt_mm": 9.019245773686796,
+      "mean_dr_deg": 2.258564478501177,
+      "max_dt_mm": 25.72345572929764,
       "max_dr_deg": 10.705771508028034,
       "pass": false
     },
     "mesh_alignment": {
       "usable_clouds": 64,
       "usable_events": 18,
-      "mean_rmse_mm": 3.6640134302583167,
-      "median_rmse_mm": 3.6545947603954083,
-      "max_rmse_mm": 6.242925078431778,
+      "mean_rmse_mm": 3.6764070667027706,
+      "median_rmse_mm": 3.709971181306371,
+      "max_rmse_mm": 5.656477250080893,
       "pass": true
     },
     "dimension_accuracy": {
       "usable_events": 17,
-      "mean_abs_err_mm": 3.052089608050095,
-      "median_abs_err_mm": 3.1470194966168044,
-      "max_abs_err_mm": 5.993428645941684,
+      "mean_abs_err_mm": 3.0782860191873844,
+      "median_abs_err_mm": 3.160535416848377,
+      "max_abs_err_mm": 4.851020373384689,
       "pass": false
     }
   },
@@ -78,10 +78,10 @@
     "cross_camera": {
       "events_with_2plus_cams": 18,
       "num_errors": 72,
-      "mean_mm": 7.2487435397670135,
-      "median_mm": 6.593290648650823,
-      "max_mm": 31.264916564643215,
-      "std_mm": 4.6472800500687175,
+      "mean_mm": 7.804379191440178,
+      "median_mm": 7.347214565547995,
+      "max_mm": 31.756654550899654,
+      "std_mm": 5.496523485328134,
       "pass": false
     },
     "reprojection": {
@@ -127,24 +127,24 @@
     },
     "pose_repeatability": {
       "num_events": 18,
-      "mean_dt_mm": 7.481525092215092,
-      "mean_dr_deg": 3.104423498404952,
-      "max_dt_mm": 38.82914463882844,
-      "max_dr_deg": 9.564674094654498,
+      "mean_dt_mm": 8.094662686660804,
+      "mean_dr_deg": 3.0780909058349786,
+      "max_dt_mm": 36.23401264632026,
+      "max_dr_deg": 9.167650549327053,
       "pass": false
     },
     "mesh_alignment": {
       "usable_clouds": 62,
       "usable_events": 18,
-      "mean_rmse_mm": 3.6637548544323977,
-      "median_rmse_mm": 3.6752334805727065,
+      "mean_rmse_mm": 3.6918813400492088,
+      "median_rmse_mm": 3.7030496031732487,
       "max_rmse_mm": 5.160954283912054,
       "pass": true
     },
     "dimension_accuracy": {
-      "usable_events": 17,
-      "mean_abs_err_mm": 2.7514369683932385,
-      "median_abs_err_mm": 2.969048722185334,
+      "usable_events": 18,
+      "mean_abs_err_mm": 2.62859726112813,
+      "median_abs_err_mm": 2.701828309039092,
       "max_abs_err_mm": 4.290597747451659,
       "pass": true
     }
@@ -153,10 +153,10 @@
     "cross_camera": {
       "events_with_2plus_cams": 18,
       "num_errors": 72,
-      "mean_mm": 6.135488380363378,
-      "median_mm": 5.28258502015301,
+      "mean_mm": 6.103524396858851,
+      "median_mm": 5.27252672166673,
       "max_mm": 22.853722458176723,
-      "std_mm": 4.048083748050715,
+      "std_mm": 4.07103298214063,
       "pass": false
     },
     "reprojection": {
@@ -202,8 +202,8 @@
     },
     "pose_repeatability": {
       "num_events": 18,
-      "mean_dt_mm": 6.217458290550742,
-      "mean_dr_deg": 2.034142691802519,
+      "mean_dt_mm": 6.161815014150594,
+      "mean_dr_deg": 2.0569913607038526,
       "max_dt_mm": 25.74607369799386,
       "max_dr_deg": 10.062068016318966,
       "pass": false
@@ -211,15 +211,15 @@
     "mesh_alignment": {
       "usable_clouds": 63,
       "usable_events": 18,
-      "mean_rmse_mm": 3.6966846474156405,
-      "median_rmse_mm": 3.813111377282445,
+      "mean_rmse_mm": 3.7312902206453886,
+      "median_rmse_mm": 3.862419042243354,
       "max_rmse_mm": 4.932865043449414,
       "pass": true
     },
     "dimension_accuracy": {
       "usable_events": 15,
-      "mean_abs_err_mm": 4.0485127236058265,
-      "median_abs_err_mm": 3.1470194966168044,
+      "mean_abs_err_mm": 3.8348089302118846,
+      "median_abs_err_mm": 3.373547741737315,
       "max_abs_err_mm": 8.172322223987845,
       "pass": false
     }

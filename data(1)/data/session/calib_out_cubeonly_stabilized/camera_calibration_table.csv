@@ -1,6 +1,0 @@
-entity,role,transform,solve_method,status,x_mm,y_mm,z_mm,rz_deg,ry_deg,rx_deg,error_trans_mm,error_rot_deg,support_inliers,support_total,status_reason,notes
-cam2,gripper,T_gripper_cam,hand-eye:HORAUD,FAIL,36.270,31.827,-114.541,178.952,-0.311,10.331,1.914,0.394,18,18,hand-eye HORAUD: 1.91mm / 0.394deg,"gripper->camera extrinsic, 18 ChArUco frames"
-cam0,fixed,T_base_C0,board-based,PASS,-432.454,138.525,91.896,-46.596,-1.963,-96.151,1.594,0.268,17,17,board-based: 1.59mm / 0.268deg,fixed camera extrinsic from ChArUco board
-cam1,fixed,T_base_C1,board-based,PASS,263.419,510.985,159.610,93.294,-0.853,-102.038,1.444,0.221,17,17,board-based: 1.44mm / 0.221deg,fixed camera extrinsic from ChArUco board
-cam3,fixed,T_base_C3,cube_chain_ref,FAIL,-275.525,970.619,114.033,-157.771,-0.307,-100.567,7.365,0.750,15,18,cube_chain_ref support=18/18 signature=[1]/ippe0,fallback from cube anchor support=18/18
-cube,object,T_base_O,consistent_event_anchor,FAIL,-158.729,567.544,3.101,-19.932,-1.082,4.807,0.888,0.164,4,18,cube anchor support=4/18,static cube anchor in robot base

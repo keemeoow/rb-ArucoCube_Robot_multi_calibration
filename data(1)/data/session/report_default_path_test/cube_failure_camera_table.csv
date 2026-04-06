@@ -1,5 +1,0 @@
-camera,selected_candidates,accepted_candidates,accept_rate,mean_obj_dt_mm,mean_obj_dr_deg,mean_cam_dt_mm,dominant_selected_markers,dominant_accepted_markers,root_cause
-cam0,18,4,0.222,270.94,58.58,433.48,"id3 x6, id4 x6, id3+id2 x3",id3 x4,"camera extrinsic is stable. Remaining failure comes from cube-model inconsistency, not from the board-based camera calibration itself."
-cam1,18,4,0.222,259.01,58.78,414.79,"id1 x7, id2 x4, id0 x2",id1 x4,"camera extrinsic is stable. Remaining failure comes from cube-model inconsistency, not from the board-based camera calibration itself."
-cam2,18,4,0.222,260.98,58.31,,"id0 x10, id3 x2, id2 x2","id0 x3, id2 x1","hand-eye is stable, but cube candidates disagree across markers. Selected poses are dominated by id0 x10, id3 x2, while accepted poses are only id0 x3, id2 x1."
-cam3,18,4,0.222,273.39,59.05,578.83,"id1 x9, id2 x7, id0 x1",id1 x4,"camera extrinsic is stable. Remaining failure comes from cube-model inconsistency, not from the board-based camera calibration itself."

@@ -14,8 +14,9 @@
   c                 : 현재 위치에서 촬영
 
   --- 설정 ---
-  set               : 현재 TCP + 큐브 중점(Tool 4)을 저장
-                      큐브 중점은 매 촬영 시 PC로 전송됨
+  set               : 현재 TCP + 관절값 + 큐브 중점(Tool 4) 저장
+                      set_index (큐브 위치 #0, #1, ...) 자동 증가
+                      촬영 시 TCP, 관절값, set 정보를 PC로 전송
 
   --- 그리퍼 ---
   go                : 그리퍼 열기
@@ -62,15 +63,14 @@ Step 2 -- 큐브 놓으면서 촬영
     --show --save_depth \
     --min_markers 1 --min_cams_with_cube 1
 
-  플로우:
-    1. 수동으로 큐브 돌출부 중점 잡기
-    2. "set"          -> TCP + 큐브 중점 저장
-    3. 이동 -> 촬영 위치
-    4. "go"           -> 큐브 놓기
-    5. "c"            -> 촬영
-    6. "gc"           -> 큐브 잡기
-    7. 3~6 반복
-    8. "undo set"     -> set 위치로 복귀
+  플로우 (큐브 위치별 멀티 캘리브레이션):
+    1. 큐브를 바닥에 놓기
+    2. "set"          -> 큐브 위치 #N 저장 (TCP, 관절값, 큐브 중점)
+    3. 그리퍼 카메라 위치를 다양하게 이동
+    4. "c"            -> 촬영 (TCP, 관절값, set_index가 PC로 전송)
+    5. 3~4 반복 (같은 큐브 위치에서 여러 각도)
+    6. 큐브를 새 위치로 옮기고 2~5 반복
+    * PC에 capture_waypoints.json + meta.json 동시 저장
 
 Step 3 -- 캘리브레이션
 --------------------------------------------------------------
@@ -80,6 +80,8 @@ Step 3 -- 캘리브레이션
     --intrinsics_dir ./intrinsics
 
 """
+
+
 
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
@@ -99,26 +101,22 @@ import json
 HOST = '0.0.0.0'
 PORT = 12348
 
-# Gripper IO port
 GRIPPER_IO_PORT = 48
 GRIPPER_TIMEOUT_SEC = 5.0
 
-
-# Cube grip parameters
-CUBE_SIZE_MM = 30.0         # cube side length (mm)
-CUBE_EDGE_MM = 2.0          # edge protrusion height (mm)
-CUBE_GRIP_DEPTH_MM = 2.0    # fingertip enters 2mm below cube top
-# TCP(fingertip) to cube center (along tool z): 15mm - 2mm = 13mm
+CUBE_SIZE_MM = 30.0
+CUBE_GRIP_DEPTH_MM = 2.0
 CUBE_CENTER_OFFSET_Z = CUBE_SIZE_MM / 2.0 - CUBE_GRIP_DEPTH_MM
 
-# Tool frame offsets (from robot flange)
-TOOL_GRIPPER_Z = 150.0                                  # tool 3: fingertip
-TOOL_CUBE_CENTER_Z = TOOL_GRIPPER_Z - CUBE_CENTER_OFFSET_Z  # tool 4: cube center (137mm)
+TOOL_GRIPPER_Z = 150.0
+TOOL_CUBE_CENTER_Z = TOOL_GRIPPER_Z - CUBE_CENTER_OFFSET_Z
+
+TCP_AXIS_MAP = {'x': 'dx', 'y': 'dy', 'z': 'dz', 'rz': 'drz', 'ry': 'dry', 'rx': 'drx'}
+JOINT_AXIS_MAP = {'d1': 'dj1', 'd2': 'dj2', 'd3': 'dj3', 'd4': 'dj4', 'd5': 'dj5', 'd6': 'dj6'}
+VALID_AXES = set(list(TCP_AXIS_MAP.keys()) + list(JOINT_AXIS_MAP.keys()))
 
 
-# ──────────────────────────────────────────────────────────────
-# Socket helpers
-# ──────────────────────────────────────────────────────────────
+# ── Socket ──
 
 def send_json(conn, obj):
     try:
@@ -140,39 +138,36 @@ def recv_json(conn):
     return None
 
 
-# ──────────────────────────────────────────────────────────────
-# Robot helpers
-# ──────────────────────────────────────────────────────────────
+# ── Robot helpers ──
+
+def fmt6(v):
+    return '[{:.1f}, {:.1f}, {:.1f}, {:.1f}, {:.1f}, {:.1f}]'.format(
+        v[0], v[1], v[2], v[3], v[4], v[5])
+
 
 def get_tcp():
-    pose = rb.getpos()
-    vals = pose.pos2list()
-    return [vals[0], vals[1], vals[2], vals[3], vals[4], vals[5]]
+    return rb.getpos().pos2list()[:6]
 
 
 def get_cube_center():
-    """Read cube center TCP via tool 4 (accounts for grip depth + rotation)."""
     rb.changetool(4)
-    pose = rb.getpos()
-    vals = pose.pos2list()
+    tcp = rb.getpos().pos2list()[:6]
     rb.changetool(3)
-    return [vals[0], vals[1], vals[2], vals[3], vals[4], vals[5]]
+    return tcp
 
 
 def get_joints():
-    jnt = rb.getjnt()
-    vals = jnt.jnt2list()
-    return [vals[0], vals[1], vals[2], vals[3], vals[4], vals[5]]
+    return rb.getjnt().jnt2list()[:6]
 
 
 def show_pose():
     tcp = get_tcp()
     jnt = get_joints()
     print ''
-    print '=== Current TCP Pose ==='
+    print '=== TCP Pose ==='
     print '  x={:.3f}  y={:.3f}  z={:.3f}'.format(tcp[0], tcp[1], tcp[2])
     print '  rz={:.3f}  ry={:.3f}  rx={:.3f}'.format(tcp[3], tcp[4], tcp[5])
-    print '=== Current Joints ==='
+    print '=== Joints ==='
     print '  d1={:.3f}  d2={:.3f}  d3={:.3f}'.format(jnt[0], jnt[1], jnt[2])
     print '  d4={:.3f}  d5={:.3f}  d6={:.3f}'.format(jnt[3], jnt[4], jnt[5])
     print ''
@@ -180,52 +175,36 @@ def show_pose():
 
 
 def move_tcp(axis, value):
-    pose = rb.getpos()
-    vals = pose.pos2list()
-    current = Position(vals[0], vals[1], vals[2], vals[3], vals[4], vals[5])
-
-    axis_map = {
-        'x': 'dx', 'y': 'dy', 'z': 'dz',
-        'rz': 'drz', 'ry': 'dry', 'rx': 'drx'
-    }
-    if axis not in axis_map:
+    if axis not in TCP_AXIS_MAP:
         print 'Invalid axis: {}. Use x,y,z,rz,ry,rx'.format(axis)
         return
-
-    kwargs = {axis_map[axis]: value}
-    target = current.offset(**kwargs)
-    print 'TCP move: {} += {}'.format(axis, value)
-    rb.line(target)
-    print 'Move complete'
+    current = Position(*rb.getpos().pos2list()[:6])
+    rb.line(current.offset(**{TCP_AXIS_MAP[axis]: value}))
+    print 'TCP {} += {} done'.format(axis, value)
 
 
 def move_joint(axis, value):
-    jnt = rb.getjnt()
-    vals = jnt.jnt2list()
-    current = Joint(vals[0], vals[1], vals[2], vals[3], vals[4], vals[5])
-
-    axis_map = {
-        'd1': 'dj1', 'd2': 'dj2', 'd3': 'dj3',
-        'd4': 'dj4', 'd5': 'dj5', 'd6': 'dj6'
-    }
-    if axis not in axis_map:
-        print 'Invalid axis: {}. Use d1,d2,d3,d4,d5,d6'.format(axis)
+    if axis not in JOINT_AXIS_MAP:
+        print 'Invalid axis: {}. Use d1~d6'.format(axis)
         return
+    current = Joint(*rb.getjnt().jnt2list()[:6])
+    rb.move(current.offset(**{JOINT_AXIS_MAP[axis]: value}))
+    print 'Joint {} += {} done'.format(axis, value)
 
-    kwargs = {axis_map[axis]: value}
-    target = current.offset(**kwargs)
-    print 'Joint move: {} += {}'.format(axis, value)
-    rb.move(target)
-    print 'Move complete'
 
+def undo_one(entry):
+    mtype, maxis, mvalue = entry
+    print '  {} {},{} -> {}'.format(mtype, maxis, mvalue, -mvalue)
+    if mtype == 'p':
+        move_tcp(maxis, -mvalue)
+    else:
+        move_joint(maxis, -mvalue)
+
+
+# ── Gripper ──
 
 def check_gripper():
-    """Read gripper state from din 48~51."""
-    a = din(GRIPPER_IO_PORT)
-    b = din(GRIPPER_IO_PORT + 1)
-    c = din(GRIPPER_IO_PORT + 2)
-    d = din(GRIPPER_IO_PORT + 3)
-    return [d, c, b, a]
+    return [din(GRIPPER_IO_PORT + i) for i in [3, 2, 1, 0]]
 
 
 def gripper_open():
@@ -254,167 +233,118 @@ def gripper_close():
     print 'Gripper closed'
 
 
-def do_capture(conn, capture_count, set_cube_center=None):
-    """Send capture command and wait for response."""
+# ── Capture ──
+
+def do_capture(conn, pose_index, set_cube_center=None, set_index=None,
+               set_joints=None, set_tcp=None, place_joints=None):
+    """Returns (status, tcp, cube_tcp) or (None, None, None) on disconnect."""
     tcp = get_tcp()
     cube_tcp = get_cube_center()
+    joints = get_joints()
     print ''
-    print '*** CAPTURING *** (pose_index={})'.format(capture_count)
-    print '  TCP(fingertip):   [{:.1f}, {:.1f}, {:.1f}, {:.1f}, {:.1f}, {:.1f}]'.format(
-        tcp[0], tcp[1], tcp[2], tcp[3], tcp[4], tcp[5])
-    print '  TCP(cube center): [{:.1f}, {:.1f}, {:.1f}, {:.1f}, {:.1f}, {:.1f}]'.format(
-        cube_tcp[0], cube_tcp[1], cube_tcp[2], cube_tcp[3], cube_tcp[4], cube_tcp[5])
+    print '*** CAPTURE {} ***'.format(pose_index)
+    print '  fingertip:    {}'.format(fmt6(tcp))
+    print '  cube center:  {}'.format(fmt6(cube_tcp))
 
     msg = {
         "command": "capture",
         "capture_pose_6dof": tcp,
         "cube_center_pose_6dof": cube_tcp,
-        "pose_index": capture_count
+        "robot_joints_6dof": joints,
+        "pose_index": pose_index,
     }
     if set_cube_center is not None:
         msg["set_cube_center_6dof"] = set_cube_center
+    if set_index is not None:
+        msg["set_index"] = set_index
+    if set_joints is not None:
+        msg["set_joints"] = set_joints
+    if set_tcp is not None:
+        msg["set_tcp"] = set_tcp
+    if place_joints is not None:
+        msg["place_joints"] = place_joints
 
     send_json(conn, msg)
-
     resp = recv_json(conn)
     if resp is None:
         print 'Client disconnected!'
-        return False
+        return None, None, None
 
     status = resp.get('status', 'unknown') if isinstance(resp, dict) else 'unknown'
-    print '*** Capture {} done (status={}) ***'.format(capture_count, status)
-    print ''
-    return True
+    print '*** Capture {} done (status={}) ***'.format(pose_index, status)
+    return status, tcp, cube_tcp
 
 
-# ──────────────────────────────────────────────────────────────
-# Auto capture mode
-# ──────────────────────────────────────────────────────────────
+# ── Auto capture ──
 
 def run_auto_capture(rb, conn, waypoint_file, speed=30):
-    """저장된 관절값 웨이포인트를 순서대로 재생하며 자동 촬영."""
     with open(waypoint_file, 'r') as f:
         data = json.load(f)
 
     set_joints = data.get('set_joints')
-    set_tcp = data.get('set_tcp')
     set_cube_center = data.get('set_cube_center')
     wps = data.get('waypoints', [])
 
     if set_joints is None:
-        print '[ERROR] set_joints not found in waypoint file!'
-        print '  Re-teach with "set" command first.'
+        print '[ERROR] set_joints not found!'
         send_json(conn, {"command": "quit"})
         return
 
-    missing = [i for i, wp in enumerate(wps) if 'place_joints' not in wp or 'capture_joints' not in wp]
+    missing = [i for i, wp in enumerate(wps)
+               if 'place_joints' not in wp or 'capture_joints' not in wp]
     if missing:
         print '[ERROR] Missing joints in waypoints: {}'.format(missing)
-        print '  Re-teach with "go" then "c" for each position.'
         send_json(conn, {"command": "quit"})
         return
 
     print ''
     print '=========================================='
-    print '  Auto Capture Mode'
-    print '  File:      {}'.format(waypoint_file)
-    print '  Waypoints: {}'.format(len(wps))
-    print '  Speed:     {}'.format(speed)
+    print '  Auto Capture: {} waypoints, speed={}'.format(len(wps), speed)
     print '=========================================='
-    print ''
 
     rb.override(speed)
-
-    # Move to set position
-    print '[Auto] Moving to SET position...'
-    rb.move(Joint(set_joints[0], set_joints[1], set_joints[2],
-                  set_joints[3], set_joints[4], set_joints[5]))
-    print '[Auto] At SET position.'
-    print '  Ensure cube is in gripper and gripper is closed!'
-    print ''
-    raw_input('Press ENTER to start auto capture...')
+    print '[Auto] Moving to SET...'
+    rb.move(Joint(*set_joints[:6]))
+    print '[Auto] At SET. Ensure cube is gripped!'
+    raw_input('Press ENTER to start...')
 
     success_count = 0
 
     for i, wp in enumerate(wps):
         place_j = wp['place_joints']
         capture_j = wp['capture_joints']
-
         print ''
-        print '============ Waypoint {}/{} ============'.format(i + 1, len(wps))
+        print '======== Waypoint {}/{} ========'.format(i + 1, len(wps))
 
-        # 1. Move to PLACE position (where cube will be placed)
-        print '[Auto] 1/6 Moving to PLACE...'
-        rb.move(Joint(place_j[0], place_j[1], place_j[2],
-                      place_j[3], place_j[4], place_j[5]))
+        rb.move(Joint(*place_j[:6]))
         time.sleep(0.3)
-
-        # 2. Open gripper (place cube on table)
-        print '[Auto] 2/6 Opening gripper...'
         gripper_open()
         time.sleep(0.3)
 
-        # 3. Move to CAPTURE position (camera above cube)
-        print '[Auto] 3/6 Moving to CAPTURE...'
-        rb.move(Joint(capture_j[0], capture_j[1], capture_j[2],
-                      capture_j[3], capture_j[4], capture_j[5]))
+        rb.move(Joint(*capture_j[:6]))
         time.sleep(0.5)
 
-        # 4. Send capture signal to PC client
-        print '[Auto] 4/6 Capturing...'
-        tcp = get_tcp()
-        cube_tcp = get_cube_center()
-        msg = {
-            "command": "capture",
-            "capture_pose_6dof": tcp,
-            "cube_center_pose_6dof": cube_tcp,
-            "pose_index": i,
-        }
-        if set_cube_center is not None:
-            msg["set_cube_center_6dof"] = set_cube_center
-        send_json(conn, msg)
-
-        resp = recv_json(conn)
-        if resp is None:
-            print '[Auto] Client disconnected!'
+        status, _, _ = do_capture(conn, i, set_cube_center)
+        if status is None:
             break
-        status = resp.get('status', 'unknown') if isinstance(resp, dict) else 'unknown'
         if status == 'success':
             success_count += 1
-            print '[Auto]   -> OK (saved)'
+            print '[Auto] -> OK'
         else:
-            print '[Auto]   -> SKIPPED (not enough markers)'
+            print '[Auto] -> SKIPPED'
 
-        # 5. Move back to PLACE (to pick up cube)
-        print '[Auto] 5/6 Returning to PLACE...'
-        rb.move(Joint(place_j[0], place_j[1], place_j[2],
-                      place_j[3], place_j[4], place_j[5]))
+        rb.move(Joint(*place_j[:6]))
         time.sleep(0.3)
-
-        # 6. Close gripper (pick up cube)
-        print '[Auto] 6/6 Closing gripper...'
         gripper_close()
         time.sleep(0.3)
+        rb.move(Joint(*set_joints[:6]))
 
-        # Return to SET for next cycle
-        print '[Auto] Returning to SET...'
-        rb.move(Joint(set_joints[0], set_joints[1], set_joints[2],
-                      set_joints[3], set_joints[4], set_joints[5]))
-
-        print '[Auto] Waypoint {}/{} complete'.format(i + 1, len(wps))
-
-    # Done
     send_json(conn, {"command": "quit"})
     print ''
-    print '=========================================='
-    print '  Auto Capture Complete!'
-    print '  Total: {}/{} captured'.format(success_count, len(wps))
-    print '=========================================='
+    print '  Auto Complete: {}/{} captured'.format(success_count, len(wps))
 
 
-# ──────────────────────────────────────────────────────────────
-# Main
-# ──────────────────────────────────────────────────────────────
+# ── Main ──
 
 def main():
     try:
@@ -423,7 +353,7 @@ def main():
 
         global rb
         rb = i611Robot()
-        _BASE = Base()
+        Base()
         rb.open()
         IOinit(rb)
 
@@ -436,22 +366,20 @@ def main():
         rb.settool(2, 0.0, 35.0, 330.0, 0.0, 0.0, 0.0)
         rb.settool(3, 0.0, 0.0, TOOL_GRIPPER_Z, 0.0, 0.0, 0.0)
         rb.settool(4, 0.0, 0.0, TOOL_CUBE_CENTER_Z, 0.0, 0.0, 0.0)
-        rb.changetool(3)  # default: fingertip
+        rb.changetool(3)
         rb.use_mt(True)
 
-        # ─── Start server ───
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         s.bind((HOST, PORT))
         s.listen(1)
-        print "Teach-and-Capture server on port {}. Waiting for client...".format(PORT)
+        print "Server on port {}. Waiting...".format(PORT)
 
         conn, addr = s.accept()
-        print "Client connected: {}".format(addr)
+        print "Client: {}".format(addr)
 
-        # ─── Auto mode check ───
-        auto_mode = '--auto' in sys.argv
-        if auto_mode:
+        # Auto mode
+        if '--auto' in sys.argv:
             idx = sys.argv.index('--auto')
             auto_file = sys.argv[idx + 1] if idx + 1 < len(sys.argv) else 'capture_waypoints.json'
             auto_speed = 30
@@ -469,46 +397,24 @@ def main():
                     pass
             return
 
-        # ─── State ───
+        # State
         capture_count = 0
-        move_history = []       # [(type, axis, value), ...] for undo
-        holding_cube = True     # True: cube in gripper, False: cube placed
-        home_pose = None        # saved TCP from 'set'
-        home_joints = None      # saved joints from 'set'
-        set_cube_center = None  # cube center 6dof from 'set' (sent to PC)
-        last_place_joints = None  # joints when gripper opened (place position)
-        last_place_tcp = None     # TCP when gripper opened
-        waypoints = []          # saved on quit (with joints for auto replay)
+        set_index = -1
+        move_history = []
+        home_pose = None
+        home_joints = None
+        set_cube_center = None
+        last_place_joints = None
+        waypoints = []
 
         print ''
         print '=========================================='
-        print '  Teach-and-Capture Mode'
-        print '=========================================='
-        print ''
-        print '--- Movement ---'
-        print '  p <axis>,<value>  : TCP move (p z,-10)'
-        print '  j <axis>,<value>  : Joint move (j d1,10)'
-        print '  show              : Show current pose'
-        print '  speed <0-100>     : Set speed'
-        print ''
-        print '--- Capture ---'
-        print '  c                 : Capture at current position'
-        print ''
-        print '--- Settings ---'
-        print '  set               : Save TCP + cube center (Tool 4)'
-        print ''
-        print '--- Gripper ---'
-        print '  go                : Gripper open'
-        print '  gc                : Gripper close'
-        print ''
-        print '--- Undo ---'
-        print '  undo              : Reverse last move'
-        print '  undo <N>          : Reverse last N moves'
-        print '  undo all          : Reverse all moves'
-        print '  undo <axis...>    : Reverse axis moves (undo x ry rz)'
-        print '  undo set          : Return to set position'
-        print ''
-        print '  q                 : Quit'
+        print '  p <a>,<v> / j <a>,<v> : move'
+        print '  goto x,y,z[,rz,ry,rx] : abs move'
+        print '  show / speed <0-100>'
+        print '  c: capture  set: save TCP+cube'
+        print '  go: grip open  gc: grip close'
+        print '  undo [N|all|<axes>|set]  q: quit'
         print '=========================================='
         print ''
 
@@ -519,244 +425,157 @@ def main():
                 cmd = raw_input('> ').strip()
             except EOFError:
                 break
-
             if not cmd:
                 continue
 
-            cmd_lower = cmd.lower()
+            cl = cmd.lower()
 
-            # ─── Quit ───
-            if cmd_lower == 'q':
+            # Quit
+            if cl == 'q':
                 send_json(conn, {"command": "quit"})
                 break
 
-            # ─── Show pose ───
-            elif cmd_lower == 'show':
+            # Show
+            elif cl == 'show':
                 show_pose()
                 if home_pose is not None:
-                    print '  [Set] TCP:  [{:.1f}, {:.1f}, {:.1f}, {:.1f}, {:.1f}, {:.1f}]'.format(
-                        home_pose[0], home_pose[1], home_pose[2],
-                        home_pose[3], home_pose[4], home_pose[5])
+                    print '  [Set #{}] TCP:  {}'.format(set_index, fmt6(home_pose))
                 if set_cube_center is not None:
-                    print '  [Set] Cube: [{:.1f}, {:.1f}, {:.1f}]'.format(
-                        set_cube_center[0], set_cube_center[1], set_cube_center[2])
-                print ''
+                    print '  [Set #{}] Cube: [{:.1f}, {:.1f}, {:.1f}]'.format(
+                        set_index, set_cube_center[0], set_cube_center[1], set_cube_center[2])
 
-            # ─── Speed ───
-            elif cmd_lower.startswith('speed'):
+            # Speed
+            elif cl.startswith('speed'):
                 try:
                     spd = int(cmd.split()[1])
                     rb.override(spd)
-                    print 'Speed set to {}'.format(spd)
+                    print 'Speed: {}'.format(spd)
                 except Exception:
                     print 'Usage: speed <0-100>'
 
-            # ─── Set: save TCP + cube center ───
-            elif cmd_lower == 'set':
+            # Set
+            elif cl == 'set':
+                set_index += 1
                 home_pose = get_tcp()
                 home_joints = get_joints()
                 set_cube_center = get_cube_center()
                 move_history = []
                 print ''
-                print '*** Set saved ***'
-                print '  TCP:         [{:.1f}, {:.1f}, {:.1f}, {:.1f}, {:.1f}, {:.1f}]'.format(
-                    home_pose[0], home_pose[1], home_pose[2],
-                    home_pose[3], home_pose[4], home_pose[5])
-                print '  Joints:      [{:.2f}, {:.2f}, {:.2f}, {:.2f}, {:.2f}, {:.2f}]'.format(
+                print '*** Set #{} saved ***'.format(set_index)
+                print '  TCP:    {}'.format(fmt6(home_pose))
+                print '  Joints: [{:.2f}, {:.2f}, {:.2f}, {:.2f}, {:.2f}, {:.2f}]'.format(
                     home_joints[0], home_joints[1], home_joints[2],
                     home_joints[3], home_joints[4], home_joints[5])
-                print '  Cube center: [{:.1f}, {:.1f}, {:.1f}] (offset={:.0f}mm)'.format(
+                print '  Cube:   [{:.1f}, {:.1f}, {:.1f}] (offset={:.0f}mm)'.format(
                     set_cube_center[0], set_cube_center[1], set_cube_center[2],
                     CUBE_CENTER_OFFSET_Z)
-                print ''
 
-            # ─── Gripper open ───
-            elif cmd_lower == 'go':
+            # Gripper
+            elif cl == 'go':
                 last_place_joints = get_joints()
-                last_place_tcp = get_tcp()
                 gripper_open()
-                holding_cube = False
-                print '  [Place joints saved]'
 
-            # ─── Gripper close ───
-            elif cmd_lower == 'gc':
+            elif cl == 'gc':
                 gripper_close()
-                holding_cube = True
 
-            # ─── CAPTURE ───
-            elif cmd_lower == 'c':
-                ok = do_capture(conn, capture_count, set_cube_center)
-                if not ok:
+            # Capture
+            elif cl == 'c':
+                status, tcp, cube_tcp = do_capture(
+                    conn, capture_count, set_cube_center,
+                    set_index if set_index >= 0 else None,
+                    set_joints=home_joints, set_tcp=home_pose,
+                    place_joints=last_place_joints)
+                if status is None:
                     break
-                tcp = get_tcp()
-                jnt = get_joints()
-                cube_tcp = get_cube_center()
                 wp = {
                     "pose_index": capture_count,
-                    "capture_joints": jnt,
+                    "capture_joints": get_joints(),
                     "capture_tcp": tcp,
                     "cube_center_6dof": cube_tcp,
                 }
                 if last_place_joints is not None:
                     wp["place_joints"] = last_place_joints
-                    wp["place_tcp"] = last_place_tcp
                 else:
-                    print '  [WARN] No place joints (go not called before capture)'
+                    print '  [WARN] go not called before capture'
                 waypoints.append(wp)
                 capture_count += 1
 
-            # ─── UNDO ───
-            elif cmd_lower.startswith('undo'):
-                parts = cmd.lower().split()
-                args_list = parts[1:]
+            # Undo
+            elif cl.startswith('undo'):
+                args = cl.split()[1:]
 
-                # undo set: return to set XY/rotation, Z=0
-                if len(args_list) == 1 and args_list[0] == 'set':
+                if args == ['set']:
                     if home_pose is None:
-                        print 'No set saved. Use "set" first.'
+                        print 'No set saved.'
                     else:
-                        tcp = get_tcp()
                         target = Position(home_pose[0], home_pose[1], 0.0,
                                           home_pose[3], home_pose[4], home_pose[5])
-                        print ''
-                        print '--- Returning to set position (z=0) ---'
-                        print '  from: [{:.1f}, {:.1f}, {:.1f}, {:.1f}, {:.1f}, {:.1f}]'.format(
-                            tcp[0], tcp[1], tcp[2], tcp[3], tcp[4], tcp[5])
-                        print '  to:   [{:.1f}, {:.1f}, {:.1f}, {:.1f}, {:.1f}, {:.1f}]'.format(
-                            home_pose[0], home_pose[1], 0.0,
-                            home_pose[3], home_pose[4], home_pose[5])
                         rb.line(target)
                         move_history = []
-                        print '--- Set position reached (z=0) ---'
                         show_pose()
 
                 elif not move_history:
                     print 'Nothing to undo.'
+
                 else:
-                    valid_axes = set(['x', 'y', 'z', 'rx', 'ry', 'rz',
-                                      'd1', 'd2', 'd3', 'd4', 'd5', 'd6'])
+                    if not args:
+                        undo_one(move_history.pop())
 
-                    if len(args_list) == 0:
-                        last = move_history.pop()
-                        mtype, maxis, mvalue = last
-                        reverse = -mvalue
-                        print ''
-                        print '--- Undoing 1 move ---'
-                        print '  {} {},{} -> {}'.format(mtype, maxis, mvalue, reverse)
-                        if mtype == 'p':
-                            move_tcp(maxis, reverse)
-                        elif mtype == 'j':
-                            move_joint(maxis, reverse)
+                    elif args[0] == 'all':
+                        while move_history:
+                            undo_one(move_history.pop())
 
-                    elif args_list[0] == 'all':
-                        count = len(move_history)
-                        print ''
-                        print '--- Undoing ALL {} move(s) ---'.format(count)
-                        for i in range(count):
-                            last = move_history.pop()
-                            mtype, maxis, mvalue = last
-                            reverse = -mvalue
-                            print '  [{}/{}] {} {},{} -> {}'.format(
-                                i + 1, count, mtype, maxis, mvalue, reverse)
-                            if mtype == 'p':
-                                move_tcp(maxis, reverse)
-                            elif mtype == 'j':
-                                move_joint(maxis, reverse)
-
-                    elif args_list[0] in valid_axes:
-                        axis_set = set([a for a in args_list if a in valid_axes])
-                        targets = []
-                        for i in range(len(move_history)):
-                            h = move_history[i]
-                            if h[1] in axis_set:
-                                targets.append((i, h))
-                        if not targets:
-                            print 'No [{}] moves to undo.'.format(','.join(sorted(axis_set)))
+                    elif args[0] in VALID_AXES:
+                        axis_set = set(a for a in args if a in VALID_AXES)
+                        indices = [i for i, h in enumerate(move_history) if h[1] in axis_set]
+                        if not indices:
+                            print 'No moves on [{}]'.format(','.join(sorted(axis_set)))
                         else:
-                            label = ','.join(sorted(axis_set))
-                            print ''
-                            print '--- Undoing {} move(s) on [{}] ---'.format(
-                                len(targets), label)
-                            for idx in range(len(targets) - 1, -1, -1):
-                                item = targets[idx]
-                                mtype, maxis, mvalue = item[1]
-                                reverse = -mvalue
-                                step = len(targets) - idx
-                                print '  [{}/{}] {} {},{} -> {}'.format(
-                                    step, len(targets), mtype, maxis, mvalue, reverse)
-                                if mtype == 'p':
-                                    move_tcp(maxis, reverse)
-                                elif mtype == 'j':
-                                    move_joint(maxis, reverse)
-                                move_history.pop(item[0])
-
+                            for idx in reversed(indices):
+                                undo_one(move_history.pop(idx))
                     else:
                         try:
-                            count = int(args_list[0])
+                            count = min(int(args[0]), len(move_history))
                         except ValueError:
-                            print 'Usage: undo / undo <N> / undo all / undo <axis...> / undo set'
+                            print 'Usage: undo [N|all|<axes>|set]'
                             continue
-                        count = min(count, len(move_history))
-                        print ''
-                        print '--- Undoing {} move(s) ---'.format(count)
-                        for i in range(count):
-                            last = move_history.pop()
-                            mtype, maxis, mvalue = last
-                            reverse = -mvalue
-                            print '  [{}/{}] {} {},{} -> {}'.format(
-                                i + 1, count, mtype, maxis, mvalue, reverse)
-                            if mtype == 'p':
-                                move_tcp(maxis, reverse)
-                            elif mtype == 'j':
-                                move_joint(maxis, reverse)
+                        for _ in range(count):
+                            undo_one(move_history.pop())
 
-                    print '--- Undo complete ---'
                     show_pose()
 
-            # ─── GOTO: absolute TCP position ───
-            elif cmd_lower.startswith('goto '):
+            # Goto
+            elif cl.startswith('goto '):
                 try:
                     vals = [float(v.strip()) for v in cmd[5:].strip().split(',')]
                     if len(vals) == 6:
-                        target = Position(vals[0], vals[1], vals[2],
-                                          vals[3], vals[4], vals[5])
-                        print 'GOTO: [{:.1f}, {:.1f}, {:.1f}, {:.1f}, {:.1f}, {:.1f}]'.format(
-                            vals[0], vals[1], vals[2], vals[3], vals[4], vals[5])
-                        rb.line(target)
-                        print 'Move complete'
-                        show_pose()
+                        rb.line(Position(*vals))
                     elif len(vals) == 3:
                         tcp = get_tcp()
-                        target = Position(vals[0], vals[1], vals[2],
-                                          tcp[3], tcp[4], tcp[5])
-                        print 'GOTO: [{:.1f}, {:.1f}, {:.1f}] (rotation unchanged)'.format(
-                            vals[0], vals[1], vals[2])
-                        rb.line(target)
-                        print 'Move complete'
-                        show_pose()
+                        rb.line(Position(vals[0], vals[1], vals[2], tcp[3], tcp[4], tcp[5]))
                     else:
-                        print 'Usage: goto x,y,z  or  goto x,y,z,rz,ry,rx'
+                        print 'Usage: goto x,y,z[,rz,ry,rx]'
+                        continue
+                    show_pose()
                 except Exception as e:
-                    print 'Error: {}. Usage: goto x,y,z,rz,ry,rx'.format(e)
+                    print 'Error: {}'.format(e)
 
-            # ─── TCP move ───
-            elif cmd_lower.startswith('p '):
+            # TCP move
+            elif cl.startswith('p '):
                 try:
                     parts = cmd[2:].strip().split(',')
-                    axis = parts[0].strip()
-                    value = float(parts[1].strip())
+                    axis, value = parts[0].strip(), float(parts[1].strip())
                     move_tcp(axis, value)
                     move_history.append(('p', axis, value))
                     show_pose()
                 except Exception as e:
                     print 'Error: {}. Usage: p <axis>,<value>'.format(e)
 
-            # ─── Joint move ───
-            elif cmd_lower.startswith('j '):
+            # Joint move
+            elif cl.startswith('j '):
                 try:
                     parts = cmd[2:].strip().split(',')
-                    axis = parts[0].strip()
-                    value = float(parts[1].strip())
+                    axis, value = parts[0].strip(), float(parts[1].strip())
                     move_joint(axis, value)
                     move_history.append(('j', axis, value))
                     show_pose()
@@ -766,7 +585,7 @@ def main():
             else:
                 print 'Unknown: {}'.format(cmd)
 
-        # Save waypoints for next session (with joints for auto replay)
+        # Save waypoints
         if waypoints:
             save_data = {
                 "set_joints": home_joints,
@@ -774,12 +593,9 @@ def main():
                 "set_cube_center": set_cube_center,
                 "waypoints": waypoints,
             }
-            wp_path = 'capture_waypoints.json'
-            with open(wp_path, 'w') as f:
+            with open('capture_waypoints.json', 'w') as f:
                 json.dump(save_data, f, indent=2)
-            print '\nWaypoints saved: {} ({} poses)'.format(wp_path, len(waypoints))
-            if home_joints is None:
-                print '[WARN] set_joints is None -- "set" was not called before captures'
+            print '\nWaypoints saved: {} poses'.format(len(waypoints))
 
         print '\nTotal captures: {}'.format(capture_count)
 
@@ -789,7 +605,6 @@ def main():
             send_json(conn, {"command": "quit"})
         except Exception:
             pass
-
     except Robot_emo as e:
         print(e)
     except Robot_error as e:
@@ -798,7 +613,6 @@ def main():
         print(e)
     except Exception as e:
         print(e)
-
     finally:
         try:
             rb.exit(0)

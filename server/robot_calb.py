@@ -91,6 +91,7 @@ from rbsys import *
 from i611_common import *
 from i611_io import *
 from i611shm import *
+import sys
 import time
 import socket
 import json
@@ -287,6 +288,131 @@ def do_capture(conn, capture_count, set_cube_center=None):
 
 
 # ──────────────────────────────────────────────────────────────
+# Auto capture mode
+# ──────────────────────────────────────────────────────────────
+
+def run_auto_capture(rb, conn, waypoint_file, speed=30):
+    """저장된 관절값 웨이포인트를 순서대로 재생하며 자동 촬영."""
+    with open(waypoint_file, 'r') as f:
+        data = json.load(f)
+
+    set_joints = data.get('set_joints')
+    set_tcp = data.get('set_tcp')
+    set_cube_center = data.get('set_cube_center')
+    wps = data.get('waypoints', [])
+
+    if set_joints is None:
+        print '[ERROR] set_joints not found in waypoint file!'
+        print '  Re-teach with "set" command first.'
+        send_json(conn, {"command": "quit"})
+        return
+
+    missing = [i for i, wp in enumerate(wps) if 'place_joints' not in wp or 'capture_joints' not in wp]
+    if missing:
+        print '[ERROR] Missing joints in waypoints: {}'.format(missing)
+        print '  Re-teach with "go" then "c" for each position.'
+        send_json(conn, {"command": "quit"})
+        return
+
+    print ''
+    print '=========================================='
+    print '  Auto Capture Mode'
+    print '  File:      {}'.format(waypoint_file)
+    print '  Waypoints: {}'.format(len(wps))
+    print '  Speed:     {}'.format(speed)
+    print '=========================================='
+    print ''
+
+    rb.override(speed)
+
+    # Move to set position
+    print '[Auto] Moving to SET position...'
+    rb.move(Joint(set_joints[0], set_joints[1], set_joints[2],
+                  set_joints[3], set_joints[4], set_joints[5]))
+    print '[Auto] At SET position.'
+    print '  Ensure cube is in gripper and gripper is closed!'
+    print ''
+    raw_input('Press ENTER to start auto capture...')
+
+    success_count = 0
+
+    for i, wp in enumerate(wps):
+        place_j = wp['place_joints']
+        capture_j = wp['capture_joints']
+
+        print ''
+        print '============ Waypoint {}/{} ============'.format(i + 1, len(wps))
+
+        # 1. Move to PLACE position (where cube will be placed)
+        print '[Auto] 1/6 Moving to PLACE...'
+        rb.move(Joint(place_j[0], place_j[1], place_j[2],
+                      place_j[3], place_j[4], place_j[5]))
+        time.sleep(0.3)
+
+        # 2. Open gripper (place cube on table)
+        print '[Auto] 2/6 Opening gripper...'
+        gripper_open()
+        time.sleep(0.3)
+
+        # 3. Move to CAPTURE position (camera above cube)
+        print '[Auto] 3/6 Moving to CAPTURE...'
+        rb.move(Joint(capture_j[0], capture_j[1], capture_j[2],
+                      capture_j[3], capture_j[4], capture_j[5]))
+        time.sleep(0.5)
+
+        # 4. Send capture signal to PC client
+        print '[Auto] 4/6 Capturing...'
+        tcp = get_tcp()
+        cube_tcp = get_cube_center()
+        msg = {
+            "command": "capture",
+            "capture_pose_6dof": tcp,
+            "cube_center_pose_6dof": cube_tcp,
+            "pose_index": i,
+        }
+        if set_cube_center is not None:
+            msg["set_cube_center_6dof"] = set_cube_center
+        send_json(conn, msg)
+
+        resp = recv_json(conn)
+        if resp is None:
+            print '[Auto] Client disconnected!'
+            break
+        status = resp.get('status', 'unknown') if isinstance(resp, dict) else 'unknown'
+        if status == 'success':
+            success_count += 1
+            print '[Auto]   -> OK (saved)'
+        else:
+            print '[Auto]   -> SKIPPED (not enough markers)'
+
+        # 5. Move back to PLACE (to pick up cube)
+        print '[Auto] 5/6 Returning to PLACE...'
+        rb.move(Joint(place_j[0], place_j[1], place_j[2],
+                      place_j[3], place_j[4], place_j[5]))
+        time.sleep(0.3)
+
+        # 6. Close gripper (pick up cube)
+        print '[Auto] 6/6 Closing gripper...'
+        gripper_close()
+        time.sleep(0.3)
+
+        # Return to SET for next cycle
+        print '[Auto] Returning to SET...'
+        rb.move(Joint(set_joints[0], set_joints[1], set_joints[2],
+                      set_joints[3], set_joints[4], set_joints[5]))
+
+        print '[Auto] Waypoint {}/{} complete'.format(i + 1, len(wps))
+
+    # Done
+    send_json(conn, {"command": "quit"})
+    print ''
+    print '=========================================='
+    print '  Auto Capture Complete!'
+    print '  Total: {}/{} captured'.format(success_count, len(wps))
+    print '=========================================='
+
+
+# ──────────────────────────────────────────────────────────────
 # Main
 # ──────────────────────────────────────────────────────────────
 
@@ -323,13 +449,36 @@ def main():
         conn, addr = s.accept()
         print "Client connected: {}".format(addr)
 
+        # ─── Auto mode check ───
+        auto_mode = '--auto' in sys.argv
+        if auto_mode:
+            idx = sys.argv.index('--auto')
+            auto_file = sys.argv[idx + 1] if idx + 1 < len(sys.argv) else 'capture_waypoints.json'
+            auto_speed = 30
+            if '--speed' in sys.argv:
+                sidx = sys.argv.index('--speed')
+                if sidx + 1 < len(sys.argv):
+                    auto_speed = int(sys.argv[sidx + 1])
+            try:
+                run_auto_capture(rb, conn, auto_file, auto_speed)
+            finally:
+                try:
+                    conn.close()
+                    s.close()
+                except Exception:
+                    pass
+            return
+
         # ─── State ───
         capture_count = 0
         move_history = []       # [(type, axis, value), ...] for undo
         holding_cube = True     # True: cube in gripper, False: cube placed
         home_pose = None        # saved TCP from 'set'
+        home_joints = None      # saved joints from 'set'
         set_cube_center = None  # cube center 6dof from 'set' (sent to PC)
-        waypoints = []          # [(tcp_6dof, cube_center_6dof), ...] saved on quit
+        last_place_joints = None  # joints when gripper opened (place position)
+        last_place_tcp = None     # TCP when gripper opened
+        waypoints = []          # saved on quit (with joints for auto replay)
 
         print ''
         print '=========================================='
@@ -405,6 +554,7 @@ def main():
             # ─── Set: save TCP + cube center ───
             elif cmd_lower == 'set':
                 home_pose = get_tcp()
+                home_joints = get_joints()
                 set_cube_center = get_cube_center()
                 move_history = []
                 print ''
@@ -412,6 +562,9 @@ def main():
                 print '  TCP:         [{:.1f}, {:.1f}, {:.1f}, {:.1f}, {:.1f}, {:.1f}]'.format(
                     home_pose[0], home_pose[1], home_pose[2],
                     home_pose[3], home_pose[4], home_pose[5])
+                print '  Joints:      [{:.2f}, {:.2f}, {:.2f}, {:.2f}, {:.2f}, {:.2f}]'.format(
+                    home_joints[0], home_joints[1], home_joints[2],
+                    home_joints[3], home_joints[4], home_joints[5])
                 print '  Cube center: [{:.1f}, {:.1f}, {:.1f}] (offset={:.0f}mm)'.format(
                     set_cube_center[0], set_cube_center[1], set_cube_center[2],
                     CUBE_CENTER_OFFSET_Z)
@@ -419,8 +572,11 @@ def main():
 
             # ─── Gripper open ───
             elif cmd_lower == 'go':
+                last_place_joints = get_joints()
+                last_place_tcp = get_tcp()
                 gripper_open()
                 holding_cube = False
+                print '  [Place joints saved]'
 
             # ─── Gripper close ───
             elif cmd_lower == 'gc':
@@ -433,12 +589,20 @@ def main():
                 if not ok:
                     break
                 tcp = get_tcp()
+                jnt = get_joints()
                 cube_tcp = get_cube_center()
-                waypoints.append({
+                wp = {
                     "pose_index": capture_count,
-                    "tcp_6dof": tcp,
-                    "cube_center_6dof": cube_tcp
-                })
+                    "capture_joints": jnt,
+                    "capture_tcp": tcp,
+                    "cube_center_6dof": cube_tcp,
+                }
+                if last_place_joints is not None:
+                    wp["place_joints"] = last_place_joints
+                    wp["place_tcp"] = last_place_tcp
+                else:
+                    print '  [WARN] No place joints (go not called before capture)'
+                waypoints.append(wp)
                 capture_count += 1
 
             # ─── UNDO ───
@@ -602,12 +766,20 @@ def main():
             else:
                 print 'Unknown: {}'.format(cmd)
 
-        # Save waypoints for next session
+        # Save waypoints for next session (with joints for auto replay)
         if waypoints:
+            save_data = {
+                "set_joints": home_joints,
+                "set_tcp": home_pose,
+                "set_cube_center": set_cube_center,
+                "waypoints": waypoints,
+            }
             wp_path = 'capture_waypoints.json'
             with open(wp_path, 'w') as f:
-                json.dump(waypoints, f, indent=2)
+                json.dump(save_data, f, indent=2)
             print '\nWaypoints saved: {} ({} poses)'.format(wp_path, len(waypoints))
+            if home_joints is None:
+                print '[WARN] set_joints is None -- "set" was not called before captures'
 
         print '\nTotal captures: {}'.format(capture_count)
 

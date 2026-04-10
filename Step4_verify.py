@@ -1,45 +1,66 @@
 # Step4_verify.py
 """
-Step 4: 캘리브레이션 정확도 검증 및 3D 시각화.
+Step 4: 캘리브레이션 검증 및 시각화.
 
 검증 항목:
-  1. 교차 카메라 일관성: 같은 큐브를 여러 카메라로 봤을 때 위치 차이
-  2. 재투영 오차: 큐브 마커를 이미지에 역투영하여 검출 결과와 비교
-  3. Hand-eye 일관성: 보드 위치가 모든 프레임에서 일정한지
-  4. 3D 시각화: 카메라, 큐브, 로봇 위치를 3D로 표시
+  1. Cross-camera consistency: 같은 event에서 camera별 cube pose가 base에서 얼마나 일치하는지
+  2. Reprojection error: 현재 cube model/pose를 이미지로 다시 투영했을 때의 오차
+  3. Hand-eye consistency: gripper board anchor가 이벤트마다 얼마나 안정적인지
+  4. Depth metrics: depth cloud와 cube surface 정합, dimension accuracy
+  5. 3D visualization: base 기준 camera/object 배치
+
+기본 검증 정책:
+  - Step3 기본 파이프라인과 같은 stable candidate path를 그대로 사용한다.
+  - depth는 mesh/dimension 검증과 candidate 품질 평가에 반영하되,
+    실험용 depth-SVD 후보는 명시적으로 켠 경우에만 사용한다.
 
 실행:
   python Step4_verify.py \
     --root_folder ./data/session \
     --calib_dir ./data/session/calib_out \
     --intrinsics_dir ./intrinsics
+
+3D 창 옵션 추가 CLI 인자:
+--hide_gripper_trajectory
+--camera_label_size
+--object_label_size
+--view_elev
+--view_azim
 """
 
 import os
 import json
 import argparse
 import itertools
+import sys
 from collections import defaultdict
 from typing import Dict, List, Optional, Tuple
 
 import cv2
 import numpy as np
+import matplotlib
+if "--no_show" in sys.argv or not os.environ.get("DISPLAY"):
+    matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 
 from aruco_cube import ArucoCubeTarget, ArucoCubeModel, rodrigues_to_Rt, inv_T
 from calibration_runtime_utils import (
+    build_event_cube_selection,
     build_capture_cube_candidate_map,
     build_cube_pose_candidates,
     cube_selection_profile_kwargs,
+    get_capture_object_anchor,
     get_event_base_camera_transform,
     load_calib_dir,
     load_intrinsics_color,
+    load_intrinsics_with_depth_scale,
     load_robot_pose_from_capture,
     resolve_cube_config_for_run,
     select_consistent_event_cube_candidates,
+    select_primary_cube_candidate,
 )
-from config import CubeConfig
+from config import CubeConfig, get_default_cube_config
 from downstream_metrics import (
     compute_board_reprojection_metrics,
     compute_depth_cube_metrics,
@@ -77,7 +98,21 @@ def rotation_error_deg(Ra, Rb):
 load_calib = load_calib_dir
 
 
-def draw_frame(ax, T, label="", scale=30.0, lw=1.5):
+def iter_object_anchor_items(transforms: Dict[str, np.ndarray]):
+    set_keys = sorted(
+        [k for k in transforms.keys() if k.startswith("T_base_O_set")],
+        key=lambda k: int(k.replace("T_base_O_set", "")),
+    )
+    if set_keys:
+        for key in set_keys:
+            yield key, np.asarray(transforms[key], dtype=np.float64)
+        return
+    T_base_O = transforms.get("T_base_O")
+    if T_base_O is not None:
+        yield "T_base_O", np.asarray(T_base_O, dtype=np.float64)
+
+
+def draw_frame(ax, T, label="", scale=30.0, lw=1.5, fontsize: float = 7.0):
     """Draw a coordinate frame (RGB = XYZ) at transform T."""
     o = T[:3, 3] * 1000.0  # m -> mm
     R = T[:3, :3]
@@ -87,10 +122,10 @@ def draw_frame(ax, T, label="", scale=30.0, lw=1.5):
         ax.quiver(o[0], o[1], o[2], d[0], d[1], d[2],
                   color=c, linewidth=lw, arrow_length_ratio=0.15)
     if label:
-        ax.text(o[0], o[1], o[2], f"  {label}", fontsize=7)
+        ax.text(o[0], o[1], o[2], f"  {label}", fontsize=fontsize)
 
 
-def draw_camera(ax, T, label="", scale=20.0, color='blue'):
+def draw_camera(ax, T, label="", scale=20.0, color='blue', fontsize: float = 7.0):
     """Draw camera as a pyramid frustum."""
     o = T[:3, 3] * 1000.0
     R = T[:3, :3]
@@ -117,7 +152,263 @@ def draw_camera(ax, T, label="", scale=20.0, color='blue'):
                   [corners_world[i, 2], corners_world[j, 2]],
                   color=color, linewidth=0.8, alpha=0.6)
     if label:
-        ax.text(o[0], o[1], o[2], f"  {label}", fontsize=7, color=color)
+        ax.text(o[0], o[1], o[2], f"  {label}", fontsize=fontsize, color=color)
+
+
+def iter_public_transform_items(transforms: Dict[str, np.ndarray]):
+    for name in sorted(transforms.keys()):
+        if "_event" in name:
+            continue
+        if name.startswith("T_base_O_set"):
+            continue
+        T = transforms.get(name)
+        if isinstance(T, np.ndarray):
+            yield name, np.asarray(T, dtype=np.float64)
+
+
+def _resize_pad_bgr(img: np.ndarray, width: int, height: int, bg=(245, 245, 245)) -> np.ndarray:
+    if img is None or img.size == 0:
+        return np.full((height, width, 3), bg, dtype=np.uint8)
+    h, w = img.shape[:2]
+    scale = min(float(width) / max(w, 1), float(height) / max(h, 1))
+    new_w = max(int(round(w * scale)), 1)
+    new_h = max(int(round(h * scale)), 1)
+    resized = cv2.resize(img, (new_w, new_h), interpolation=cv2.INTER_AREA)
+    canvas = np.full((height, width, 3), bg, dtype=np.uint8)
+    x0 = (width - new_w) // 2
+    y0 = (height - new_h) // 2
+    canvas[y0:y0 + new_h, x0:x0 + new_w] = resized
+    return canvas
+
+
+def _put_text_lines(img: np.ndarray, lines: List[str], x: int = 8, y: int = 22,
+                    line_h: int = 22, color=(20, 20, 20), scale: float = 0.55) -> np.ndarray:
+    out = img.copy()
+    for idx, line in enumerate(lines):
+        cv2.putText(out, line, (x, y + idx * line_h), cv2.FONT_HERSHEY_SIMPLEX,
+                    scale, color, 1, cv2.LINE_AA)
+    return out
+
+
+def build_selected_event_contact_sheets(meta: dict,
+                                        transforms: Dict[str, np.ndarray],
+                                        intrinsics_dir: str,
+                                        root_folder: str,
+                                        all_cam_ids: List[int],
+                                        gripper_cam_idx: Optional[int],
+                                        cube_cfg: CubeConfig,
+                                        include_meta: bool = False,
+                                        selection_profile: str = "default",
+                                        tile_w: int = 420,
+                                        tile_h: int = 300,
+                                        cols: int = 3,
+                                        rows: int = 4):
+    selection = build_event_cube_selection(
+        meta, transforms, intrinsics_dir, root_folder, all_cam_ids, gripper_cam_idx,
+        cube_cfg, include_meta=include_meta, selection_profile=selection_profile)
+
+    manifest = []
+    tiles = []
+    for cap in meta.get("captures", []):
+        eid = int(cap.get("event_id", -1))
+        refined = selection.get(eid, {})
+        if not refined:
+            continue
+        set_index = cap.get("set_index")
+        for ci, cand in sorted(refined.items()):
+            cinfo = cap.get("cams", {}).get(str(ci), {})
+            rgb_rel = cinfo.get("rgb_path", "")
+            if not rgb_rel:
+                continue
+            img = cv2.imread(os.path.join(root_folder, rgb_rel))
+            if img is None:
+                continue
+            tile = _resize_pad_bgr(img, tile_w, tile_h)
+            lines = [
+                f"event {eid} | set {set_index} | cam{ci}",
+                f"used_ids={cand.get('used_ids', [])}  src={cand.get('source', 'unknown')}",
+                f"err={float(cand.get('err_mean', 99.0)):.3f}px",
+            ]
+            tile = _put_text_lines(tile, lines, color=(10, 10, 10))
+            cv2.rectangle(tile, (0, 0), (tile_w - 1, tile_h - 1), (80, 80, 80), 2)
+            tiles.append(tile)
+            manifest.append({
+                "event_id": int(eid),
+                "set_index": None if set_index is None else int(set_index),
+                "cam_idx": int(ci),
+                "rgb_path": rgb_rel,
+                "used_ids": [int(x) for x in cand.get("used_ids", [])],
+                "source": str(cand.get("source", "unknown")),
+                "err_mean_px": float(cand.get("err_mean", 99.0)),
+            })
+
+    if not tiles:
+        return [], manifest
+
+    pages = []
+    page_cap = max(int(cols * rows), 1)
+    for page_idx in range(0, len(tiles), page_cap):
+        chunk = tiles[page_idx:page_idx + page_cap]
+        canvas = np.full((rows * tile_h, cols * tile_w, 3), 245, dtype=np.uint8)
+        for idx, tile in enumerate(chunk):
+            rr = idx // cols
+            cc = idx % cols
+            y0 = rr * tile_h
+            x0 = cc * tile_w
+            canvas[y0:y0 + tile_h, x0:x0 + tile_w] = tile
+        title = f"Selected event images {page_idx // page_cap + 1}"
+        cv2.putText(canvas, title, (16, 28), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 0, 180), 2, cv2.LINE_AA)
+        pages.append(canvas)
+    return pages, manifest
+
+
+def _fit_world_to_rect(points: List[Tuple[float, float]], rect: Tuple[int, int, int, int]):
+    x0, y0, w, h = rect
+    if not points:
+        return lambda px, py: (x0 + w // 2, y0 + h // 2)
+    xs = np.asarray([p[0] for p in points], dtype=np.float64)
+    ys = np.asarray([p[1] for p in points], dtype=np.float64)
+    min_x, max_x = float(np.min(xs)), float(np.max(xs))
+    min_y, max_y = float(np.min(ys)), float(np.max(ys))
+    span_x = max(max_x - min_x, 50.0)
+    span_y = max(max_y - min_y, 50.0)
+    margin_x = 0.12 * span_x
+    margin_y = 0.12 * span_y
+    min_x -= margin_x
+    max_x += margin_x
+    min_y -= margin_y
+    max_y += margin_y
+
+    def project(px: float, py: float):
+        u = x0 + int(round((px - min_x) / max(max_x - min_x, 1e-9) * w))
+        v = y0 + h - int(round((py - min_y) / max(max_y - min_y, 1e-9) * h))
+        return u, v
+
+    return project
+
+
+def build_base_frame_overview_cv(meta: dict,
+                                 transforms: Dict[str, np.ndarray],
+                                 gripper_cam_idx: Optional[int],
+                                 all_cam_ids: List[int]) -> np.ndarray:
+    width, height = 1800, 980
+    canvas = np.full((height, width, 3), 250, dtype=np.uint8)
+    top_rect = (40, 70, 760, 820)
+    side_rect = (840, 70, 760, 820)
+    text_x0 = 1620
+
+    camera_rows = []
+    robot_rows = []
+    gripper_cam_rows = []
+    for ci in all_cam_ids:
+        key = f"T_base_C{int(ci)}"
+        T = transforms.get(key)
+        if isinstance(T, np.ndarray):
+            camera_rows.append((f"cam{ci}", np.asarray(T, dtype=np.float64), (200, 80, 40)))
+
+    for cap in meta.get("captures", []):
+        T_bg = load_robot_pose_from_capture(cap)
+        if T_bg is not None:
+            robot_rows.append((int(cap.get("event_id", -1)), np.asarray(T_bg, dtype=np.float64)))
+        if gripper_cam_idx is not None:
+            T_bc = get_event_base_camera_transform(cap, gripper_cam_idx, transforms, gripper_cam_idx)
+            if T_bc is not None:
+                gripper_cam_rows.append((int(cap.get("event_id", -1)), np.asarray(T_bc, dtype=np.float64)))
+
+    T_obj = transforms.get("T_base_O")
+    world_xy = []
+    world_xz = []
+    for _, T, _ in camera_rows:
+        world_xy.append((float(T[0, 3] * 1000.0), float(T[1, 3] * 1000.0)))
+        world_xz.append((float(T[0, 3] * 1000.0), float(T[2, 3] * 1000.0)))
+    for _, T in robot_rows:
+        world_xy.append((float(T[0, 3] * 1000.0), float(T[1, 3] * 1000.0)))
+        world_xz.append((float(T[0, 3] * 1000.0), float(T[2, 3] * 1000.0)))
+    for _, T in gripper_cam_rows:
+        world_xy.append((float(T[0, 3] * 1000.0), float(T[1, 3] * 1000.0)))
+        world_xz.append((float(T[0, 3] * 1000.0), float(T[2, 3] * 1000.0)))
+    if isinstance(T_obj, np.ndarray):
+        world_xy.append((float(T_obj[0, 3] * 1000.0), float(T_obj[1, 3] * 1000.0)))
+        world_xz.append((float(T_obj[0, 3] * 1000.0), float(T_obj[2, 3] * 1000.0)))
+
+    proj_xy = _fit_world_to_rect(world_xy, top_rect)
+    proj_xz = _fit_world_to_rect(world_xz, side_rect)
+
+    cv2.putText(canvas, "Base Frame Overview (XY top view)", (top_rect[0], 42),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.85, (0, 0, 0), 2, cv2.LINE_AA)
+    cv2.putText(canvas, "Base Frame Overview (XZ side view)", (side_rect[0], 42),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.85, (0, 0, 0), 2, cv2.LINE_AA)
+    cv2.rectangle(canvas, (top_rect[0], top_rect[1]), (top_rect[0] + top_rect[2], top_rect[1] + top_rect[3]), (120, 120, 120), 2)
+    cv2.rectangle(canvas, (side_rect[0], side_rect[1]), (side_rect[0] + side_rect[2], side_rect[1] + side_rect[3]), (120, 120, 120), 2)
+
+    def draw_pose_pair(T: np.ndarray, label: str, color: Tuple[int, int, int], radius: int = 6):
+        x_mm = float(T[0, 3] * 1000.0)
+        y_mm = float(T[1, 3] * 1000.0)
+        z_mm = float(T[2, 3] * 1000.0)
+        u_xy, v_xy = proj_xy(x_mm, y_mm)
+        u_xz, v_xz = proj_xz(x_mm, z_mm)
+        cv2.circle(canvas, (u_xy, v_xy), radius, color, -1, cv2.LINE_AA)
+        cv2.circle(canvas, (u_xz, v_xz), radius, color, -1, cv2.LINE_AA)
+        cv2.putText(canvas, label, (u_xy + 8, v_xy - 8), cv2.FONT_HERSHEY_SIMPLEX, 0.45, color, 1, cv2.LINE_AA)
+        cv2.putText(canvas, label, (u_xz + 8, v_xz - 8), cv2.FONT_HERSHEY_SIMPLEX, 0.45, color, 1, cv2.LINE_AA)
+
+    for idx in range(1, len(robot_rows)):
+        p0 = robot_rows[idx - 1][1]
+        p1 = robot_rows[idx][1]
+        cv2.line(canvas, proj_xy(float(p0[0, 3] * 1000.0), float(p0[1, 3] * 1000.0)),
+                 proj_xy(float(p1[0, 3] * 1000.0), float(p1[1, 3] * 1000.0)), (180, 180, 180), 2, cv2.LINE_AA)
+        cv2.line(canvas, proj_xz(float(p0[0, 3] * 1000.0), float(p0[2, 3] * 1000.0)),
+                 proj_xz(float(p1[0, 3] * 1000.0), float(p1[2, 3] * 1000.0)), (180, 180, 180), 2, cv2.LINE_AA)
+
+    for label, T, color in camera_rows:
+        draw_pose_pair(T, label, color, radius=8)
+    for eid, T in robot_rows:
+        draw_pose_pair(T, f"G{eid}", (110, 110, 110), radius=4)
+    for eid, T in gripper_cam_rows:
+        draw_pose_pair(T, f"C2@{eid}", (20, 140, 255), radius=4)
+    if isinstance(T_obj, np.ndarray):
+        draw_pose_pair(np.asarray(T_obj, dtype=np.float64), "Object", (30, 30, 220), radius=10)
+
+    cv2.putText(canvas, "Final transforms", (text_x0, 40), cv2.FONT_HERSHEY_SIMPLEX, 0.85, (0, 0, 0), 2, cv2.LINE_AA)
+    text_y = 80
+    for name, T in iter_public_transform_items(transforms):
+        pos = T[:3, 3] * 1000.0
+        lines = [
+            name,
+            f"  xyz_mm=[{pos[0]:.1f}, {pos[1]:.1f}, {pos[2]:.1f}]",
+        ]
+        for line in lines:
+            cv2.putText(canvas, line, (text_x0, text_y), cv2.FONT_HERSHEY_SIMPLEX, 0.47, (30, 30, 30), 1, cv2.LINE_AA)
+            text_y += 22
+        text_y += 6
+    return canvas
+
+
+def show_cv_pages(title: str, pages: List[np.ndarray]) -> None:
+    if not pages:
+        return
+    idx = 0
+    while True:
+        window_title = f"{title} ({idx + 1}/{len(pages)})"
+        cv2.imshow(window_title, pages[idx])
+        key = cv2.waitKey(0) & 0xFF
+        cv2.destroyWindow(window_title)
+        if key in (27, ord('q')):
+            break
+        if key in (32, 13, ord('n')) and idx + 1 < len(pages):
+            idx += 1
+            continue
+        if key in (ord('p'),) and idx > 0:
+            idx -= 1
+            continue
+        break
+
+
+def figure_to_bgr(fig) -> np.ndarray:
+    fig.canvas.draw()
+    w, h = fig.canvas.get_width_height()
+    rgba = np.frombuffer(fig.canvas.buffer_rgba(), dtype=np.uint8).reshape(h, w, 4)
+    return cv2.cvtColor(rgba, cv2.COLOR_RGBA2BGR)
 
 
 # ══════════════════════════════════════════════════════════════
@@ -134,15 +425,14 @@ def test_cross_camera_consistency(meta, transforms, all_cam_ids, gripper_cam_idx
     print("=" * 60)
 
     tf = dict(transforms)
-    T_gTc = tf.get("T_gripper_cam")
 
     use_current_cube = bool(root_folder and intrinsics_dir and cube_cfg is not None)
     cube = None
-    K_map, D_map = {}, {}
+    K_map, D_map, depth_scale_map = {}, {}, {}
     if use_current_cube:
         cube = ArucoCubeTarget(cube_cfg)
         for ci in all_cam_ids:
-            K_map[ci], D_map[ci] = load_intrinsics_color(intrinsics_dir, ci)
+            K_map[ci], D_map[ci], depth_scale_map[ci] = load_intrinsics_with_depth_scale(intrinsics_dir, ci)
     profile_kwargs = cube_selection_profile_kwargs(selection_profile)
 
     errors_mm = []
@@ -157,7 +447,7 @@ def test_cross_camera_consistency(meta, transforms, all_cam_ids, gripper_cam_idx
         if use_current_cube:
             event_candidate_map = build_capture_cube_candidate_map(
                 cap, root_folder, K_map, D_map, cube, gripper_cam_idx,
-                include_meta=include_meta)
+                include_meta=include_meta, depth_scale_map=depth_scale_map)
 
         refined_selection = select_consistent_event_cube_candidates(
             cap, event_candidate_map, tf, gripper_cam_idx, **profile_kwargs) if event_candidate_map else {}
@@ -165,7 +455,9 @@ def test_cross_camera_consistency(meta, transforms, all_cam_ids, gripper_cam_idx
         for ci_str, cinfo in cap.get("cams", {}).items():
             ci = int(ci_str)
             T_cam_cube = None
-            if use_current_cube and ci in refined_selection:
+            if use_current_cube:
+                if ci not in refined_selection:
+                    continue
                 T_cam_cube = np.asarray(refined_selection[ci]["T_C_O"], dtype=np.float64)
             else:
                 cpnp = cinfo.get("cube_pnp")
@@ -215,11 +507,11 @@ def test_reprojection(meta, transforms, intrinsics_dir, all_cam_ids, root_folder
     print("[TEST 2] Reprojection verification")
     print("=" * 60)
 
-    cfg = cube_cfg or resolve_cube_config_for_run(root_folder, default_cfg=CubeConfig())[0]
+    cfg = cube_cfg or resolve_cube_config_for_run(root_folder, default_cfg=get_default_cube_config())[0]
     cube = ArucoCubeTarget(cfg)
-    K_map, D_map = {}, {}
+    K_map, D_map, depth_scale_map = {}, {}, {}
     for ci in all_cam_ids:
-        K_map[ci], D_map[ci] = load_intrinsics_color(intrinsics_dir, ci)
+        K_map[ci], D_map[ci], depth_scale_map[ci] = load_intrinsics_with_depth_scale(intrinsics_dir, ci)
 
     errors_px = []
 
@@ -232,17 +524,13 @@ def test_reprojection(meta, transforms, intrinsics_dir, all_cam_ids, root_folder
             candidates = build_cube_pose_candidates(
                 root_folder, cinfo, K_map[ci], D_map[ci], cube,
                 meta_reproj_thr=meta_thr, solve_reproj_thr=5.0,
-                min_aspect=0.0, include_meta=include_meta)
+                min_aspect=0.0, include_meta=include_meta,
+                depth_scale=depth_scale_map.get(ci))
             if not candidates:
                 continue
-            best = min(
-                candidates,
-                key=lambda cand: (
-                    -len(set(int(x) for x in cand.get("used_ids", []))),
-                    float(cand.get("err_mean", 99.0)),
-                    str(cand.get("source", "")),
-                ),
-            )
+            best = select_primary_cube_candidate(candidates)
+            if best is None:
+                continue
 
             rgb_rel = cinfo.get("rgb_path", "")
             if not rgb_rel:
@@ -340,26 +628,15 @@ def test_handeye_consistency(meta, transforms, gripper_cam_idx, root_folder=None
     T_base_board_list = []
     for cap in meta.get("captures", []):
         eid = int(cap.get("event_id", -1))
-        # Need robot pose
-        T_B_G = None
-        if "robot_pose_matrix_4x4" in cap:
-            try:
-                T_B_G = np.asarray(cap["robot_pose_matrix_4x4"], dtype=np.float64)
-            except Exception:
-                pass
-        if T_B_G is None and "robot_pose_6dof" in cap:
-            try:
-                T_B_G = euler_deg_to_matrix(*cap["robot_pose_6dof"])
-            except Exception:
-                pass
-        if T_B_G is None:
+        T_base_cam = get_event_base_camera_transform(cap, gripper_cam_idx, transforms, gripper_cam_idx)
+        if T_base_cam is None:
             continue
 
         T_cam_board = charuco_by_event.get(eid)
         if T_cam_board is None:
             continue
 
-        T_base_board = T_B_G @ T_gTc @ T_cam_board
+        T_base_board = np.asarray(T_base_cam, dtype=np.float64) @ T_cam_board
         T_base_board_list.append(T_base_board)
 
     if len(T_base_board_list) < 2:
@@ -395,25 +672,27 @@ def collect_cube_candidate_diagnostics(meta, transforms, intrinsics_dir, root_fo
                                        gripper_cam_idx, all_cam_ids, cube_cfg=None,
                                        include_meta=False,
                                        selection_profile="default"):
-    T_base_O = transforms.get("T_base_O")
     T_gTc = transforms.get("T_gripper_cam")
-    if T_base_O is None:
-        print("  [SKIP] Candidate diagnostics need T_base_O")
+    if not any(True for _ in iter_object_anchor_items(transforms)):
+        print("  [SKIP] Candidate diagnostics need T_base_O or T_base_O_set*")
         return []
 
-    cfg = cube_cfg or resolve_cube_config_for_run(root_folder, default_cfg=CubeConfig())[0]
+    cfg = cube_cfg or resolve_cube_config_for_run(root_folder, default_cfg=get_default_cube_config())[0]
     cube = ArucoCubeTarget(cfg)
-    K_map, D_map = {}, {}
+    K_map, D_map, depth_scale_map = {}, {}, {}
     for ci in all_cam_ids:
-        K_map[ci], D_map[ci] = load_intrinsics_color(intrinsics_dir, ci)
+        K_map[ci], D_map[ci], depth_scale_map[ci] = load_intrinsics_with_depth_scale(intrinsics_dir, ci)
     profile_kwargs = cube_selection_profile_kwargs(selection_profile)
 
     rows = []
     for cap in meta.get("captures", []):
         eid = int(cap.get("event_id", -1))
+        T_base_O, anchor_key = get_capture_object_anchor(cap, transforms)
+        if T_base_O is None:
+            continue
         event_candidate_map = build_capture_cube_candidate_map(
             cap, root_folder, K_map, D_map, cube, gripper_cam_idx,
-            include_meta=include_meta)
+            include_meta=include_meta, depth_scale_map=depth_scale_map)
 
         refined_selection = select_consistent_event_cube_candidates(
             cap, event_candidate_map, transforms, gripper_cam_idx, **profile_kwargs) if event_candidate_map else {}
@@ -462,6 +741,7 @@ def collect_cube_candidate_diagnostics(meta, transforms, intrinsics_dir, root_fo
                     "cam_dt_mm": cam_dt,
                     "cam_dr_deg": cam_dr,
                     "score": float(score),
+                    "anchor_key": anchor_key,
                     "selected": False,
                     "accepted": False,
                 }
@@ -567,7 +847,7 @@ def visualize_cube_candidate_scatter(rows):
         ax.axvline(60.0, color="gray", linestyle="--", linewidth=1.0)
         ax.axhline(12.0, color="gray", linestyle="--", linewidth=1.0)
         ax.set_title(f"cam{ci} Candidate Scores")
-        ax.set_xlabel("Object Error to T_base_O (mm)")
+        ax.set_xlabel("Object Error to Assigned Anchor (mm)")
         ax.set_ylabel("Rotation Error (deg)")
         ax.grid(True, alpha=0.25)
     plt.tight_layout()
@@ -602,7 +882,7 @@ def visualize_marker_health(rows):
     axes[0].bar(x, mean_dt, color="steelblue")
     axes[0].set_xticks(x, [f"id{mid}" for mid in mids])
     axes[0].set_ylabel("Mean Object Error (mm)")
-    axes[0].set_title("Best Single-Marker Distance to T_base_O")
+    axes[0].set_title("Best Single-Marker Distance to Assigned Anchor")
     axes[0].grid(True, axis="y", alpha=0.25)
 
     axes[1].bar(x, mean_dr, color="darkorange")
@@ -658,13 +938,12 @@ def visualize_candidate_examples(meta, rows, save_dir):
 
 def collect_marker_override_diagnostics(meta, transforms, intrinsics_dir, root_folder,
                                         gripper_cam_idx, all_cam_ids, cube_cfg=None):
-    T_base_O = transforms.get("T_base_O")
     T_gTc = transforms.get("T_gripper_cam")
-    if T_base_O is None:
-        print("  [SKIP] Override diagnostics need T_base_O")
+    if not any(True for _ in iter_object_anchor_items(transforms)):
+        print("  [SKIP] Override diagnostics need T_base_O or T_base_O_set*")
         return {}
 
-    cfg = cube_cfg or resolve_cube_config_for_run(root_folder, default_cfg=CubeConfig())[0]
+    cfg = cube_cfg or resolve_cube_config_for_run(root_folder, default_cfg=get_default_cube_config())[0]
     model = ArucoCubeModel(cfg)
     cube = ArucoCubeTarget(cfg)
     reorder_to_name = {tuple(v): k for k, v in DIAG_CORNER_PERMUTATIONS.items()}
@@ -684,6 +963,9 @@ def collect_marker_override_diagnostics(meta, transforms, intrinsics_dir, root_f
     for cap in meta.get("captures", []):
         eid = int(cap.get("event_id", -1))
         T_B_G = load_robot_pose_from_capture(cap)
+        T_base_O_event, _ = get_capture_object_anchor(cap, transforms)
+        if T_base_O_event is None:
+            continue
         for ci_str, cinfo in cap.get("cams", {}).items():
             ci = int(ci_str)
             if ci not in K_map or not cinfo.get("saved"):
@@ -738,6 +1020,7 @@ def collect_marker_override_diagnostics(meta, transforms, intrinsics_dir, root_f
                     "visible_ids": visible_ids,
                     "area_px2": float(abs(cv2.contourArea(corners.astype(np.float32)))),
                     "T_base_cam": T_base_cam,
+                    "T_base_O_anchor": T_base_O_event,
                 })
 
     report = {}
@@ -773,9 +1056,9 @@ def collect_marker_override_diagnostics(meta, transforms, intrinsics_dir, root_f
                         T[:3, 3] = tvecs[si].reshape(3)
                         T_base_O_cand = row["T_base_cam"] @ T
                         obj_dt = float(np.linalg.norm(
-                            T_base_O_cand[:3, 3] - T_base_O[:3, 3]) * 1000.0)
+                            T_base_O_cand[:3, 3] - row["T_base_O_anchor"][:3, 3]) * 1000.0)
                         obj_dr = rotation_error_deg(
-                            T_base_O_cand[:3, :3], T_base_O[:3, :3])
+                            T_base_O_cand[:3, :3], row["T_base_O_anchor"][:3, :3])
                         reproj = float(reproj_errs[si][0]) if reproj_errs is not None else 99.0
                         score = obj_dt + 5.0 * obj_dr + 10.0 * reproj
                         if best is None or score < best["score"]:
@@ -953,7 +1236,15 @@ def render_marker_gallery(report_row):
 # 3D Visualization
 # ══════════════════════════════════════════════════════════════
 
-def visualize_3d(meta, transforms, gripper_cam_idx, all_cam_ids):
+def visualize_3d(meta,
+                 transforms,
+                 gripper_cam_idx,
+                 all_cam_ids,
+                 show_gripper_trajectory: bool = True,
+                 camera_label_size: float = 7.0,
+                 object_label_size: float = 8.0,
+                 view_elev: float = 26.0,
+                 view_azim: float = -58.0):
     """3D plot of robot base, cameras, cube positions, gripper poses."""
     print("\n" + "=" * 60)
     print("[VIS] 3D Visualization")
@@ -964,7 +1255,7 @@ def visualize_3d(meta, transforms, gripper_cam_idx, all_cam_ids):
 
     # 1. Robot base (origin)
     T_origin = np.eye(4)
-    draw_frame(ax, T_origin, label="Robot Base", scale=40.0, lw=2.5)
+    draw_frame(ax, T_origin, label="Robot Base", scale=40.0, lw=2.5, fontsize=object_label_size)
 
     # 2. Fixed cameras
     cam_colors = {0: 'blue', 1: 'green', 3: 'orange'}
@@ -977,7 +1268,7 @@ def visualize_3d(meta, transforms, gripper_cam_idx, all_cam_ids):
         color = cam_colors.get(ci, 'purple')
         if ci == gripper_cam_idx:
             color = 'red'
-        draw_camera(ax, T, label=f"cam{ci} ({tag})", color=color)
+        draw_camera(ax, T, label=f"cam{ci} ({tag})", color=color, fontsize=camera_label_size)
         draw_frame(ax, T, scale=20.0, lw=1.0)
 
     # 3. Cube positions per event
@@ -1027,11 +1318,19 @@ def visualize_3d(meta, transforms, gripper_cam_idx, all_cam_ids):
         pts = np.array(gripper_positions)
         ax.scatter(pts[:, 0], pts[:, 1], pts[:, 2],
                    c='red', s=15, marker='^', alpha=0.5, label='Gripper poses')
+        if show_gripper_trajectory and len(pts) >= 2:
+            ax.plot3D(pts[:, 0], pts[:, 1], pts[:, 2],
+                      color='red', linewidth=1.3, alpha=0.35, label='Gripper trajectory')
 
     # 5. Board position (average)
-    T_base_O = transforms.get("T_base_O")
-    if T_base_O is not None:
-        draw_frame(ax, T_base_O, label="Cube (avg)", scale=25.0, lw=2.0)
+    drawn_anchor = False
+    for key, T_base_O in iter_object_anchor_items(transforms):
+        if key == "T_base_O":
+            label = "Cube (avg)"
+        else:
+            label = f"Cube set {key.replace('T_base_O_set', '')}"
+        draw_frame(ax, T_base_O, label=label, scale=25.0, lw=2.0, fontsize=object_label_size)
+        drawn_anchor = True
 
     # Formatting
     ax.set_xlabel("X (mm)")
@@ -1039,6 +1338,7 @@ def visualize_3d(meta, transforms, gripper_cam_idx, all_cam_ids):
     ax.set_zlabel("Z (mm)")
     ax.set_title("Calibration Result - Robot Base Frame")
     ax.legend(loc='upper left', fontsize=8)
+    ax.view_init(elev=float(view_elev), azim=float(view_azim))
 
     # Equal aspect ratio
     all_pts = []
@@ -1114,6 +1414,12 @@ def main():
     parser.add_argument("--cube_config_json", type=str, default=None)
     parser.add_argument("--cube_selection_profile", type=str, default="default",
                         choices=["default", "cube_only_specialized"])
+    parser.add_argument("--hide_gripper_trajectory", action="store_true",
+                        help="Do not draw gripper trajectory in 3D overview")
+    parser.add_argument("--camera_label_size", type=float, default=7.0)
+    parser.add_argument("--object_label_size", type=float, default=8.0)
+    parser.add_argument("--view_elev", type=float, default=26.0)
+    parser.add_argument("--view_azim", type=float, default=-58.0)
     parser.add_argument("--no_show", action="store_true", help="Save plots without showing")
     args = parser.parse_args()
 
@@ -1134,7 +1440,11 @@ def main():
 
     # Load transforms
     transforms = load_calib(calib_dir)
-    print(f"[INFO] Loaded transforms: {list(transforms.keys())}")
+    public_keys = [name for name, _ in iter_public_transform_items(transforms)]
+    internal_event_count = sum(1 for name in transforms.keys() if "_event" in name)
+    print(f"[INFO] Loaded public transforms: {public_keys}")
+    if internal_event_count:
+        print(f"[INFO] Loaded internal runtime transforms: {internal_event_count} event-specific entries")
 
     # Camera info
     gripper_cam_idx = args.gripper_cam_idx
@@ -1147,16 +1457,18 @@ def main():
     })
     print(f"[INFO] Cameras: {all_cam_ids}, gripper=cam{gripper_cam_idx}")
     cube_cfg, cube_cfg_source = resolve_cube_config_for_run(
-        root, calib_dir=calib_dir, cube_config_json=args.cube_config_json, default_cfg=CubeConfig())
-    include_meta_candidates = (cube_cfg_source == "meta")
+        root, calib_dir=calib_dir, cube_config_json=args.cube_config_json, default_cfg=get_default_cube_config())
+    include_meta_candidates = False
     print(f"[INFO] cube config source: {cube_cfg_source}")
     print(f"[INFO] cube id_to_face: {cube_cfg.id_to_face}")
     print(f"[INFO] cube corner_reorder: {cube_cfg.corner_reorder}")
 
-    # For gripper camera, compute T_base_C from hand-eye + robot poses
+    # Keep metric computation on the original transform set.
+    # A gripper camera does not have a single global T_base_Ci; it changes per event.
+    # Add a one-frame approximation only to the visualization copy.
+    viz_transforms = dict(transforms)
     T_gTc = transforms.get("T_gripper_cam")
     if T_gTc is not None and gripper_cam_idx is not None:
-        # Use first robot pose to get approximate gripper camera position
         for cap in meta.get("captures", []):
             T_B_G = None
             if "robot_pose_matrix_4x4" in cap:
@@ -1170,10 +1482,9 @@ def main():
                 except Exception:
                     pass
             if T_B_G is not None:
-                T_base_gripper_cam = T_B_G @ T_gTc
                 key = f"T_base_C{gripper_cam_idx}"
-                if key not in transforms:
-                    transforms[key] = T_base_gripper_cam
+                if key not in viz_transforms:
+                    viz_transforms[key] = T_B_G @ T_gTc
                 break
 
     # ─── Run tests ───
@@ -1221,18 +1532,87 @@ def main():
 
     # Print transforms
     print("\n  Transforms:")
-    for name, T in transforms.items():
+    for name, T in iter_public_transform_items(transforms):
         pos = T[:3, 3] * 1000.0
         print(f"    {name}: pos=[{pos[0]:.1f}, {pos[1]:.1f}, {pos[2]:.1f}]mm")
 
-    # ─── Visualize ───
+    verification = {
+        "cross_camera": {
+            "num_errors": int(len(cross_err)),
+            "mean_mm": None if not cross_err else float(np.mean(cross_err)),
+            "median_mm": None if not cross_err else float(np.median(cross_err)),
+            "max_mm": None if not cross_err else float(np.max(cross_err)),
+            "pass": None if not cross_err else bool(np.mean(cross_err) < 5.0),
+        },
+        "reprojection": {
+            "total_observations": int(len(reproj_err)),
+            "mean_px": None if not reproj_err else float(np.mean(reproj_err)),
+            "median_px": None if not reproj_err else float(np.median(reproj_err)),
+            "max_px": None if not reproj_err else float(np.max(reproj_err)),
+            "pass": None if not reproj_err else bool(np.mean(reproj_err) < 2.0),
+        },
+        "handeye": {
+            "frames": int(len(he_err)),
+            "board_position_std_mm": None if not he_err else float(np.std(he_err)),
+            "board_position_max_mm": None if not he_err else float(np.max(he_err)),
+            "pass": None if not he_err else bool(np.std(he_err) < 3.0),
+        },
+        "board_reprojection": board_reproj,
+        "pose_repeatability": pose_repeat,
+        "mesh_alignment": depth_metrics["mesh_alignment"],
+        "dimension_accuracy": depth_metrics["dimension_accuracy"],
+    }
+
     save_dir = os.path.join(calib_dir, "verify")
     os.makedirs(save_dir, exist_ok=True)
+    legacy_base_cv_path = os.path.join(save_dir, "base_frame_overview_cv.png")
+    if os.path.exists(legacy_base_cv_path):
+        try:
+            os.remove(legacy_base_cv_path)
+        except OSError:
+            pass
+    verification_path = os.path.join(calib_dir, "verification_metrics.json")
+    with open(verification_path, "w") as f:
+        json.dump(verification, f, indent=2)
+    print(f"[SAVE] {verification_path}")
 
-    fig_3d = visualize_3d(meta, transforms, gripper_cam_idx, all_cam_ids)
-    fig_3d.savefig(os.path.join(save_dir, "3d_overview.png"), dpi=150)
-    print(f"\n[SAVE] {os.path.join(save_dir, '3d_overview.png')}")
+    selected_pages, selected_manifest = build_selected_event_contact_sheets(
+        meta, transforms, args.intrinsics_dir, root, all_cam_ids, gripper_cam_idx,
+        cube_cfg, include_meta=include_meta_candidates,
+        selection_profile=args.cube_selection_profile)
+    if selected_pages:
+        manifest_path = os.path.join(save_dir, "selected_event_images_manifest.json")
+        with open(manifest_path, "w") as f:
+            json.dump(selected_manifest, f, indent=2)
+        print(f"[SAVE] {manifest_path}")
+        for page_idx, page in enumerate(selected_pages, start=1):
+            page_path = os.path.join(save_dir, f"selected_event_images_cv_{page_idx:02d}.jpg")
+            cv2.imwrite(page_path, page)
+            print(f"[SAVE] {page_path}")
 
+    base_overview_cv = build_base_frame_overview_cv(meta, transforms, gripper_cam_idx, all_cam_ids)
+
+    fig_3d = visualize_3d(
+        meta, viz_transforms, gripper_cam_idx, all_cam_ids,
+        show_gripper_trajectory=not args.hide_gripper_trajectory,
+        camera_label_size=float(args.camera_label_size),
+        object_label_size=float(args.object_label_size),
+        view_elev=float(args.view_elev),
+        view_azim=float(args.view_azim),
+    )
+    fig_3d_path = os.path.join(save_dir, "3d_overview.png")
+    fig_3d.savefig(fig_3d_path, dpi=150)
+    print(f"[SAVE] {fig_3d_path}")
+    fig_3d_cv = figure_to_bgr(fig_3d)
+    fig_3d_cv_path = os.path.join(save_dir, "base_frame_overview_3d_cv.png")
+    cv2.imwrite(fig_3d_cv_path, fig_3d_cv)
+    print(f"[SAVE] {fig_3d_cv_path}")
+
+    if args.no_show:
+        print("\n[DONE] Verification complete")
+        return
+
+    # ─── Visualize ───
     fig_err = visualize_errors(cross_err, reproj_err, he_err)
     fig_err.savefig(os.path.join(save_dir, "error_histograms.png"), dpi=150)
     print(f"[SAVE] {os.path.join(save_dir, 'error_histograms.png')}")
@@ -1272,32 +1652,6 @@ def main():
     print("=" * 60)
     override_report = collect_marker_override_diagnostics(
         meta, transforms, args.intrinsics_dir, root, gripper_cam_idx, all_cam_ids, cube_cfg=cube_cfg)
-    verification = {
-        "cross_camera": {
-            "num_errors": int(len(cross_err)),
-            "mean_mm": None if not cross_err else float(np.mean(cross_err)),
-            "median_mm": None if not cross_err else float(np.median(cross_err)),
-            "max_mm": None if not cross_err else float(np.max(cross_err)),
-            "pass": None if not cross_err else bool(np.mean(cross_err) < 5.0),
-        },
-        "reprojection": {
-            "total_observations": int(len(reproj_err)),
-            "mean_px": None if not reproj_err else float(np.mean(reproj_err)),
-            "median_px": None if not reproj_err else float(np.median(reproj_err)),
-            "max_px": None if not reproj_err else float(np.max(reproj_err)),
-            "pass": None if not reproj_err else bool(np.mean(reproj_err) < 2.0),
-        },
-        "handeye": {
-            "frames": int(len(he_err)),
-            "board_position_std_mm": None if not he_err else float(np.std(he_err)),
-            "board_position_max_mm": None if not he_err else float(np.max(he_err)),
-            "pass": None if not he_err else bool(np.std(he_err) < 3.0),
-        },
-        "board_reprojection": board_reproj,
-        "pose_repeatability": pose_repeat,
-        "mesh_alignment": depth_metrics["mesh_alignment"],
-        "dimension_accuracy": depth_metrics["dimension_accuracy"],
-    }
     if override_report:
         out_json = os.path.join(save_dir, "cube_override_diagnostic.json")
         with open(out_json, "w") as f:
@@ -1325,10 +1679,10 @@ def main():
     else:
         print("  [SKIP] No override diagnostics available")
 
-    verification_path = os.path.join(calib_dir, "verification_metrics.json")
-    with open(verification_path, "w") as f:
-        json.dump(verification, f, indent=2)
-    print(f"[SAVE] {verification_path}")
+    if selected_pages:
+        show_cv_pages("Selected event images", selected_pages)
+    show_cv_pages("Base frame overview", [base_overview_cv])
+    show_cv_pages("Base frame overview 3D", [fig_3d_cv])
 
     if not args.no_show:
         plt.show()

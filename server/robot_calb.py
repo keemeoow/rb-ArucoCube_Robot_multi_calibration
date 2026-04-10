@@ -271,7 +271,11 @@ def do_capture(conn, pose_index, set_cube_center=None, set_index=None,
         return None, None, None
 
     status = resp.get('status', 'unknown') if isinstance(resp, dict) else 'unknown'
-    print '*** Capture {} done (status={}) ***'.format(pose_index, status)
+    reason = resp.get('reason') if isinstance(resp, dict) else None
+    if reason:
+        print '*** Capture {} done (status={}, reason={}) ***'.format(pose_index, status, reason)
+    else:
+        print '*** Capture {} done (status={}) ***'.format(pose_index, status)
     return status, tcp, cube_tcp
 
 

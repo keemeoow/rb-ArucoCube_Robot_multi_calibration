@@ -13,16 +13,6 @@ from config import CubeConfig
 
 ALL_CORNER_PERMUTATIONS = tuple(tuple(p) for p in itertools.permutations(range(4)))
 LOCKED_CORNER_REORDER_MARKERS = {3}
-REPO_ROOT = os.path.dirname(os.path.abspath(__file__))
-FIXED_CUBE_MODEL_FILES = (
-    os.path.join("configs", "cube_models", "cube_model_hybrid_v1.json"),
-    os.path.join("configs", "cube_models", "cube_model_default_v1.json"),
-)
-PREFERRED_SESSION_CUBE_CONFIG_FILES = (
-    "cube_config_best_session.json",
-    "cube_config_explicit_marker_pose_blend_a45.json",
-    "cube_config_explicit_marker_pose_fixed13.json",
-)
 
 
 def clone_cube_config(cfg: CubeConfig) -> CubeConfig:
@@ -108,58 +98,6 @@ def load_cube_config_from_json_file(path: str,
     except Exception:
         return None, "missing"
     return None, "missing"
-
-
-def find_fixed_cube_config_json(repo_root: Optional[str] = None,
-                                preferred_names: Optional[Tuple[str, ...]] = None) -> Optional[str]:
-    base_dir = os.path.abspath(repo_root or REPO_ROOT)
-    names = preferred_names or FIXED_CUBE_MODEL_FILES
-    for name in names:
-        path = name if os.path.isabs(name) else os.path.join(base_dir, name)
-        if os.path.exists(path):
-            return path
-    return None
-
-
-def load_fixed_cube_config(default_cfg: Optional[CubeConfig] = None,
-                           repo_root: Optional[str] = None) -> Tuple[Optional[CubeConfig], str, Optional[str]]:
-    path = find_fixed_cube_config_json(repo_root=repo_root)
-    if not path:
-        return None, "missing", None
-    cfg, source = load_cube_config_from_json_file(path, default_cfg)
-    if cfg is None:
-        return None, "missing", None
-    return cfg, "fixed_model_auto", os.path.abspath(path)
-
-
-def find_preferred_cube_config_json(root_folder: str,
-                                    preferred_names: Optional[Tuple[str, ...]] = None) -> Optional[str]:
-    names = preferred_names or PREFERRED_SESSION_CUBE_CONFIG_FILES
-    for name in names:
-        path = os.path.join(root_folder, name)
-        if os.path.exists(path):
-            return path
-    return None
-
-
-def load_preferred_cube_config(root_folder: str,
-                               default_cfg: Optional[CubeConfig] = None) -> Tuple[Optional[CubeConfig], str, Optional[str]]:
-    path = find_preferred_cube_config_json(root_folder)
-    if not path:
-        return None, "missing", None
-    cfg, source = load_cube_config_from_json_file(path, default_cfg)
-    if cfg is None:
-        return None, "missing", None
-    return cfg, "session_json_auto", os.path.abspath(path)
-
-
-def load_auto_cube_config(root_folder: str,
-                          default_cfg: Optional[CubeConfig] = None,
-                          repo_root: Optional[str] = None) -> Tuple[Optional[CubeConfig], str, Optional[str]]:
-    cfg, source, path = load_fixed_cube_config(default_cfg=default_cfg, repo_root=repo_root)
-    if cfg is not None:
-        return cfg, source, path
-    return load_preferred_cube_config(root_folder, default_cfg=default_cfg)
 
 
 def infer_cube_config_from_legacy_meta(root_folder: str,

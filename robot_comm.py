@@ -91,13 +91,25 @@ class PlaceCaptureClient:
             print(f"[PlaceCaptureClient] Expected 'ready', got '{cmd}'")
         return msg
 
-    def send_waypoint(self, place_pose: List[float], capture_pose: List[float]):
+    def send_waypoint(self,
+                      place_pose: List[float],
+                      capture_pose: List[float],
+                      place_kind: Optional[str] = None,
+                      capture_kind: Optional[str] = None,
+                      extra_fields: Optional[Dict[str, Any]] = None):
         """Send place + capture waypoint pair to server."""
-        self._send_json({
+        payload = {
             "action": "waypoint",
             "place_pose": [float(x) for x in place_pose],
             "capture_pose": [float(x) for x in capture_pose],
-        })
+        }
+        if place_kind:
+            payload["place_pose_kind"] = str(place_kind)
+        if capture_kind:
+            payload["capture_pose_kind"] = str(capture_kind)
+        if extra_fields:
+            payload.update(extra_fields)
+        self._send_json(payload)
 
     def send_quit(self):
         """Tell server to quit."""
@@ -121,17 +133,23 @@ class PlaceCaptureClient:
             print(f"[PlaceCaptureClient] Expected 'capture', got '{cmd}'")
         return msg
 
-    def send_captured(self, status: str = "success"):
+    def send_captured(self, status: str = "success", reason: Optional[str] = None):
         """Acknowledge capture completion to server."""
-        self._send_json({
+        payload = {
             "action": "captured",
             "status": status,
-        })
+        }
+        if reason:
+            payload["reason"] = str(reason)
+        self._send_json(payload)
 
     def run_single_waypoint(
         self,
         place_pose: List[float],
         capture_pose: List[float],
+        place_kind: Optional[str] = None,
+        capture_kind: Optional[str] = None,
+        extra_fields: Optional[Dict[str, Any]] = None,
     ) -> Tuple[bool, Optional[List[float]], Optional[List[float]]]:
         """
         Full cycle for one waypoint:
@@ -142,7 +160,13 @@ class PlaceCaptureClient:
         """
         try:
             self.wait_for_ready()
-            self.send_waypoint(place_pose, capture_pose)
+            self.send_waypoint(
+                place_pose,
+                capture_pose,
+                place_kind=place_kind,
+                capture_kind=capture_kind,
+                extra_fields=extra_fields,
+            )
             cap_msg = self.wait_for_capture_signal()
 
             capture_tcp = cap_msg.get("capture_pose_6dof")

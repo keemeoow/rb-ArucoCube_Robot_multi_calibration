@@ -1,13 +1,12 @@
 #!/usr/bin/env python3
 """
-Generate calibration tables, pass-only export files, and cube failure reports.
+Generate final-use exports from the stable calibration/verification pipeline.
 
 Example:
   python Step5_export_reports.py \
-    --root_folder "data(1)/data/session" \
-    --intrinsics_dir "data(1)/intrinsics" \
-    --calib_dir "data(1)/data/session/calib_out_final" \
-    --cube_config_json "data(1)/data/session/cube_config_best_session.json"
+    --root_folder "data/session" \
+    --intrinsics_dir "intrinsics" \
+    --calib_dir "data/session/calib_out"
 """
 
 import os
@@ -34,11 +33,13 @@ from calibration_runtime_utils import (
     get_event_base_camera_transform,
     load_calib_dir,
     load_intrinsics_color,
+    load_intrinsics_with_depth_scale,
     load_robot_pose_from_capture,
     resolve_cube_config_for_run,
     select_consistent_event_cube_candidates,
+    select_primary_cube_candidate,
 )
-from config import CharucoBoardConfig, CubeConfig
+from config import CharucoBoardConfig, CubeConfig, get_default_cube_config
 from cube_config_utils import (
     cube_config_to_dict,
 )
@@ -189,15 +190,14 @@ def compute_cross_camera_metrics(meta: dict, transforms: Dict[str, np.ndarray],
                                  include_meta: bool = False,
                                  selection_profile: str = "default") -> dict:
     tf = dict(transforms)
-    T_gTc = tf.get("T_gripper_cam")
 
     use_current_cube = bool(root_folder and intrinsics_dir and cube_cfg is not None)
     cube = None
-    K_map, D_map = {}, {}
+    K_map, D_map, depth_scale_map = {}, {}, {}
     if use_current_cube:
         cube = ArucoCubeTarget(cube_cfg)
         for ci in all_cam_ids:
-            K_map[ci], D_map[ci] = load_intrinsics_color(intrinsics_dir, ci)
+            K_map[ci], D_map[ci], depth_scale_map[ci] = load_intrinsics_with_depth_scale(intrinsics_dir, ci)
     profile_kwargs = cube_selection_profile_kwargs(selection_profile)
 
     errors_mm = []
@@ -208,7 +208,7 @@ def compute_cross_camera_metrics(meta: dict, transforms: Dict[str, np.ndarray],
         if use_current_cube:
             event_candidate_map = build_capture_cube_candidate_map(
                 cap, root_folder, K_map, D_map, cube, gripper_cam_idx,
-                include_meta=include_meta)
+                include_meta=include_meta, depth_scale_map=depth_scale_map)
         refined_selection = select_consistent_event_cube_candidates(
             cap, event_candidate_map, tf, gripper_cam_idx, **profile_kwargs) if event_candidate_map else {}
 
@@ -217,7 +217,9 @@ def compute_cross_camera_metrics(meta: dict, transforms: Dict[str, np.ndarray],
             if ci not in all_cam_ids:
                 continue
             T_cam_cube = None
-            if use_current_cube and ci in refined_selection:
+            if use_current_cube:
+                if ci not in refined_selection:
+                    continue
                 T_cam_cube = np.asarray(refined_selection[ci]["T_C_O"], dtype=np.float64)
             else:
                 cpnp = cinfo.get("cube_pnp")
@@ -263,9 +265,9 @@ def compute_reprojection_metrics(meta: dict, transforms: Dict[str, np.ndarray], 
                                  all_cam_ids: List[int], root_folder: str, gripper_cam_idx: Optional[int],
                                  cube_cfg: CubeConfig, include_meta: bool = False) -> dict:
     cube = ArucoCubeTarget(cube_cfg)
-    K_map, D_map = {}, {}
+    K_map, D_map, depth_scale_map = {}, {}, {}
     for ci in all_cam_ids:
-        K_map[ci], D_map[ci] = load_intrinsics_color(intrinsics_dir, ci)
+        K_map[ci], D_map[ci], depth_scale_map[ci] = load_intrinsics_with_depth_scale(intrinsics_dir, ci)
 
     errors_px = []
     for cap in meta.get("captures", []):
@@ -277,17 +279,13 @@ def compute_reprojection_metrics(meta: dict, transforms: Dict[str, np.ndarray], 
             candidates = build_cube_pose_candidates(
                 root_folder, cinfo, K_map[ci], D_map[ci], cube,
                 meta_reproj_thr=meta_thr, solve_reproj_thr=5.0,
-                min_aspect=0.0, include_meta=include_meta)
+                min_aspect=0.0, include_meta=include_meta,
+                depth_scale=depth_scale_map.get(ci))
             if not candidates:
                 continue
-            best = min(
-                candidates,
-                key=lambda cand: (
-                    -len(set(int(x) for x in cand.get("used_ids", []))),
-                    float(cand.get("err_mean", 99.0)),
-                    str(cand.get("source", "")),
-                ),
-            )
+            best = select_primary_cube_candidate(candidates)
+            if best is None:
+                continue
 
             rgb_rel = cinfo.get("rgb_path", "")
             if not rgb_rel:
@@ -339,7 +337,6 @@ def compute_reprojection_metrics(meta: dict, transforms: Dict[str, np.ndarray], 
 
 def compute_handeye_metrics(meta: dict, transforms: Dict[str, np.ndarray], gripper_cam_idx: int,
                             root_folder: str, intrinsics_dir: str) -> dict:
-    T_gTc = transforms.get("T_gripper_cam")
     metrics = {
         "frames": 0,
         "board_position_std_mm": None,
@@ -348,7 +345,7 @@ def compute_handeye_metrics(meta: dict, transforms: Dict[str, np.ndarray], gripp
         "board_rotation_max_deg": None,
         "pass": None,
     }
-    if T_gTc is None:
+    if transforms.get("T_gripper_cam") is None:
         return metrics
 
     charuco_by_event = {}
@@ -384,13 +381,13 @@ def compute_handeye_metrics(meta: dict, transforms: Dict[str, np.ndarray], gripp
     T_base_board_list = []
     for cap in meta.get("captures", []):
         eid = int(cap.get("event_id", -1))
-        T_B_G = load_robot_pose_from_capture(cap)
-        if T_B_G is None:
+        T_base_cam = get_event_base_camera_transform(cap, gripper_cam_idx, transforms, gripper_cam_idx)
+        if T_base_cam is None:
             continue
         T_cam_board = charuco_by_event.get(eid)
         if T_cam_board is None:
             continue
-        T_base_board_list.append(T_B_G @ T_gTc @ T_cam_board)
+        T_base_board_list.append(np.asarray(T_base_cam, dtype=np.float64) @ T_cam_board)
 
     if len(T_base_board_list) < 2:
         return metrics
@@ -526,6 +523,8 @@ def evaluate_export_status(name: str, summary: dict, verification: dict) -> Tupl
     selected_handeye = handeye.get(selected_method, {})
     base_stats = summary.get("diagnostics", {}).get("base_transforms", {})
     cube_anchor = summary.get("diagnostics", {}).get("cube_anchor") or {}
+    cube_anchor_by_set = summary.get("diagnostics", {}).get("cube_anchor_by_set") or {}
+    cube_anchor_per_set = cube_anchor_by_set.get("per_set", {}) or {}
     hybrid = summary.get("diagnostics", {}).get("hybrid_refinement", {}) or {}
     hybrid_cam3_ok = (
         hybrid.get("applied") is True and
@@ -608,6 +607,12 @@ def evaluate_export_status(name: str, summary: dict, verification: dict) -> Tupl
                 f"{' + hybrid-refined provisional' if ok and hybrid_cam3_ok else ''}")
 
     if name == "T_base_O":
+        if cube_anchor_by_set.get("num_sets", 0) > 1:
+            return (
+                "FAIL",
+                f"compatibility average across {cube_anchor_by_set.get('num_sets', 0)} set_index groups; "
+                "use T_base_O_set*",
+            )
         support = int(cube_anchor.get("support", 0))
         st = cube_anchor.get("stability", {})
         ok = (
@@ -619,6 +624,24 @@ def evaluate_export_status(name: str, summary: dict, verification: dict) -> Tupl
         )
         return ("PASS" if ok else "FAIL",
                 f"cube anchor support={support}/{cube_anchor.get('total_keys', 0)}")
+
+    if name.startswith("T_base_O_set"):
+        set_index = name.replace("T_base_O_set", "")
+        set_diag = cube_anchor_per_set.get(str(set_index), {})
+        st = set_diag.get("stability", {})
+        support = int(set_diag.get("support", 0))
+        ok = (
+            support >= 2 and
+            st.get("translation_std_mm", 1e9) < 3.0 and
+            st.get("rotation_std_deg", 1e9) < 0.5 and
+            verification["reprojection"]["pass"] is True
+        )
+        return (
+            "PASS" if ok else "FAIL",
+            f"set_index={set_index} support={support} "
+            f"stability={st.get('translation_std_mm', float('nan')):.2f}mm / "
+            f"{st.get('rotation_std_deg', float('nan')):.3f}deg",
+        )
 
     if name == "T_C0_C3":
         s0, _ = evaluate_export_status("T_base_C0", summary, verification)
@@ -634,6 +657,8 @@ def export_quality_tier(name: str, summary: dict) -> str:
     hybrid = summary.get("diagnostics", {}).get("hybrid_refinement", {}) or {}
     if name in ("T_gripper_cam", "T_base_C0", "T_base_C1", "T_C0_C1"):
         return "production"
+    if name.startswith("T_base_O_set"):
+        return "diagnostic"
     if name == "T_base_C3" and (
         base_stats.get(name, {}).get("method") == "cube_anchor_strict" or
         hybrid.get("applied") is True
@@ -724,6 +749,8 @@ def build_result_tables(summary: dict, verification: dict) -> Tuple[List[dict], 
     selected_handeye = handeye.get(selected_method, {})
     base_stats = summary.get("diagnostics", {}).get("base_transforms", {})
     cube_anchor = summary.get("diagnostics", {}).get("cube_anchor") or {}
+    cube_anchor_by_set = summary.get("diagnostics", {}).get("cube_anchor_by_set") or {}
+    cube_anchor_per_set = cube_anchor_by_set.get("per_set", {}) or {}
 
     camera_rows = []
     entries = [
@@ -755,8 +782,25 @@ def build_result_tables(summary: dict, verification: dict) -> Tuple[List[dict], 
          cube_anchor.get("stability", {}).get("rotation_std_deg"),
          cube_anchor.get("support"),
          cube_anchor.get("total_keys"),
-         "static cube anchor in robot base"),
+         ("compatibility average across set anchors"
+          if cube_anchor_by_set.get("num_sets", 0) > 1 else
+          "static cube anchor in robot base")),
     ]
+
+    for set_index in sorted(int(k) for k in cube_anchor_per_set.keys()):
+        set_diag = cube_anchor_per_set.get(str(set_index), {})
+        st = set_diag.get("stability", {})
+        entries.append((
+            f"cube_set_{set_index}",
+            "object",
+            f"T_base_O_set{set_index}",
+            summary.get("t_base_o_source", "unknown"),
+            st.get("translation_std_mm"),
+            st.get("rotation_std_deg"),
+            set_diag.get("support"),
+            set_diag.get("support"),
+            f"set_index={set_index} static cube anchor",
+        ))
 
     for entity, role, name, method, trans_err, rot_err, num_inliers, num_total, note in entries:
         if name not in transforms:
@@ -959,8 +1003,8 @@ def main():
     gripper_cam_idx = summary.get("gripper_cam_idx")
 
     cube_cfg, cube_cfg_source = resolve_cube_config_for_run(
-        root_folder, calib_dir=calib_dir, cube_config_json=args.cube_config_json, default_cfg=CubeConfig())
-    include_meta = (cube_cfg_source == "meta")
+        root_folder, calib_dir=calib_dir, cube_config_json=args.cube_config_json, default_cfg=get_default_cube_config())
+    include_meta = False
 
     verification = compute_full_verification_bundle(
         meta, transforms, args.intrinsics_dir, root_folder, all_cam_ids, gripper_cam_idx,

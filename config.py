@@ -1,7 +1,10 @@
 # config.py
 """
 캘리브레이션 파이프라인 공통 설정.
-실제 하드웨어에 맞게 값을 수정하여 사용.
+
+이 파일의 CubeConfig는 현재 프로젝트에서 재사용하는 단일 기준 큐브 정의다.
+동일한 물리 큐브를 계속 사용할 경우, 다른 고정 JSON 없이 이 정의를 그대로 사용한다.
+예외적으로 다른 큐브/실험 정의가 필요할 때만 명시적인 JSON override를 사용한다.
 """
 
 from dataclasses import dataclass, field
@@ -18,27 +21,30 @@ class CubeConfig:
     marker_ids: Tuple[int, ...] = (0, 1, 2, 3, 4)
 
     # marker_id -> face name
-    # Verified from session data and marker gallery inspection.
+    # Cube net:
+    #         [ID0=+Z]
+    #   [ID1=+X][ID2=+Y][ID3=-X][ID4=-Y]
     id_to_face: Dict[int, str] = field(default_factory=lambda: {
-        0: "+Y",
-        1: "+Z",
-        2: "+X",
-        3: "-Z",
-        4: "-X",
+        0: "+Z",
+        1: "+X",
+        2: "+Y",
+        3: "-X",
+        4: "-Y",
     })
 
-    # Reorder detected marker corners to the canonical [0,1,2,3] object order.
+    # The validated cube definition uses a single shared local-corner convention,
+    # so image corners are consumed in detector order by default.
     corner_reorder: Dict[int, list] = field(default_factory=lambda: {
         0: [0, 1, 2, 3],
         1: [0, 1, 2, 3],
         2: [0, 1, 2, 3],
-        3: [3, 0, 1, 2],
+        3: [0, 1, 2, 3],
         4: [0, 1, 2, 3],
     })
 
-    # per-marker in-plane rotation (deg) if physically rotated
+    # per-marker in-plane rotation (deg) validated against the physical cube
     face_roll_deg: Dict[int, float] = field(default_factory=lambda: {
-        0: 0.0, 1: 0.0, 2: 0.0, 3: 0.0, 4: 0.0
+        0: 0.0, 1: 270.0, 2: 0.0, 3: 90.0, 4: 180.0
     })
 
     # Optional explicit rigid pose of each marker in the cube/object frame.
@@ -46,6 +52,15 @@ class CubeConfig:
     # marker. corner_reorder is still used to map detector corners to the
     # marker's local [0,1,2,3] order.
     marker_pose_4x4: Dict[int, list] = field(default_factory=dict)
+
+
+def get_default_cube_config() -> CubeConfig:
+    """Return a fresh copy of the validated reusable cube definition."""
+    return CubeConfig()
+
+
+def get_default_cube_config_source() -> str:
+    return "config_py_default"
 
 
 @dataclass

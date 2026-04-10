@@ -1,0 +1,2749 @@
+{
+  "root_folder": "/Users/woo/Documents/GitHub/Robot-Lab/rb-ArucoCube_Robot_multi_calibration/data/session",
+  "gripper_cam_idx": 2,
+  "cube_config_source": "config_py_default",
+  "cube_config_used": {
+    "cube_side_m": 0.03,
+    "marker_size_m": 0.022,
+    "dictionary_name": "DICT_4X4_50",
+    "marker_ids": [
+      0,
+      1,
+      2,
+      3,
+      4
+    ],
+    "id_to_face": {
+      "0": "+Z",
+      "1": "+X",
+      "2": "+Y",
+      "3": "-X",
+      "4": "-Y"
+    },
+    "corner_reorder": {
+      "0": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "1": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "2": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "3": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "4": [
+        0,
+        1,
+        2,
+        3
+      ]
+    },
+    "face_roll_deg": {
+      "0": 0.0,
+      "1": 270.0,
+      "2": 0.0,
+      "3": 90.0,
+      "4": 180.0
+    },
+    "marker_pose_4x4": {}
+  },
+  "board_mask_pad_px": 6.0,
+  "captures": [
+    {
+      "event_id": 0,
+      "set_index": 1,
+      "cams": {
+        "0": {
+          "status": "ok",
+          "marker_ids": [
+            4,
+            1,
+            0
+          ],
+          "raw_ids": [
+            4,
+            1,
+            0,
+            41,
+            31,
+            26,
+            30,
+            9,
+            19,
+            34,
+            7
+          ],
+          "board_mask_applied": false,
+          "charuco_detect_n": null,
+          "used_ids": [
+            4,
+            1,
+            0
+          ],
+          "reproj_mean_px": 0.6918623425341246,
+          "depth_valid": true,
+          "depth_plane_mean_mm": 4.835198445477747
+        },
+        "1": {
+          "status": "ok",
+          "marker_ids": [
+            2
+          ],
+          "raw_ids": [
+            2,
+            9,
+            5,
+            6,
+            8,
+            7,
+            15,
+            10,
+            11,
+            14,
+            12,
+            13,
+            20,
+            16,
+            17,
+            19,
+            26,
+            18,
+            21,
+            22,
+            25,
+            23,
+            24,
+            27,
+            31,
+            30,
+            29,
+            37,
+            32,
+            34,
+            35,
+            38,
+            42,
+            40,
+            41
+          ],
+          "board_mask_applied": false,
+          "charuco_detect_n": null,
+          "used_ids": [
+            2
+          ],
+          "reproj_mean_px": 0.14230638738148482,
+          "depth_valid": true,
+          "depth_plane_mean_mm": 12.098167287818198
+        },
+        "2": {
+          "status": "ok",
+          "marker_ids": [
+            0,
+            2
+          ],
+          "raw_ids": [
+            0,
+            2
+          ],
+          "board_mask_applied": true,
+          "charuco_detect_n": 60,
+          "used_ids": [
+            0,
+            2
+          ],
+          "reproj_mean_px": 0.4707522633941378,
+          "depth_valid": true,
+          "depth_plane_mean_mm": 10.156806476297064
+        },
+        "3": {
+          "status": "ok",
+          "marker_ids": [
+            3,
+            2
+          ],
+          "raw_ids": [
+            32,
+            3,
+            38,
+            21,
+            10,
+            27,
+            16,
+            5,
+            33,
+            22,
+            11,
+            28,
+            17,
+            6,
+            2,
+            12,
+            35,
+            7,
+            13
+          ],
+          "board_mask_applied": false,
+          "charuco_detect_n": null,
+          "used_ids": [
+            3,
+            2
+          ],
+          "reproj_mean_px": 0.6225567648973536,
+          "depth_valid": true,
+          "depth_plane_mean_mm": 5.214623284171881
+        }
+      }
+    },
+    {
+      "event_id": 1,
+      "set_index": 1,
+      "cams": {
+        "0": {
+          "status": "ok",
+          "marker_ids": [
+            4,
+            1,
+            0
+          ],
+          "raw_ids": [
+            4,
+            1,
+            0,
+            26,
+            41,
+            36,
+            31,
+            30,
+            9,
+            19,
+            23
+          ],
+          "board_mask_applied": false,
+          "charuco_detect_n": null,
+          "used_ids": [
+            4,
+            1,
+            0
+          ],
+          "reproj_mean_px": 1.145114292668999,
+          "depth_valid": true,
+          "depth_plane_mean_mm": 4.876296180164117
+        },
+        "1": {
+          "status": "ok",
+          "marker_ids": [
+            2
+          ],
+          "raw_ids": [
+            13,
+            2,
+            9,
+            5,
+            6,
+            8,
+            7,
+            10,
+            15,
+            14,
+            11,
+            12,
+            16,
+            20,
+            17,
+            19,
+            21,
+            26,
+            25,
+            22,
+            24,
+            23,
+            27,
+            31,
+            37,
+            32,
+            30,
+            29,
+            33,
+            36,
+            34,
+            35,
+            38,
+            40,
+            42,
+            41
+          ],
+          "board_mask_applied": false,
+          "charuco_detect_n": null,
+          "used_ids": [
+            2
+          ],
+          "reproj_mean_px": 0.2800367990800185,
+          "depth_valid": true,
+          "depth_plane_mean_mm": 17.051309682480102
+        },
+        "2": {
+          "status": "ok",
+          "marker_ids": [
+            2,
+            0
+          ],
+          "raw_ids": [
+            2,
+            0
+          ],
+          "board_mask_applied": true,
+          "charuco_detect_n": 60,
+          "used_ids": [
+            2,
+            0
+          ],
+          "reproj_mean_px": 0.47136262048947153,
+          "depth_valid": true,
+          "depth_plane_mean_mm": 11.229491298091729
+        },
+        "3": {
+          "status": "ok",
+          "marker_ids": [
+            3,
+            2
+          ],
+          "raw_ids": [
+            32,
+            3,
+            10,
+            38,
+            21,
+            27,
+            16,
+            5,
+            33,
+            22,
+            11,
+            28,
+            17,
+            6,
+            23,
+            2,
+            12,
+            35,
+            7,
+            13,
+            42
+          ],
+          "board_mask_applied": false,
+          "charuco_detect_n": null,
+          "used_ids": [
+            3,
+            2
+          ],
+          "reproj_mean_px": 0.6225567648973536,
+          "depth_valid": true,
+          "depth_plane_mean_mm": 5.348842990013872
+        }
+      }
+    },
+    {
+      "event_id": 2,
+      "set_index": 1,
+      "cams": {
+        "0": {
+          "status": "ok",
+          "marker_ids": [
+            4,
+            1,
+            0
+          ],
+          "raw_ids": [
+            4,
+            1,
+            0,
+            36,
+            41,
+            26,
+            15,
+            30,
+            9,
+            19,
+            7
+          ],
+          "board_mask_applied": false,
+          "charuco_detect_n": null,
+          "used_ids": [
+            4,
+            1,
+            0
+          ],
+          "reproj_mean_px": 1.3152004655024772,
+          "depth_valid": true,
+          "depth_plane_mean_mm": 6.313086520852019
+        },
+        "1": {
+          "status": "ok",
+          "marker_ids": [
+            2
+          ],
+          "raw_ids": [
+            2,
+            9,
+            5,
+            8,
+            6,
+            15,
+            7,
+            10,
+            11,
+            14,
+            12,
+            13,
+            16,
+            20,
+            17,
+            18,
+            21,
+            26,
+            22,
+            25,
+            24,
+            23,
+            27,
+            31,
+            37,
+            32,
+            30,
+            29,
+            28,
+            33,
+            36,
+            34,
+            35,
+            42,
+            41,
+            40
+          ],
+          "board_mask_applied": false,
+          "charuco_detect_n": null,
+          "used_ids": [
+            2
+          ],
+          "reproj_mean_px": 0.04736194434286666,
+          "depth_valid": true,
+          "depth_plane_mean_mm": 14.156834608970048
+        },
+        "2": {
+          "status": "ok",
+          "marker_ids": [
+            3,
+            0,
+            2
+          ],
+          "raw_ids": [
+            3,
+            0,
+            2
+          ],
+          "board_mask_applied": true,
+          "charuco_detect_n": 60,
+          "used_ids": [
+            3,
+            0,
+            2
+          ],
+          "reproj_mean_px": 0.8713796907229671,
+          "depth_valid": true,
+          "depth_plane_mean_mm": 8.862288681353894
+        },
+        "3": {
+          "status": "ok",
+          "marker_ids": [
+            3,
+            2
+          ],
+          "raw_ids": [
+            32,
+            3,
+            38,
+            10,
+            21,
+            27,
+            16,
+            5,
+            33,
+            11,
+            22,
+            28,
+            17,
+            6,
+            2,
+            12,
+            35,
+            7,
+            13,
+            42
+          ],
+          "board_mask_applied": false,
+          "charuco_detect_n": null,
+          "used_ids": [
+            3,
+            2
+          ],
+          "reproj_mean_px": 0.6857966479907018,
+          "depth_valid": true,
+          "depth_plane_mean_mm": 0.5146070777225772
+        }
+      }
+    },
+    {
+      "event_id": 3,
+      "set_index": 2,
+      "cams": {
+        "0": {
+          "status": "ok",
+          "marker_ids": [
+            4,
+            3,
+            0
+          ],
+          "raw_ids": [
+            4,
+            3,
+            0,
+            37,
+            42,
+            31,
+            41,
+            36,
+            26,
+            30,
+            19
+          ],
+          "board_mask_applied": false,
+          "charuco_detect_n": null,
+          "used_ids": [
+            4,
+            3,
+            0
+          ],
+          "reproj_mean_px": 0.6522284655986588,
+          "depth_valid": true,
+          "depth_plane_mean_mm": 1.7191731521006848
+        },
+        "1": {
+          "status": "ok",
+          "marker_ids": [
+            2,
+            1,
+            0
+          ],
+          "raw_ids": [
+            14,
+            2,
+            1,
+            0,
+            24,
+            5,
+            9,
+            6,
+            8,
+            7,
+            15,
+            10,
+            11,
+            13,
+            12,
+            16,
+            20,
+            17,
+            19,
+            18,
+            26,
+            21,
+            22,
+            25,
+            23,
+            31,
+            27,
+            29,
+            30,
+            37,
+            32,
+            28,
+            35,
+            42,
+            38,
+            40,
+            41
+          ],
+          "board_mask_applied": false,
+          "charuco_detect_n": null,
+          "used_ids": [
+            2,
+            1,
+            0
+          ],
+          "reproj_mean_px": 0.5603788120653647,
+          "depth_valid": false,
+          "depth_plane_mean_mm": null
+        },
+        "2": {
+          "status": "ok",
+          "marker_ids": [
+            0,
+            2
+          ],
+          "raw_ids": [
+            0,
+            2
+          ],
+          "board_mask_applied": true,
+          "charuco_detect_n": 60,
+          "used_ids": [
+            0,
+            2
+          ],
+          "reproj_mean_px": 0.527117564870848,
+          "depth_valid": true,
+          "depth_plane_mean_mm": 5.20403878085212
+        },
+        "3": {
+          "status": "ok",
+          "marker_ids": [
+            2,
+            3
+          ],
+          "raw_ids": [
+            32,
+            38,
+            21,
+            10,
+            27,
+            16,
+            5,
+            33,
+            11,
+            22,
+            2,
+            28,
+            3,
+            17,
+            40,
+            12,
+            35,
+            7,
+            19
+          ],
+          "board_mask_applied": false,
+          "charuco_detect_n": null,
+          "used_ids": [
+            2,
+            3
+          ],
+          "reproj_mean_px": 0.4053977354102207,
+          "depth_valid": true,
+          "depth_plane_mean_mm": 14.456215169748754
+        }
+      }
+    },
+    {
+      "event_id": 4,
+      "set_index": 2,
+      "cams": {
+        "0": {
+          "status": "ok",
+          "marker_ids": [
+            4,
+            3,
+            0
+          ],
+          "raw_ids": [
+            4,
+            3,
+            0,
+            37,
+            42,
+            41,
+            36,
+            26,
+            31,
+            30,
+            19
+          ],
+          "board_mask_applied": false,
+          "charuco_detect_n": null,
+          "used_ids": [
+            4,
+            3,
+            0
+          ],
+          "reproj_mean_px": 0.6522284655986588,
+          "depth_valid": true,
+          "depth_plane_mean_mm": 1.7412533460525847
+        },
+        "1": {
+          "status": "ok",
+          "marker_ids": [
+            2,
+            1,
+            0
+          ],
+          "raw_ids": [
+            2,
+            1,
+            0,
+            9,
+            5,
+            6,
+            8,
+            7,
+            10,
+            15,
+            11,
+            14,
+            12,
+            13,
+            16,
+            20,
+            17,
+            19,
+            21,
+            26,
+            22,
+            25,
+            23,
+            24,
+            27,
+            31,
+            37,
+            32,
+            30,
+            29,
+            28,
+            33,
+            36,
+            34,
+            35,
+            40,
+            42,
+            41
+          ],
+          "board_mask_applied": false,
+          "charuco_detect_n": null,
+          "used_ids": [
+            2,
+            1,
+            0
+          ],
+          "reproj_mean_px": 0.6012896653540053,
+          "depth_valid": false,
+          "depth_plane_mean_mm": null
+        },
+        "2": {
+          "status": "ok",
+          "marker_ids": [
+            0,
+            2
+          ],
+          "raw_ids": [
+            0,
+            2
+          ],
+          "board_mask_applied": true,
+          "charuco_detect_n": 60,
+          "used_ids": [
+            0,
+            2
+          ],
+          "reproj_mean_px": 0.4483548393374026,
+          "depth_valid": true,
+          "depth_plane_mean_mm": 11.30980554459292
+        },
+        "3": {
+          "status": "ok",
+          "marker_ids": [
+            2,
+            3
+          ],
+          "raw_ids": [
+            32,
+            38,
+            21,
+            10,
+            27,
+            16,
+            5,
+            33,
+            11,
+            22,
+            2,
+            28,
+            17,
+            3,
+            40,
+            12,
+            35,
+            7
+          ],
+          "board_mask_applied": false,
+          "charuco_detect_n": null,
+          "used_ids": [
+            2,
+            3
+          ],
+          "reproj_mean_px": 0.4053977354102207,
+          "depth_valid": true,
+          "depth_plane_mean_mm": 14.601722864445378
+        }
+      }
+    },
+    {
+      "event_id": 5,
+      "set_index": 2,
+      "cams": {
+        "0": {
+          "status": "ok",
+          "marker_ids": [
+            4,
+            3,
+            0
+          ],
+          "raw_ids": [
+            4,
+            3,
+            0,
+            37,
+            42,
+            31,
+            26,
+            41,
+            36,
+            30,
+            19
+          ],
+          "board_mask_applied": false,
+          "charuco_detect_n": null,
+          "used_ids": [
+            4,
+            3,
+            0
+          ],
+          "reproj_mean_px": 0.5716936854766546,
+          "depth_valid": true,
+          "depth_plane_mean_mm": 2.110019072653586
+        },
+        "1": {
+          "status": "ok",
+          "marker_ids": [
+            2,
+            1,
+            0
+          ],
+          "raw_ids": [
+            2,
+            1,
+            0,
+            18,
+            9,
+            5,
+            6,
+            8,
+            7,
+            15,
+            10,
+            11,
+            14,
+            12,
+            13,
+            20,
+            16,
+            17,
+            19,
+            21,
+            26,
+            22,
+            25,
+            23,
+            24,
+            27,
+            31,
+            37,
+            29,
+            32,
+            30,
+            33,
+            36,
+            34,
+            35,
+            42,
+            40,
+            41
+          ],
+          "board_mask_applied": false,
+          "charuco_detect_n": null,
+          "used_ids": [
+            2,
+            1,
+            0
+          ],
+          "reproj_mean_px": 0.5172055685465166,
+          "depth_valid": false,
+          "depth_plane_mean_mm": null
+        },
+        "2": {
+          "status": "ok",
+          "marker_ids": [
+            0,
+            4,
+            3
+          ],
+          "raw_ids": [
+            0,
+            4,
+            3
+          ],
+          "board_mask_applied": true,
+          "charuco_detect_n": 58,
+          "used_ids": [
+            0,
+            4,
+            3
+          ],
+          "reproj_mean_px": 0.6502411957305808,
+          "depth_valid": true,
+          "depth_plane_mean_mm": 4.727221947391573
+        },
+        "3": {
+          "status": "ok",
+          "marker_ids": [
+            2,
+            3
+          ],
+          "raw_ids": [
+            32,
+            38,
+            10,
+            21,
+            27,
+            16,
+            5,
+            33,
+            22,
+            2,
+            11,
+            28,
+            3,
+            17,
+            40,
+            12,
+            35,
+            7
+          ],
+          "board_mask_applied": false,
+          "charuco_detect_n": null,
+          "used_ids": [
+            2,
+            3
+          ],
+          "reproj_mean_px": 0.4053977354102207,
+          "depth_valid": true,
+          "depth_plane_mean_mm": 14.294103915850817
+        }
+      }
+    },
+    {
+      "event_id": 6,
+      "set_index": 4,
+      "cams": {
+        "0": {
+          "status": "ok",
+          "marker_ids": [
+            1,
+            4
+          ],
+          "raw_ids": [
+            1,
+            37,
+            42,
+            36,
+            26,
+            31,
+            41,
+            4,
+            30,
+            9,
+            39,
+            19
+          ],
+          "board_mask_applied": false,
+          "charuco_detect_n": null,
+          "used_ids": [
+            1,
+            4
+          ],
+          "reproj_mean_px": 0.6709369644723007,
+          "depth_valid": true,
+          "depth_plane_mean_mm": 6.694177165814497
+        },
+        "1": {
+          "status": "ok",
+          "marker_ids": [
+            2,
+            3,
+            0
+          ],
+          "raw_ids": [
+            2,
+            3,
+            0,
+            5,
+            8,
+            6,
+            7,
+            10,
+            14,
+            11,
+            12,
+            13,
+            16,
+            20,
+            17,
+            18,
+            26,
+            21,
+            25,
+            22,
+            24,
+            23,
+            27,
+            28,
+            30,
+            32,
+            29,
+            37,
+            36,
+            33,
+            34,
+            38,
+            39,
+            42,
+            40,
+            41
+          ],
+          "board_mask_applied": false,
+          "charuco_detect_n": null,
+          "used_ids": [
+            2,
+            3,
+            0
+          ],
+          "reproj_mean_px": 1.6085852570510522,
+          "depth_valid": true,
+          "depth_plane_mean_mm": 105.36199615960844
+        },
+        "2": {
+          "status": "ok",
+          "marker_ids": [
+            0,
+            2
+          ],
+          "raw_ids": [
+            0,
+            2
+          ],
+          "board_mask_applied": true,
+          "charuco_detect_n": 58,
+          "used_ids": [
+            0
+          ],
+          "reproj_mean_px": 0.22132193952574988,
+          "depth_valid": true,
+          "depth_plane_mean_mm": 4.772388506448686
+        },
+        "3": {
+          "status": "ok",
+          "marker_ids": [
+            4,
+            3
+          ],
+          "raw_ids": [
+            32,
+            38,
+            21,
+            10,
+            27,
+            16,
+            4,
+            5,
+            33,
+            22,
+            11,
+            28,
+            17,
+            3,
+            23,
+            12,
+            18,
+            35,
+            7,
+            19
+          ],
+          "board_mask_applied": false,
+          "charuco_detect_n": null,
+          "used_ids": [
+            4,
+            3
+          ],
+          "reproj_mean_px": 0.37898747551174095,
+          "depth_valid": true,
+          "depth_plane_mean_mm": 13.418296788414633
+        }
+      }
+    },
+    {
+      "event_id": 7,
+      "set_index": 4,
+      "cams": {
+        "0": {
+          "status": "ok",
+          "marker_ids": [
+            1,
+            4,
+            0
+          ],
+          "raw_ids": [
+            1,
+            37,
+            42,
+            36,
+            31,
+            41,
+            26,
+            4,
+            0,
+            30,
+            9,
+            19,
+            23
+          ],
+          "board_mask_applied": false,
+          "charuco_detect_n": null,
+          "used_ids": [
+            1,
+            4,
+            0
+          ],
+          "reproj_mean_px": 0.6482599649068419,
+          "depth_valid": true,
+          "depth_plane_mean_mm": 6.250318838392319
+        },
+        "1": {
+          "status": "ok",
+          "marker_ids": [
+            2,
+            0,
+            3
+          ],
+          "raw_ids": [
+            2,
+            0,
+            3,
+            13,
+            5,
+            6,
+            8,
+            7,
+            10,
+            14,
+            11,
+            12,
+            16,
+            20,
+            17,
+            19,
+            26,
+            21,
+            25,
+            22,
+            24,
+            23,
+            27,
+            28,
+            32,
+            30,
+            37,
+            33,
+            34,
+            38,
+            40,
+            41,
+            42
+          ],
+          "board_mask_applied": false,
+          "charuco_detect_n": null,
+          "used_ids": [
+            2,
+            0,
+            3
+          ],
+          "reproj_mean_px": 1.805832709400904,
+          "depth_valid": true,
+          "depth_plane_mean_mm": 86.03031342181853
+        },
+        "2": {
+          "status": "ok",
+          "marker_ids": [
+            0,
+            1,
+            4
+          ],
+          "raw_ids": [
+            0,
+            1,
+            4
+          ],
+          "board_mask_applied": true,
+          "charuco_detect_n": 58,
+          "used_ids": [
+            0,
+            1,
+            4
+          ],
+          "reproj_mean_px": 0.7082487315984202,
+          "depth_valid": true,
+          "depth_plane_mean_mm": 9.041268312259533
+        },
+        "3": {
+          "status": "ok",
+          "marker_ids": [
+            4,
+            3
+          ],
+          "raw_ids": [
+            32,
+            38,
+            10,
+            21,
+            27,
+            16,
+            4,
+            5,
+            33,
+            22,
+            11,
+            28,
+            17,
+            3,
+            34,
+            12,
+            35,
+            7
+          ],
+          "board_mask_applied": false,
+          "charuco_detect_n": null,
+          "used_ids": [
+            4,
+            3
+          ],
+          "reproj_mean_px": 0.5377773312401141,
+          "depth_valid": true,
+          "depth_plane_mean_mm": 11.505503978023551
+        }
+      }
+    },
+    {
+      "event_id": 8,
+      "set_index": 4,
+      "cams": {
+        "0": {
+          "status": "ok",
+          "marker_ids": [
+            1,
+            4
+          ],
+          "raw_ids": [
+            1,
+            37,
+            42,
+            41,
+            31,
+            36,
+            26,
+            4,
+            30,
+            9,
+            19,
+            7,
+            16
+          ],
+          "board_mask_applied": false,
+          "charuco_detect_n": null,
+          "used_ids": [
+            1,
+            4
+          ],
+          "reproj_mean_px": 0.6783269612473609,
+          "depth_valid": true,
+          "depth_plane_mean_mm": 8.281235845268757
+        },
+        "1": {
+          "status": "ok",
+          "marker_ids": [
+            2,
+            0,
+            3
+          ],
+          "raw_ids": [
+            2,
+            0,
+            3,
+            5,
+            6,
+            8,
+            7,
+            10,
+            14,
+            11,
+            12,
+            13,
+            16,
+            20,
+            17,
+            21,
+            26,
+            25,
+            22,
+            24,
+            23,
+            27,
+            31,
+            37,
+            32,
+            29,
+            30,
+            33,
+            36,
+            34,
+            38,
+            42,
+            40,
+            41
+          ],
+          "board_mask_applied": false,
+          "charuco_detect_n": null,
+          "used_ids": [
+            2,
+            0,
+            3
+          ],
+          "reproj_mean_px": 1.8784328911448016,
+          "depth_valid": true,
+          "depth_plane_mean_mm": 89.14826668778743
+        },
+        "2": {
+          "status": "ok",
+          "marker_ids": [
+            0,
+            4
+          ],
+          "raw_ids": [
+            0,
+            4
+          ],
+          "board_mask_applied": true,
+          "charuco_detect_n": 60,
+          "used_ids": [
+            0,
+            4
+          ],
+          "reproj_mean_px": 0.6233535751931338,
+          "depth_valid": true,
+          "depth_plane_mean_mm": 5.468267379456727
+        },
+        "3": {
+          "status": "ok",
+          "marker_ids": [
+            4,
+            3
+          ],
+          "raw_ids": [
+            32,
+            38,
+            10,
+            21,
+            27,
+            16,
+            5,
+            4,
+            33,
+            22,
+            11,
+            28,
+            17,
+            3,
+            12,
+            35,
+            7,
+            19
+          ],
+          "board_mask_applied": false,
+          "charuco_detect_n": null,
+          "used_ids": [
+            4,
+            3
+          ],
+          "reproj_mean_px": 0.37898747551174095,
+          "depth_valid": true,
+          "depth_plane_mean_mm": 13.458702301503155
+        }
+      }
+    },
+    {
+      "event_id": 9,
+      "set_index": 5,
+      "cams": {
+        "0": {
+          "status": "ok",
+          "marker_ids": [
+            3,
+            4
+          ],
+          "raw_ids": [
+            37,
+            42,
+            31,
+            41,
+            36,
+            26,
+            30,
+            9,
+            3,
+            4,
+            19
+          ],
+          "board_mask_applied": false,
+          "charuco_detect_n": null,
+          "used_ids": [
+            3,
+            4
+          ],
+          "reproj_mean_px": 0.7029997346321946,
+          "depth_valid": true,
+          "depth_plane_mean_mm": 17.566422920635677
+        },
+        "1": {
+          "status": "ok",
+          "marker_ids": [
+            1,
+            0,
+            4
+          ],
+          "raw_ids": [
+            1,
+            0,
+            4,
+            22,
+            9,
+            6,
+            8,
+            7,
+            15,
+            14,
+            11,
+            12,
+            13,
+            20,
+            16,
+            17,
+            21,
+            19,
+            26,
+            24,
+            23,
+            25,
+            27,
+            31,
+            37,
+            29,
+            32,
+            30,
+            36,
+            34,
+            35,
+            38,
+            40,
+            42,
+            41
+          ],
+          "board_mask_applied": false,
+          "charuco_detect_n": null,
+          "used_ids": [
+            1,
+            0,
+            4
+          ],
+          "reproj_mean_px": 0.78530166833065,
+          "depth_valid": true,
+          "depth_plane_mean_mm": 1.092433841465657
+        },
+        "2": {
+          "status": "ok",
+          "marker_ids": [
+            0,
+            3
+          ],
+          "raw_ids": [
+            0,
+            3
+          ],
+          "board_mask_applied": true,
+          "charuco_detect_n": 60,
+          "used_ids": [
+            0,
+            3
+          ],
+          "reproj_mean_px": 0.6387009978372483,
+          "depth_valid": true,
+          "depth_plane_mean_mm": 4.594007596753905
+        },
+        "3": {
+          "status": "ok",
+          "marker_ids": [
+            2,
+            3,
+            0
+          ],
+          "raw_ids": [
+            2,
+            3,
+            0,
+            32,
+            38,
+            21,
+            10,
+            27,
+            16,
+            5,
+            33,
+            11,
+            22,
+            28,
+            17,
+            12,
+            18,
+            35,
+            7,
+            19
+          ],
+          "board_mask_applied": false,
+          "charuco_detect_n": null,
+          "used_ids": [
+            2,
+            3,
+            0
+          ],
+          "reproj_mean_px": 0.7037412677903004,
+          "depth_valid": true,
+          "depth_plane_mean_mm": 3.042468414041706
+        }
+      }
+    },
+    {
+      "event_id": 10,
+      "set_index": 5,
+      "cams": {
+        "0": {
+          "status": "ok",
+          "marker_ids": [
+            3,
+            4
+          ],
+          "raw_ids": [
+            37,
+            42,
+            36,
+            31,
+            41,
+            26,
+            30,
+            9,
+            3,
+            4,
+            19,
+            7
+          ],
+          "board_mask_applied": false,
+          "charuco_detect_n": null,
+          "used_ids": [
+            3,
+            4
+          ],
+          "reproj_mean_px": 0.7029997346321946,
+          "depth_valid": true,
+          "depth_plane_mean_mm": 17.509704276449586
+        },
+        "1": {
+          "status": "ok",
+          "marker_ids": [
+            1,
+            0,
+            4
+          ],
+          "raw_ids": [
+            1,
+            0,
+            4,
+            9,
+            8,
+            6,
+            7,
+            15,
+            14,
+            11,
+            13,
+            12,
+            16,
+            20,
+            17,
+            19,
+            26,
+            21,
+            25,
+            22,
+            24,
+            23,
+            27,
+            37,
+            29,
+            32,
+            28,
+            30,
+            38,
+            40,
+            41,
+            42
+          ],
+          "board_mask_applied": false,
+          "charuco_detect_n": null,
+          "used_ids": [
+            1,
+            0,
+            4
+          ],
+          "reproj_mean_px": 0.6358304364819795,
+          "depth_valid": true,
+          "depth_plane_mean_mm": 0.7702660061233192
+        },
+        "2": {
+          "status": "ok",
+          "marker_ids": [
+            3,
+            4,
+            0
+          ],
+          "raw_ids": [
+            3,
+            4,
+            0
+          ],
+          "board_mask_applied": true,
+          "charuco_detect_n": 56,
+          "used_ids": [
+            3,
+            4,
+            0
+          ],
+          "reproj_mean_px": 0.6867934757454899,
+          "depth_valid": true,
+          "depth_plane_mean_mm": 12.698698829151077
+        },
+        "3": {
+          "status": "ok",
+          "marker_ids": [
+            2,
+            3,
+            0
+          ],
+          "raw_ids": [
+            2,
+            3,
+            0,
+            32,
+            38,
+            21,
+            10,
+            27,
+            16,
+            5,
+            33,
+            11,
+            22,
+            28,
+            17,
+            34,
+            40,
+            12,
+            35,
+            7,
+            19
+          ],
+          "board_mask_applied": false,
+          "charuco_detect_n": null,
+          "used_ids": [
+            2,
+            3,
+            0
+          ],
+          "reproj_mean_px": 0.7037412677903004,
+          "depth_valid": true,
+          "depth_plane_mean_mm": 3.015493910965271
+        }
+      }
+    },
+    {
+      "event_id": 11,
+      "set_index": 5,
+      "cams": {
+        "0": {
+          "status": "ok",
+          "marker_ids": [
+            3,
+            4
+          ],
+          "raw_ids": [
+            37,
+            42,
+            36,
+            31,
+            41,
+            26,
+            30,
+            9,
+            3,
+            4,
+            19,
+            7
+          ],
+          "board_mask_applied": false,
+          "charuco_detect_n": null,
+          "used_ids": [
+            3,
+            4
+          ],
+          "reproj_mean_px": 0.7029997346321946,
+          "depth_valid": true,
+          "depth_plane_mean_mm": 17.624357962494535
+        },
+        "1": {
+          "status": "ok",
+          "marker_ids": [
+            1,
+            0,
+            4
+          ],
+          "raw_ids": [
+            1,
+            0,
+            4,
+            9,
+            6,
+            8,
+            7,
+            15,
+            14,
+            11,
+            12,
+            13,
+            16,
+            20,
+            17,
+            19,
+            26,
+            21,
+            25,
+            22,
+            24,
+            23,
+            27,
+            37,
+            28,
+            32,
+            30,
+            29,
+            34,
+            35,
+            38,
+            40,
+            41,
+            42
+          ],
+          "board_mask_applied": false,
+          "charuco_detect_n": null,
+          "used_ids": [
+            1,
+            0,
+            4
+          ],
+          "reproj_mean_px": 0.7158703365803437,
+          "depth_valid": true,
+          "depth_plane_mean_mm": 1.1265718355563101
+        },
+        "2": {
+          "status": "ok",
+          "marker_ids": [
+            0,
+            4
+          ],
+          "raw_ids": [
+            0,
+            4
+          ],
+          "board_mask_applied": true,
+          "charuco_detect_n": 60,
+          "used_ids": [
+            0,
+            4
+          ],
+          "reproj_mean_px": 0.49828572970180796,
+          "depth_valid": true,
+          "depth_plane_mean_mm": 11.404400201801133
+        },
+        "3": {
+          "status": "ok",
+          "marker_ids": [
+            2,
+            3,
+            0
+          ],
+          "raw_ids": [
+            2,
+            3,
+            0,
+            32,
+            38,
+            10,
+            21,
+            27,
+            16,
+            5,
+            33,
+            11,
+            22,
+            28,
+            17,
+            34,
+            23,
+            40,
+            12,
+            35,
+            7,
+            19,
+            8
+          ],
+          "board_mask_applied": false,
+          "charuco_detect_n": null,
+          "used_ids": [
+            2,
+            3,
+            0
+          ],
+          "reproj_mean_px": 0.7322233138847275,
+          "depth_valid": true,
+          "depth_plane_mean_mm": 1.98348773954655
+        }
+      }
+    },
+    {
+      "event_id": 12,
+      "set_index": 6,
+      "cams": {
+        "0": {
+          "status": "ok",
+          "marker_ids": [
+            3
+          ],
+          "raw_ids": [
+            37,
+            42,
+            3,
+            36,
+            31,
+            41,
+            26,
+            30,
+            9,
+            19,
+            23
+          ],
+          "board_mask_applied": false,
+          "charuco_detect_n": null,
+          "used_ids": [
+            3
+          ],
+          "reproj_mean_px": 0.1931816197806752,
+          "depth_valid": true,
+          "depth_plane_mean_mm": 16.605986209960005
+        },
+        "1": {
+          "status": "ok",
+          "marker_ids": [
+            4,
+            0
+          ],
+          "raw_ids": [
+            4,
+            0,
+            9,
+            5,
+            8,
+            7,
+            6,
+            15,
+            10,
+            14,
+            11,
+            12,
+            13,
+            16,
+            20,
+            17,
+            21,
+            26,
+            25,
+            22,
+            24,
+            23,
+            27,
+            37,
+            30,
+            28,
+            32,
+            29,
+            33,
+            36,
+            34,
+            38,
+            42,
+            40,
+            41
+          ],
+          "board_mask_applied": false,
+          "charuco_detect_n": null,
+          "used_ids": [
+            4,
+            0
+          ],
+          "reproj_mean_px": 0.5567109599806798,
+          "depth_valid": true,
+          "depth_plane_mean_mm": 3.054081066795257
+        },
+        "2": {
+          "status": "ok",
+          "marker_ids": [
+            0,
+            4
+          ],
+          "raw_ids": [
+            0,
+            4
+          ],
+          "board_mask_applied": true,
+          "charuco_detect_n": 60,
+          "used_ids": [
+            0,
+            4
+          ],
+          "reproj_mean_px": 0.5861039127900319,
+          "depth_valid": true,
+          "depth_plane_mean_mm": 5.167378160419144
+        },
+        "3": {
+          "status": "ok",
+          "marker_ids": [
+            2,
+            1,
+            0
+          ],
+          "raw_ids": [
+            2,
+            1,
+            0,
+            32,
+            38,
+            21,
+            27,
+            16,
+            33,
+            22,
+            28,
+            17,
+            40,
+            12,
+            35,
+            19
+          ],
+          "board_mask_applied": false,
+          "charuco_detect_n": null,
+          "used_ids": [
+            2,
+            1,
+            0
+          ],
+          "reproj_mean_px": 0.6376554506998768,
+          "depth_valid": true,
+          "depth_plane_mean_mm": 2.5414195536020916
+        }
+      }
+    },
+    {
+      "event_id": 13,
+      "set_index": 6,
+      "cams": {
+        "0": {
+          "status": "ok",
+          "marker_ids": [
+            3
+          ],
+          "raw_ids": [
+            37,
+            42,
+            3,
+            36,
+            31,
+            41,
+            26,
+            30,
+            9,
+            19
+          ],
+          "board_mask_applied": false,
+          "charuco_detect_n": null,
+          "used_ids": [
+            3
+          ],
+          "reproj_mean_px": 0.1931816197806752,
+          "depth_valid": true,
+          "depth_plane_mean_mm": 16.25424509592762
+        },
+        "1": {
+          "status": "ok",
+          "marker_ids": [
+            4,
+            0
+          ],
+          "raw_ids": [
+            4,
+            0,
+            9,
+            5,
+            8,
+            7,
+            6,
+            15,
+            10,
+            14,
+            11,
+            12,
+            13,
+            16,
+            20,
+            17,
+            26,
+            21,
+            25,
+            22,
+            24,
+            23,
+            27,
+            37,
+            28,
+            32,
+            29,
+            30,
+            33,
+            36,
+            34,
+            38,
+            40,
+            41,
+            42
+          ],
+          "board_mask_applied": false,
+          "charuco_detect_n": null,
+          "used_ids": [
+            4,
+            0
+          ],
+          "reproj_mean_px": 0.5567109599806798,
+          "depth_valid": true,
+          "depth_plane_mean_mm": 2.9630557866313567
+        },
+        "2": {
+          "status": "ok",
+          "marker_ids": [
+            3,
+            2,
+            0
+          ],
+          "raw_ids": [
+            3,
+            2,
+            0
+          ],
+          "board_mask_applied": true,
+          "charuco_detect_n": 60,
+          "used_ids": [
+            3,
+            2,
+            0
+          ],
+          "reproj_mean_px": 1.4511426580964633,
+          "depth_valid": true,
+          "depth_plane_mean_mm": 2.4695516556432353
+        },
+        "3": {
+          "status": "ok",
+          "marker_ids": [
+            2,
+            1,
+            0
+          ],
+          "raw_ids": [
+            2,
+            1,
+            0,
+            32,
+            38,
+            21,
+            27,
+            16,
+            33,
+            22,
+            28,
+            17,
+            34,
+            12,
+            35,
+            7,
+            19
+          ],
+          "board_mask_applied": false,
+          "charuco_detect_n": null,
+          "used_ids": [
+            2,
+            1,
+            0
+          ],
+          "reproj_mean_px": 0.6358999894043401,
+          "depth_valid": true,
+          "depth_plane_mean_mm": 2.1299889430027266
+        }
+      }
+    },
+    {
+      "event_id": 14,
+      "set_index": 6,
+      "cams": {
+        "0": {
+          "status": "ok",
+          "marker_ids": [
+            3
+          ],
+          "raw_ids": [
+            37,
+            42,
+            3,
+            31,
+            41,
+            36,
+            26,
+            30,
+            9,
+            19
+          ],
+          "board_mask_applied": false,
+          "charuco_detect_n": null,
+          "used_ids": [
+            3
+          ],
+          "reproj_mean_px": 0.1931816197806752,
+          "depth_valid": true,
+          "depth_plane_mean_mm": 16.6758925349641
+        },
+        "1": {
+          "status": "ok",
+          "marker_ids": [
+            4,
+            0
+          ],
+          "raw_ids": [
+            4,
+            13,
+            0,
+            9,
+            5,
+            8,
+            6,
+            7,
+            15,
+            10,
+            14,
+            11,
+            12,
+            16,
+            20,
+            17,
+            26,
+            21,
+            25,
+            22,
+            24,
+            23,
+            27,
+            37,
+            30,
+            28,
+            32,
+            29,
+            33,
+            36,
+            34,
+            38,
+            42,
+            40,
+            41
+          ],
+          "board_mask_applied": false,
+          "charuco_detect_n": null,
+          "used_ids": [
+            4,
+            0
+          ],
+          "reproj_mean_px": 0.5567109599806798,
+          "depth_valid": true,
+          "depth_plane_mean_mm": 2.9873531457469156
+        },
+        "2": {
+          "status": "ok",
+          "marker_ids": [
+            0,
+            2,
+            3
+          ],
+          "raw_ids": [
+            0,
+            2,
+            3
+          ],
+          "board_mask_applied": true,
+          "charuco_detect_n": 60,
+          "used_ids": [
+            0,
+            2,
+            3
+          ],
+          "reproj_mean_px": 0.7695428091916251,
+          "depth_valid": true,
+          "depth_plane_mean_mm": 7.303201789431684
+        },
+        "3": {
+          "status": "ok",
+          "marker_ids": [
+            2,
+            1,
+            0
+          ],
+          "raw_ids": [
+            2,
+            1,
+            0,
+            32,
+            38,
+            21,
+            27,
+            16,
+            33,
+            22,
+            28,
+            17,
+            34,
+            40,
+            12,
+            18,
+            35,
+            7
+          ],
+          "board_mask_applied": false,
+          "charuco_detect_n": null,
+          "used_ids": [
+            2,
+            1,
+            0
+          ],
+          "reproj_mean_px": 0.6376554506998768,
+          "depth_valid": true,
+          "depth_plane_mean_mm": 2.493694438308599
+        }
+      }
+    },
+    {
+      "event_id": 15,
+      "set_index": 6,
+      "cams": {
+        "0": {
+          "status": "ok",
+          "marker_ids": [
+            3
+          ],
+          "raw_ids": [
+            37,
+            42,
+            3,
+            36,
+            31,
+            41,
+            26,
+            20,
+            30,
+            9,
+            19
+          ],
+          "board_mask_applied": false,
+          "charuco_detect_n": null,
+          "used_ids": [
+            3
+          ],
+          "reproj_mean_px": 0.1931816197806752,
+          "depth_valid": true,
+          "depth_plane_mean_mm": 16.605019583196455
+        },
+        "1": {
+          "status": "ok",
+          "marker_ids": [
+            4,
+            0
+          ],
+          "raw_ids": [
+            4,
+            13,
+            0,
+            9,
+            5,
+            8,
+            7,
+            6,
+            15,
+            10,
+            14,
+            11,
+            12,
+            16,
+            20,
+            17,
+            21,
+            26,
+            25,
+            22,
+            24,
+            23,
+            27,
+            28,
+            32,
+            29,
+            30,
+            37,
+            33,
+            36,
+            34,
+            38,
+            40,
+            42,
+            41
+          ],
+          "board_mask_applied": false,
+          "charuco_detect_n": null,
+          "used_ids": [
+            4,
+            0
+          ],
+          "reproj_mean_px": 0.6550658443022728,
+          "depth_valid": true,
+          "depth_plane_mean_mm": 3.508665371034666
+        },
+        "2": {
+          "status": "ok",
+          "marker_ids": [
+            0,
+            4
+          ],
+          "raw_ids": [
+            0,
+            4
+          ],
+          "board_mask_applied": true,
+          "charuco_detect_n": 60,
+          "used_ids": [
+            0,
+            4
+          ],
+          "reproj_mean_px": 0.6323731468949514,
+          "depth_valid": true,
+          "depth_plane_mean_mm": 5.3369044254952875
+        },
+        "3": {
+          "status": "ok",
+          "marker_ids": [
+            2,
+            1,
+            0
+          ],
+          "raw_ids": [
+            2,
+            1,
+            0,
+            32,
+            21,
+            38,
+            27,
+            16,
+            33,
+            22,
+            28,
+            6,
+            34,
+            40,
+            12,
+            35,
+            19,
+            37
+          ],
+          "board_mask_applied": false,
+          "charuco_detect_n": null,
+          "used_ids": [
+            2,
+            1,
+            0
+          ],
+          "reproj_mean_px": 0.6376554506998768,
+          "depth_valid": true,
+          "depth_plane_mean_mm": 2.516850648747132
+        }
+      }
+    },
+    {
+      "event_id": 16,
+      "set_index": 7,
+      "cams": {
+        "0": {
+          "status": "ok",
+          "marker_ids": [
+            3,
+            4
+          ],
+          "raw_ids": [
+            3,
+            37,
+            42,
+            4,
+            31,
+            41,
+            26,
+            40,
+            30,
+            9,
+            19,
+            28
+          ],
+          "board_mask_applied": false,
+          "charuco_detect_n": null,
+          "used_ids": [
+            3,
+            4
+          ],
+          "reproj_mean_px": 0.5892661964825329,
+          "depth_valid": false,
+          "depth_plane_mean_mm": null
+        },
+        "1": {
+          "status": "ok",
+          "marker_ids": [
+            4,
+            1
+          ],
+          "raw_ids": [
+            13,
+            9,
+            5,
+            4,
+            6,
+            8,
+            7,
+            15,
+            10,
+            14,
+            11,
+            1,
+            12,
+            16,
+            20,
+            17,
+            18,
+            26,
+            21,
+            25,
+            22,
+            24,
+            23,
+            27,
+            28,
+            30,
+            32,
+            29,
+            37,
+            33,
+            36,
+            34,
+            38,
+            42,
+            40,
+            41
+          ],
+          "board_mask_applied": false,
+          "charuco_detect_n": null,
+          "used_ids": [
+            4,
+            1
+          ],
+          "reproj_mean_px": 0.7899998122293072,
+          "depth_valid": true,
+          "depth_plane_mean_mm": 2.488126601712399
+        },
+        "2": {
+          "status": "ok",
+          "marker_ids": [
+            0,
+            3,
+            4
+          ],
+          "raw_ids": [
+            0,
+            3,
+            4
+          ],
+          "board_mask_applied": true,
+          "charuco_detect_n": 60,
+          "used_ids": [
+            0,
+            3,
+            4
+          ],
+          "reproj_mean_px": 0.7067258413397027,
+          "depth_valid": true,
+          "depth_plane_mean_mm": 6.998310305955408
+        },
+        "3": {
+          "status": "ok",
+          "marker_ids": [
+            2,
+            0,
+            1
+          ],
+          "raw_ids": [
+            2,
+            0,
+            1,
+            32,
+            21,
+            10,
+            27,
+            16,
+            5,
+            33,
+            39,
+            11,
+            22,
+            17,
+            28,
+            6,
+            34,
+            40,
+            12,
+            29
+          ],
+          "board_mask_applied": false,
+          "charuco_detect_n": null,
+          "used_ids": [
+            2,
+            0,
+            1
+          ],
+          "reproj_mean_px": 0.6209498809893157,
+          "depth_valid": true,
+          "depth_plane_mean_mm": 36.19799221494524
+        }
+      }
+    },
+    {
+      "event_id": 17,
+      "set_index": 7,
+      "cams": {
+        "0": {
+          "status": "ok",
+          "marker_ids": [
+            3,
+            4
+          ],
+          "raw_ids": [
+            3,
+            37,
+            42,
+            4,
+            36,
+            41,
+            31,
+            26,
+            30,
+            9,
+            19
+          ],
+          "board_mask_applied": false,
+          "charuco_detect_n": null,
+          "used_ids": [
+            3,
+            4
+          ],
+          "reproj_mean_px": 0.46347854476089834,
+          "depth_valid": false,
+          "depth_plane_mean_mm": null
+        },
+        "1": {
+          "status": "ok",
+          "marker_ids": [
+            4,
+            1
+          ],
+          "raw_ids": [
+            13,
+            9,
+            5,
+            4,
+            8,
+            6,
+            7,
+            10,
+            15,
+            14,
+            11,
+            1,
+            12,
+            16,
+            20,
+            17,
+            19,
+            26,
+            21,
+            25,
+            22,
+            24,
+            23,
+            27,
+            28,
+            30,
+            37,
+            32,
+            36,
+            33,
+            35,
+            34,
+            38,
+            40,
+            41,
+            42
+          ],
+          "board_mask_applied": false,
+          "charuco_detect_n": null,
+          "used_ids": [
+            4,
+            1
+          ],
+          "reproj_mean_px": 0.6313175982019898,
+          "depth_valid": true,
+          "depth_plane_mean_mm": 1.8558537991120587
+        },
+        "2": {
+          "status": "ok",
+          "marker_ids": [
+            4,
+            0
+          ],
+          "raw_ids": [
+            4,
+            0
+          ],
+          "board_mask_applied": true,
+          "charuco_detect_n": 60,
+          "used_ids": [
+            4,
+            0
+          ],
+          "reproj_mean_px": 0.6667405319535875,
+          "depth_valid": true,
+          "depth_plane_mean_mm": 11.179189557259267
+        },
+        "3": {
+          "status": "ok",
+          "marker_ids": [
+            2,
+            0,
+            1
+          ],
+          "raw_ids": [
+            2,
+            0,
+            1,
+            32,
+            21,
+            10,
+            27,
+            16,
+            5,
+            33,
+            11,
+            22,
+            28,
+            17,
+            34,
+            6,
+            40,
+            12,
+            29,
+            18,
+            19,
+            37
+          ],
+          "board_mask_applied": false,
+          "charuco_detect_n": null,
+          "used_ids": [
+            2,
+            0,
+            1
+          ],
+          "reproj_mean_px": 0.6734626017082026,
+          "depth_valid": true,
+          "depth_plane_mean_mm": 35.833276964156234
+        }
+      }
+    }
+  ]
+}

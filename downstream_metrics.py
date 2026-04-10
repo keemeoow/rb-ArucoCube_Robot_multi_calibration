@@ -191,7 +191,8 @@ def _cube_surface_distance_mm(points_cube: np.ndarray, half_side_m: float) -> np
 
 def _estimate_cube_dimension_error_mm(points_cube: np.ndarray,
                                       cube_side_m: float,
-                                      surface_band_m: float = 0.006) -> Optional[float]:
+                                      surface_band_m: float = 0.004,
+                                      min_points_per_side: int = 10) -> Optional[float]:
     if points_cube.size == 0:
         return None
     half_side = float(cube_side_m) * 0.5
@@ -207,10 +208,14 @@ def _estimate_cube_dimension_error_mm(points_cube: np.ndarray,
         neg = coords[coords < 0]
         pos = pos[np.abs(pos - half_side) <= surface_band_m]
         neg = neg[np.abs(neg + half_side) <= surface_band_m]
-        if pos.size < 20 or neg.size < 20:
+        if pos.size < int(min_points_per_side) or neg.size < int(min_points_per_side):
             continue
-        pos_plane = float(np.median(pos))
-        neg_plane = float(np.median(neg))
+        # Dimension estimation benefits from a tighter near-surface band and
+        # the mean of the surviving samples. The mesh RMSE filtering above
+        # already removes gross outliers; using the mean here reduces the
+        # median bias caused by one-sided quantization near the face planes.
+        pos_plane = float(np.mean(pos))
+        neg_plane = float(np.mean(neg))
         side_est = pos_plane - neg_plane
         dim_errors.append(abs(side_est - float(cube_side_m)) * 1000.0)
     if not dim_errors:

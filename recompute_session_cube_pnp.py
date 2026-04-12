@@ -19,6 +19,8 @@ def main():
     ap = argparse.ArgumentParser(description="Recompute cube_pnp from saved session images")
     ap.add_argument("--root_folder", required=True)
     ap.add_argument("--intrinsics_dir", required=True)
+    ap.add_argument("--cube_config_json", type=str, default=None,
+                    help="Optional cube config JSON override. Leave unset to use the project's canonical cube definition.")
     ap.add_argument("--board_mask_pad_px", type=float, default=6.0)
     ap.add_argument("--gripper_cube_min_markers", type=int, default=1)
     ap.add_argument("--gripper_cube_min_aspect", type=float, default=0.35)
@@ -33,10 +35,16 @@ def main():
         meta = json.load(f)
 
     gripper_cam_idx = int(meta.get("gripper_cam_idx"))
-    cube_cfg, cube_cfg_source = resolve_cube_config_for_run(root_folder=root, default_cfg=get_default_cube_config())
+    cube_cfg, cube_cfg_source = resolve_cube_config_for_run(
+        root_folder=root,
+        cube_config_json=args.cube_config_json,
+        default_cfg=get_default_cube_config(),
+    )
     cube = ArucoCubeTarget(cube_cfg)
     charuco = CharucoTarget(CharucoBoardConfig())
+    print(f"[INFO] Cube config source: {cube_cfg_source}")
     meta["cube_config"] = cube_config_to_dict(cube_cfg)
+    meta["cube_config_source"] = cube_cfg_source
 
     cam_intr: Dict[int, tuple] = {}
     for ci_s in meta.get("cam_indices", []):

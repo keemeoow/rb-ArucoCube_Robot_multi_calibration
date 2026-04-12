@@ -1,8 +1,8 @@
 {
-  "generated_at": "2026-04-10T18:38:43",
-  "source_root_folder": "/Users/woo/Documents/GitHub/Robot-Lab/rb-ArucoCube_Robot_multi_calibration/data/session",
-  "source_calib_dir": "/Users/woo/Documents/GitHub/Robot-Lab/rb-ArucoCube_Robot_multi_calibration/data/session/calib_out",
-  "cube_config_source": "config_py_default",
+  "generated_at": "2026-04-13T06:21:18",
+  "source_root_folder": "/home/sprout/Desktop/**jiwoo/rb-ArucoCube_Robot_multi_calibration/data/session",
+  "source_calib_dir": "/home/sprout/Desktop/**jiwoo/rb-ArucoCube_Robot_multi_calibration/data/session/calib_out",
+  "cube_config_source": "project_json:/home/sprout/Desktop/**jiwoo/rb-ArucoCube_Robot_multi_calibration/configs/cube_models/cube_model_hybrid_v1.json (json_config)",
   "cube_config_used": {
     "cube_side_m": 0.03,
     "marker_size_m": 0.022,
@@ -66,74 +66,74 @@
     "cross_camera": {
       "events_with_2plus_cams": 18,
       "num_errors": 47,
-      "mean_mm": 2.335451276500878,
-      "median_mm": 2.1226836110623784,
-      "max_mm": 4.692674107471933,
-      "std_mm": 1.029036088815805,
+      "mean_mm": 2.3354512765028606,
+      "median_mm": 2.12268361106237,
+      "max_mm": 4.692674107321498,
+      "std_mm": 1.0290360887936785,
       "pass": true
     },
     "reprojection": {
       "total_observations": 72,
-      "mean_px": 0.656836755290816,
-      "median_px": 0.6358652129431609,
-      "max_px": 1.8784328911448067,
+      "mean_px": 0.656836755150114,
+      "median_px": 0.6358652129431719,
+      "max_px": 1.8784328911437287,
       "lt_1px_count": 66,
       "pass": true
     },
     "handeye": {
       "frames": 18,
-      "board_position_std_mm": 0.7269009305220037,
-      "board_position_max_mm": 2.7700724842632005,
-      "board_rotation_mean_deg": 0.33899268291002244,
+      "board_position_std_mm": 0.726900930522008,
+      "board_position_max_mm": 2.770072484263188,
+      "board_rotation_mean_deg": 0.3389926829096602,
       "board_rotation_max_deg": 0.7958512307932535,
       "pass": true
     },
     "board_reprojection": {
       "total_frames": 69,
-      "mean_px": 0.3243629569592683,
+      "mean_px": 0.3243634188952653,
       "median_px": 0.3042530119419098,
       "max_px": 0.9063217043876648,
       "pass": true,
       "per_camera": {
         "cam0": {
           "frames": 15,
-          "mean_px": 0.3742962529261907
+          "mean_px": 0.37429824968179065
         },
         "cam1": {
           "frames": 18,
-          "mean_px": 0.25142881439791787
+          "mean_px": 0.2514289774828487
         },
         "cam2": {
           "frames": 18,
-          "mean_px": 0.37810054338640636
+          "mean_px": 0.37810052186250687
         },
         "cam3": {
           "frames": 18,
-          "mean_px": 0.3019484331210454
+          "mean_px": 0.3019483983516693
         }
       }
     },
     "pose_repeatability": {
       "num_events": 18,
-      "mean_dt_mm": 2.3326391654223153,
-      "mean_dr_deg": 0.4975277551223824,
-      "max_dt_mm": 5.519933667764545,
-      "max_dr_deg": 1.0115151812914602,
+      "mean_dt_mm": 2.332639165424703,
+      "mean_dr_deg": 0.49752775514970793,
+      "max_dt_mm": 5.519933667765507,
+      "max_dr_deg": 1.0115151812770469,
       "pass": true
     },
     "mesh_alignment": {
       "usable_clouds": 45,
       "usable_events": 18,
-      "mean_rmse_mm": 2.898343024880542,
-      "median_rmse_mm": 2.665474132399008,
-      "max_rmse_mm": 4.576683338531808,
+      "mean_rmse_mm": 2.8983430248614823,
+      "median_rmse_mm": 2.665474132399022,
+      "max_rmse_mm": 4.57668333853189,
       "pass": true
     },
     "dimension_accuracy": {
       "usable_events": 13,
-      "mean_abs_err_mm": 2.7509887147567365,
-      "median_abs_err_mm": 2.063834056774211,
-      "max_abs_err_mm": 5.277580108606197,
+      "mean_abs_err_mm": 2.750988714575096,
+      "median_abs_err_mm": 2.0638340564800366,
+      "max_abs_err_mm": 5.277580108608862,
       "pass": true
     },
     "candidate_summary": {
@@ -143,88 +143,6 @@
     }
   },
   "usable_transforms": {
-    "T_base_C1": {
-      "matrix_4x4": [
-        [
-          0.03774010421957922,
-          0.42660953977720195,
-          -0.9036481533786141,
-          0.23951684027218031
-        ],
-        [
-          0.9992834107032442,
-          -0.013496818453821597,
-          0.035362423346209926,
-          0.4833373759783922
-        ],
-        [
-          0.002889572076850866,
-          -0.9043351903264126,
-          -0.4268132072821834,
-          0.16043189563888774
-        ],
-        [
-          0.0,
-          0.0,
-          0.0,
-          1.0
-        ]
-      ],
-      "translation_mm": [
-        239.5168402721803,
-        483.33737597839223,
-        160.43189563888774
-      ],
-      "rotation_rz_ry_rx_deg": [
-        87.83712863554383,
-        -0.16556051499770347,
-        -115.26560049646467
-      ],
-      "quality_tier": "production",
-      "status_reason": "board-based: 1.87mm / 0.183deg"
-    }
-  },
-  "excluded_transforms": {
-    "T_C0_C0": {
-      "matrix_4x4": [
-        [
-          1.0,
-          0.0,
-          0.0,
-          0.0
-        ],
-        [
-          0.0,
-          1.0,
-          0.0,
-          0.0
-        ],
-        [
-          0.0,
-          0.0,
-          1.0,
-          0.0
-        ],
-        [
-          0.0,
-          0.0,
-          0.0,
-          1.0
-        ]
-      ],
-      "translation_mm": [
-        0.0,
-        0.0,
-        0.0
-      ],
-      "rotation_rz_ry_rx_deg": [
-        0.0,
-        -0.0,
-        0.0
-      ],
-      "quality_tier": "diagnostic",
-      "status_reason": "unsupported"
-    },
     "T_C0_C1": {
       "matrix_4x4": [
         [
@@ -299,10 +217,10 @@
       ],
       "rotation_rz_ry_rx_deg": [
         162.0231161815956,
-        65.25265341860737,
+        65.25265341860735,
         142.30335054591094
       ],
-      "quality_tier": "diagnostic",
+      "quality_tier": "provisional",
       "status_reason": "derived from T_base_C0 and T_base_C3"
     },
     "T_gripper_cam": {
@@ -340,10 +258,172 @@
       "rotation_rz_ry_rx_deg": [
         179.8909556967534,
         -0.4255347420237479,
-        8.205547975881233
+        8.205547975881231
       ],
       "quality_tier": "production",
       "status_reason": "hand-eye HORAUD: 11.08mm / 1.406deg"
+    },
+    "T_base_C0": {
+      "matrix_4x4": [
+        [
+          0.7079546279149577,
+          -0.10972563699904742,
+          0.6976822553275576,
+          -0.4088902436710322
+        ],
+        [
+          -0.7059131958593208,
+          -0.07907466872241717,
+          0.7038705539217567,
+          0.14665672823510395
+        ],
+        [
+          -0.022063651680401596,
+          -0.9908115266545875,
+          -0.13343805275457504,
+          0.10966370041642573
+        ],
+        [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "translation_mm": [
+        -408.89024367103224,
+        146.65672823510394,
+        109.66370041642573
+      ],
+      "rotation_rz_ry_rx_deg": [
+        -44.9172727763493,
+        1.264256710441965,
+        -97.67018813918911
+      ],
+      "quality_tier": "production",
+      "status_reason": "cube_anchor_primary+board_refined: 4.19mm / 0.217deg"
+    },
+    "T_base_C1": {
+      "matrix_4x4": [
+        [
+          0.03774010421957922,
+          0.42660953977720195,
+          -0.9036481533786141,
+          0.23951684027218031
+        ],
+        [
+          0.9992834107032442,
+          -0.013496818453821597,
+          0.035362423346209926,
+          0.4833373759783922
+        ],
+        [
+          0.002889572076850866,
+          -0.9043351903264126,
+          -0.4268132072821834,
+          0.16043189563888774
+        ],
+        [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "translation_mm": [
+        239.5168402721803,
+        483.33737597839223,
+        160.43189563888774
+      ],
+      "rotation_rz_ry_rx_deg": [
+        87.83712863554383,
+        -0.16556051499770347,
+        -115.26560049646467
+      ],
+      "quality_tier": "production",
+      "status_reason": "cube_anchor_primary+board_refined: 1.87mm / 0.183deg"
+    },
+    "T_base_C3": {
+      "matrix_4x4": [
+        [
+          -0.9299026772901033,
+          -0.12425220284535582,
+          0.34618261200813283,
+          -0.2489647301191624
+        ],
+        [
+          -0.3677960006601391,
+          0.307306978219054,
+          -0.8776608245992756,
+          0.9148365257354861
+        ],
+        [
+          0.0026669583993329396,
+          -0.9434637307421782,
+          -0.33146504507556457,
+          0.12423369667854647
+        ],
+        [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "translation_mm": [
+        -248.9647301191624,
+        914.8365257354861,
+        124.23369667854648
+      ],
+      "rotation_rz_ry_rx_deg": [
+        -158.42016441073403,
+        -0.15280564156171814,
+        -109.35779349098861
+      ],
+      "quality_tier": "provisional",
+      "status_reason": "cube_anchor_primary+board_refined support=18/18 signature=[]/n/a + verified provisional"
+    }
+  },
+  "excluded_transforms": {
+    "T_C0_C0": {
+      "matrix_4x4": [
+        [
+          1.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          1.0,
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "translation_mm": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "rotation_rz_ry_rx_deg": [
+        0.0,
+        -0.0,
+        0.0
+      ],
+      "quality_tier": "diagnostic",
+      "status_reason": "unsupported"
     },
     "T_base_O": {
       "matrix_4x4": [
@@ -384,86 +464,6 @@
       ],
       "quality_tier": "diagnostic",
       "status_reason": "compatibility average across 6 set_index groups; use T_base_O_set*"
-    },
-    "T_base_C0": {
-      "matrix_4x4": [
-        [
-          0.7079546279149577,
-          -0.10972563699904742,
-          0.6976822553275576,
-          -0.4088902436710322
-        ],
-        [
-          -0.7059131958593208,
-          -0.07907466872241717,
-          0.7038705539217567,
-          0.14665672823510395
-        ],
-        [
-          -0.022063651680401596,
-          -0.9908115266545875,
-          -0.13343805275457504,
-          0.10966370041642573
-        ],
-        [
-          0.0,
-          0.0,
-          0.0,
-          1.0
-        ]
-      ],
-      "translation_mm": [
-        -408.89024367103224,
-        146.65672823510394,
-        109.66370041642573
-      ],
-      "rotation_rz_ry_rx_deg": [
-        -44.9172727763493,
-        1.264256710441965,
-        -97.67018813918911
-      ],
-      "quality_tier": "production",
-      "status_reason": "board-based: 4.19mm / 0.217deg"
-    },
-    "T_base_C3": {
-      "matrix_4x4": [
-        [
-          -0.9299026772901033,
-          -0.12425220284535582,
-          0.34618261200813283,
-          -0.2489647301191624
-        ],
-        [
-          -0.3677960006601391,
-          0.307306978219054,
-          -0.8776608245992756,
-          0.9148365257354861
-        ],
-        [
-          0.0026669583993329396,
-          -0.9434637307421782,
-          -0.33146504507556457,
-          0.12423369667854647
-        ],
-        [
-          0.0,
-          0.0,
-          0.0,
-          1.0
-        ]
-      ],
-      "translation_mm": [
-        -248.9647301191624,
-        914.8365257354861,
-        124.23369667854648
-      ],
-      "rotation_rz_ry_rx_deg": [
-        -158.42016441073403,
-        -0.15280564156171814,
-        -109.35779349098861
-      ],
-      "quality_tier": "diagnostic",
-      "status_reason": "cube_anchor_primary+board_refined support=18/18 signature=[]/n/a"
     }
   }
 }

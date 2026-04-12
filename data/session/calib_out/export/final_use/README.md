@@ -10,9 +10,14 @@ This folder contains the final-use export package for the selected calibration r
 - `verification_metrics.json`: verification metrics snapshot
 
 ## Current quality summary
-- Cross-camera mean: 2.335451276500878
-- Reprojection mean: 0.656836755290816
+- Cross-camera mean: 2.3354512765028606
+- Reprojection mean: 0.656836755150114
 - Hand-eye pass: True
 
 ## Included transforms
+- `T_C0_C1` (production)
+- `T_C0_C3` (provisional)
+- `T_base_C0` (production)
 - `T_base_C1` (production)
+- `T_base_C3` (provisional)
+- `T_gripper_cam` (production)

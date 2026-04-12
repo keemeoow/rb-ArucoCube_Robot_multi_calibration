@@ -74,8 +74,14 @@ from camera import RealSenseCamera
 from aruco_cube import ArucoCubeTarget, depth_metrics_to_fields, rodrigues_to_Rt
 from charuco_utils import CharucoTarget
 from config import CubeConfig, CharucoBoardConfig, get_default_cube_config
+from calibration_runtime_utils import resolve_cube_config_for_run
 from capture_detection_utils import detect_cube_markers_in_frame
-from cube_config_utils import cube_config_to_dict
+from cube_config_utils import (
+    cube_config_mismatch_keys,
+    cube_config_to_dict,
+    cube_configs_equivalent,
+    load_cube_config_from_meta,
+)
 from robot_comm import PlaceCaptureClient, euler_deg_to_matrix
 
 
@@ -578,6 +584,8 @@ def main():
     )
     parser.add_argument("--root_folder", required=True)
     parser.add_argument("--intrinsics_dir", required=True)
+    parser.add_argument("--cube_config_json", type=str, default=None,
+                        help="Optional cube config JSON override. Leave unset to use the project's canonical cube definition.")
 
     # 스트림 설정
     parser.add_argument("--fps", type=int, default=15)
@@ -737,9 +745,15 @@ def main():
         cams[ci] = cam
         ensure_dir(os.path.join(root, f"cam{ci}"))
 
-    cfg = get_default_cube_config()
+    cfg, cube_cfg_source = resolve_cube_config_for_run(
+        root_folder=root,
+        cube_config_json=args.cube_config_json,
+        default_cfg=get_default_cube_config(),
+    )
     cube = ArucoCubeTarget(cfg)
     _cube_ids = set(cfg.marker_ids)  # {0,1,2,3,4} — filter out board markers
+    print(f"[INFO] Cube config source: {cube_cfg_source}")
+    print(f"[INFO] Cube id_to_face: {cfg.id_to_face}")
 
     # ChArUco board target — gripper camera only
     charuco_cfg = CharucoBoardConfig()
@@ -789,6 +803,16 @@ def main():
     if os.path.exists(meta_path):
         with open(meta_path, "r") as f:
             meta = json.load(f)
+        meta_cfg, meta_cfg_source = load_cube_config_from_meta(root, default_cfg=cfg)
+        if meta.get("captures") and not cube_configs_equivalent(meta_cfg, cfg):
+            mismatch_keys = cube_config_mismatch_keys(cfg, meta_cfg)
+            raise RuntimeError(
+                "Existing meta.json uses a different cube definition.\n"
+                f"Resolved cube config: {cube_cfg_source}\n"
+                f"Session cube config: {meta.get('cube_config_source', meta_cfg_source)}\n"
+                f"Differing fields: {', '.join(mismatch_keys) if mismatch_keys else 'unknown'}\n"
+                "Use a new session folder, or run recompute_session_cube_pnp.py with the intended cube config before resuming."
+            )
         event_id = max((int(c.get("event_id", -1)) for c in meta.get("captures", [])), default=-1) + 1
         print(f"[INFO] Resuming from existing meta.json ({len(meta['captures'])} captures, next event_id={event_id})")
     else:
@@ -798,12 +822,16 @@ def main():
             "n_fixed_cams": n_fixed,
             "n_gripper_cams": n_gripper,
             "cam_indices": [ci for ci, _ in idx_serial_pairs],
+            "cube_config_source": cube_cfg_source,
             "cube_config": cube_config_to_dict(cfg),
             "captures": [],
         }
         event_id = 0
         print("[INFO] New session (meta.json created)")
+    meta["cube_config_source"] = cube_cfg_source
     if "cube_config" not in meta:
+        meta["cube_config"] = cube_config_to_dict(cfg)
+    else:
         meta["cube_config"] = cube_config_to_dict(cfg)
     quad_dir = ensure_dir(os.path.join(root, "marker_quads"))
     cam_order = sorted(ci for ci, _ in idx_serial_pairs)

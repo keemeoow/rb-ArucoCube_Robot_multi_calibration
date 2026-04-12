@@ -140,11 +140,17 @@ def resolve_cube_config_for_run(root_folder: str,
                                 calib_dir: Optional[str] = None,
                                 cube_config_json: Optional[str] = None,
                                 default_cfg: Optional[CubeConfig] = None) -> Tuple[CubeConfig, str]:
+    """Resolve the cube config for a run.
+
+    Project policy: use the canonical project cube definition by default.
+    The only supported way to use a different cube model is an explicit JSON override.
+    """
     cfg_template = default_cfg or get_default_cube_config()
     if cube_config_json:
         cfg, source = load_cube_config_from_json_file(cube_config_json, cfg_template)
-        if cfg is not None:
-            return cfg, source
+        if cfg is None:
+            raise FileNotFoundError(f"Failed to load cube config JSON: {cube_config_json}")
+        return cfg, f"explicit_json:{os.path.abspath(cube_config_json)} ({source})"
     return cfg_template, get_default_cube_config_source()
 
 

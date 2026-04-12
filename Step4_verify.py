@@ -26,6 +26,7 @@ Step 4: 캘리브레이션 검증 및 시각화.
 --object_label_size
 --view_elev
 --view_azim
+--show_only_3d
 """
 
 import os
@@ -1411,7 +1412,8 @@ def main():
     parser.add_argument("--calib_dir", type=str, default=None)
     parser.add_argument("--intrinsics_dir", required=True)
     parser.add_argument("--gripper_cam_idx", type=int, default=None)
-    parser.add_argument("--cube_config_json", type=str, default=None)
+    parser.add_argument("--cube_config_json", type=str, default=None,
+                        help="Optional cube config JSON override. Leave unset to use the project's canonical cube definition.")
     parser.add_argument("--cube_selection_profile", type=str, default="default",
                         choices=["default", "cube_only_specialized"])
     parser.add_argument("--hide_gripper_trajectory", action="store_true",
@@ -1420,6 +1422,8 @@ def main():
     parser.add_argument("--object_label_size", type=float, default=8.0)
     parser.add_argument("--view_elev", type=float, default=26.0)
     parser.add_argument("--view_azim", type=float, default=-58.0)
+    parser.add_argument("--show_only_3d", action="store_true",
+                        help="Skip diagnostics/pages and show only the interactive 3D overview")
     parser.add_argument("--no_show", action="store_true", help="Save plots without showing")
     args = parser.parse_args()
 
@@ -1486,6 +1490,34 @@ def main():
                 if key not in viz_transforms:
                     viz_transforms[key] = T_B_G @ T_gTc
                 break
+
+    save_dir = os.path.join(calib_dir, "verify")
+    os.makedirs(save_dir, exist_ok=True)
+
+    if args.show_only_3d:
+        fig_3d = visualize_3d(
+            meta, viz_transforms, gripper_cam_idx, all_cam_ids,
+            show_gripper_trajectory=not args.hide_gripper_trajectory,
+            camera_label_size=float(args.camera_label_size),
+            object_label_size=float(args.object_label_size),
+            view_elev=float(args.view_elev),
+            view_azim=float(args.view_azim),
+        )
+        fig_3d_path = os.path.join(save_dir, "3d_overview.png")
+        fig_3d.savefig(fig_3d_path, dpi=150)
+        print(f"[SAVE] {fig_3d_path}")
+        fig_3d_cv = figure_to_bgr(fig_3d)
+        fig_3d_cv_path = os.path.join(save_dir, "base_frame_overview_3d_cv.png")
+        cv2.imwrite(fig_3d_cv_path, fig_3d_cv)
+        print(f"[SAVE] {fig_3d_cv_path}")
+
+        if args.no_show:
+            print("\n[DONE] 3D overview export complete")
+            return
+
+        plt.show()
+        print("\n[DONE] 3D overview complete")
+        return
 
     # ─── Run tests ───
     cross_err = test_cross_camera_consistency(
@@ -1563,8 +1595,6 @@ def main():
         "dimension_accuracy": depth_metrics["dimension_accuracy"],
     }
 
-    save_dir = os.path.join(calib_dir, "verify")
-    os.makedirs(save_dir, exist_ok=True)
     legacy_base_cv_path = os.path.join(save_dir, "base_frame_overview_cv.png")
     if os.path.exists(legacy_base_cv_path):
         try:

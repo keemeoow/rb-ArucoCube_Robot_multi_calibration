@@ -8,7 +8,7 @@ from typing import Dict, List, Optional, Tuple
 import cv2
 import numpy as np
 
-from config import CubeConfig
+from config import CubeConfig, get_default_cube_config
 
 
 ALL_CORNER_PERMUTATIONS = tuple(tuple(p) for p in itertools.permutations(range(4)))
@@ -35,8 +35,47 @@ def cube_config_to_dict(cfg: CubeConfig) -> dict:
     }
 
 
+def _normalize_cube_config_value(value):
+    if isinstance(value, dict):
+        return {
+            str(k): _normalize_cube_config_value(v)
+            for k, v in sorted(value.items(), key=lambda item: str(item[0]))
+        }
+    if isinstance(value, list):
+        return [_normalize_cube_config_value(v) for v in value]
+    if isinstance(value, float):
+        if abs(value) < 1e-12:
+            value = 0.0
+        return round(float(value), 9)
+    return value
+
+
+def cube_config_to_comparable_dict(cfg: CubeConfig) -> dict:
+    return _normalize_cube_config_value(cube_config_to_dict(cfg))
+
+
+def cube_configs_equivalent(a: CubeConfig, b: CubeConfig) -> bool:
+    return cube_config_to_comparable_dict(a) == cube_config_to_comparable_dict(b)
+
+
+def cube_config_mismatch_keys(expected: CubeConfig, actual: CubeConfig) -> List[str]:
+    exp = cube_config_to_comparable_dict(expected)
+    act = cube_config_to_comparable_dict(actual)
+    keys = [
+        "cube_side_m",
+        "marker_size_m",
+        "dictionary_name",
+        "marker_ids",
+        "id_to_face",
+        "corner_reorder",
+        "face_roll_deg",
+        "marker_pose_4x4",
+    ]
+    return [key for key in keys if exp.get(key) != act.get(key)]
+
+
 def cube_config_from_dict(data: dict, base_cfg: Optional[CubeConfig] = None) -> CubeConfig:
-    cfg = clone_cube_config(base_cfg or CubeConfig())
+    cfg = clone_cube_config(base_cfg or get_default_cube_config())
     cfg.cube_side_m = float(data.get("cube_side_m", cfg.cube_side_m))
     cfg.marker_size_m = float(data.get("marker_size_m", cfg.marker_size_m))
     cfg.dictionary_name = str(data.get("dictionary_name", cfg.dictionary_name))
@@ -56,7 +95,7 @@ def cube_config_from_dict(data: dict, base_cfg: Optional[CubeConfig] = None) -> 
 
 
 def cube_config_from_search_result(data: dict, base_cfg: Optional[CubeConfig] = None) -> CubeConfig:
-    cfg = clone_cube_config(base_cfg or CubeConfig())
+    cfg = clone_cube_config(base_cfg or get_default_cube_config())
     rec = data.get("recommended", data)
     if "base_cube_config" in data and isinstance(data["base_cube_config"], dict):
         cfg = cube_config_from_dict(data["base_cube_config"], cfg)
@@ -83,7 +122,7 @@ def load_cube_config_from_json_file(path: str,
                                     default_cfg: Optional[CubeConfig] = None) -> Tuple[Optional[CubeConfig], str]:
     if not path or not os.path.exists(path):
         return None, "missing"
-    cfg = clone_cube_config(default_cfg or CubeConfig())
+    cfg = clone_cube_config(default_cfg or get_default_cube_config())
     try:
         with open(path, "r") as f:
             data = json.load(f)
@@ -103,7 +142,7 @@ def load_cube_config_from_json_file(path: str,
 def infer_cube_config_from_legacy_meta(root_folder: str,
                                        default_cfg: Optional[CubeConfig] = None,
                                        meta: Optional[dict] = None) -> Tuple[Optional[CubeConfig], dict]:
-    cfg = clone_cube_config(default_cfg or CubeConfig())
+    cfg = clone_cube_config(default_cfg or get_default_cube_config())
     marker_ids = {int(x) for x in cfg.marker_ids}
     meta_path = os.path.join(root_folder, "meta.json")
 
@@ -273,7 +312,7 @@ def infer_cube_config_from_legacy_meta(root_folder: str,
 
 
 def load_cube_config_from_meta(root_folder: str, default_cfg: Optional[CubeConfig] = None) -> Tuple[CubeConfig, str]:
-    cfg = clone_cube_config(default_cfg or CubeConfig())
+    cfg = clone_cube_config(default_cfg or get_default_cube_config())
     meta_path = os.path.join(root_folder, "meta.json")
     if not os.path.exists(meta_path):
         return cfg, "default"
@@ -299,7 +338,7 @@ def load_cube_config_from_meta(root_folder: str, default_cfg: Optional[CubeConfi
 
 def load_cube_config_from_calibration_summary(calib_dir: str,
                                               default_cfg: Optional[CubeConfig] = None) -> Tuple[Optional[CubeConfig], str]:
-    cfg = clone_cube_config(default_cfg or CubeConfig())
+    cfg = clone_cube_config(default_cfg or get_default_cube_config())
     summary_path = os.path.join(calib_dir, "calibration_summary.json")
     if not os.path.exists(summary_path):
         return None, "missing"

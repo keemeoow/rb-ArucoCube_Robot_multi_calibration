@@ -1,80 +1,70 @@
 {
   "cross_camera": {
-    "events_with_2plus_cams": 18,
     "num_errors": 47,
-    "mean_mm": 2.335451276500878,
-    "median_mm": 2.1226836110623784,
-    "max_mm": 4.692674107471933,
-    "std_mm": 1.029036088815805,
+    "mean_mm": 2.3354512765028606,
+    "median_mm": 2.12268361106237,
+    "max_mm": 4.692674107321498,
     "pass": true
   },
   "reprojection": {
     "total_observations": 72,
-    "mean_px": 0.656836755290816,
-    "median_px": 0.6358652129431609,
-    "max_px": 1.8784328911448067,
-    "lt_1px_count": 66,
+    "mean_px": 0.656836755150114,
+    "median_px": 0.6358652129431719,
+    "max_px": 1.8784328911437287,
     "pass": true
   },
   "handeye": {
     "frames": 18,
-    "board_position_std_mm": 0.7269009305220037,
-    "board_position_max_mm": 2.7700724842632005,
-    "board_rotation_mean_deg": 0.33899268291002244,
-    "board_rotation_max_deg": 0.7958512307932535,
+    "board_position_std_mm": 0.726900930522008,
+    "board_position_max_mm": 2.770072484263188,
     "pass": true
   },
   "board_reprojection": {
     "total_frames": 69,
-    "mean_px": 0.3243629569592683,
+    "mean_px": 0.3243634188952653,
     "median_px": 0.3042530119419098,
     "max_px": 0.9063217043876648,
     "pass": true,
     "per_camera": {
       "cam0": {
         "frames": 15,
-        "mean_px": 0.3742962529261907
+        "mean_px": 0.37429824968179065
       },
       "cam1": {
         "frames": 18,
-        "mean_px": 0.25142881439791787
+        "mean_px": 0.2514289774828487
       },
       "cam2": {
         "frames": 18,
-        "mean_px": 0.37810054338640636
+        "mean_px": 0.37810052186250687
       },
       "cam3": {
         "frames": 18,
-        "mean_px": 0.3019484331210454
+        "mean_px": 0.3019483983516693
       }
     }
   },
   "pose_repeatability": {
     "num_events": 18,
-    "mean_dt_mm": 2.3326391654223153,
-    "mean_dr_deg": 0.4975277551223824,
-    "max_dt_mm": 5.519933667764545,
-    "max_dr_deg": 1.0115151812914602,
+    "mean_dt_mm": 2.332639165424703,
+    "mean_dr_deg": 0.49752775514970793,
+    "max_dt_mm": 5.519933667765507,
+    "max_dr_deg": 1.0115151812770469,
     "pass": true
   },
   "mesh_alignment": {
     "usable_clouds": 45,
     "usable_events": 18,
-    "mean_rmse_mm": 2.898343024880542,
-    "median_rmse_mm": 2.665474132399008,
-    "max_rmse_mm": 4.576683338531808,
+    "mean_rmse_mm": 2.8983430248614823,
+    "median_rmse_mm": 2.665474132399022,
+    "max_rmse_mm": 4.57668333853189,
     "pass": true
   },
   "dimension_accuracy": {
     "usable_events": 13,
-    "mean_abs_err_mm": 2.7509887147567365,
-    "median_abs_err_mm": 2.063834056774211,
-    "max_abs_err_mm": 5.277580108606197,
+    "mean_abs_err_mm": 2.750988714575096,
+    "median_abs_err_mm": 2.0638340564800366,
+    "max_abs_err_mm": 5.277580108608862,
     "pass": true
-  },
-  "candidate_summary": {
-    "total": 65,
-    "selected": 65,
-    "accepted": 65
   }
 }

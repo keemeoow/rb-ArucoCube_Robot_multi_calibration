@@ -47,10 +47,16 @@ from calibration_runtime_utils import (
     get_capture_set_cube_center_transform_raw,
     get_object_anchor_key_for_set,
     load_intrinsics_with_depth_scale,
+    resolve_cube_config_for_run,
     select_consistent_event_cube_candidates,
     select_primary_cube_candidate,
 )
 from config import CubeConfig, get_default_cube_config
+from cube_config_utils import (
+    cube_config_to_dict,
+    cube_configs_equivalent,
+    load_cube_config_from_meta,
+)
 from utils_pose import robust_se3_average, se3_distance
 from robot_comm import euler_deg_to_matrix
 
@@ -1275,6 +1281,8 @@ def main():
     parser.add_argument("--common_object_mode", type=str, default="cube_primary",
                         choices=["cube_primary", "board_primary"])
     parser.add_argument("--fixed_board_refine_alpha", type=float, default=0.35)
+    parser.add_argument("--cube_config_json", type=str, default=None,
+                        help="Optional cube config JSON override. Leave unset to use the project's canonical cube definition.")
     parser.add_argument("--enable_depth_pose_candidate", action="store_true",
                         help="Experimental: include depth-SVD cube pose candidates; can improve dimension metrics but may reduce hand-eye stability")
     args = parser.parse_args()
@@ -1288,6 +1296,21 @@ def main():
 
     with open(os.path.join(root, "meta.json"), "r") as f:
         meta = json.load(f)
+    cfg, cube_cfg_source = resolve_cube_config_for_run(
+        root_folder=root,
+        calib_dir=out_dir,
+        cube_config_json=args.cube_config_json,
+        default_cfg=get_default_cube_config(),
+    )
+    meta_cfg, meta_cfg_source = load_cube_config_from_meta(root, default_cfg=cfg)
+    reuse_stored_cube_candidates = cube_configs_equivalent(meta_cfg, cfg)
+    print(f"[INFO] cube config source: {cube_cfg_source}")
+    print(f"[INFO] cube id_to_face: {cfg.id_to_face}")
+    if not reuse_stored_cube_candidates:
+        print(
+            "[WARN] Session meta cube_config differs from the resolved cube model; "
+            "stored cube pose candidates will be ignored and image re-detection will be used."
+        )
     nominal_set_cube_priors = load_nominal_set_cube_transforms(meta)
     if nominal_set_cube_priors:
         print(f"[INFO] set_cube_center priors: {sorted(int(x) for x in nominal_set_cube_priors.keys())}")
@@ -1336,7 +1359,6 @@ def main():
     print("=" * 60)
 
     pnp_obs: Dict[int, Dict[int, dict]] = {ci: {} for ci in all_cam_ids}
-    cfg = get_default_cube_config()
     cube = ArucoCubeTarget(cfg)
 
     for cap in meta.get("captures", []):
@@ -1351,12 +1373,14 @@ def main():
             min_markers = args.gripper_cube_min_markers if ci == gripper_cam_idx else 1
             min_aspect = args.gripper_cube_min_aspect if ci == gripper_cam_idx else 0.0
 
-            candidates = stored_cube_pose_candidates(
-                cinfo, ci, gripper_cam_idx,
-                max_err=max_err,
-                min_markers=min_markers,
-                min_aspect=min_aspect,
-            )
+            candidates = []
+            if reuse_stored_cube_candidates:
+                candidates.extend(stored_cube_pose_candidates(
+                    cinfo, ci, gripper_cam_idx,
+                    max_err=max_err,
+                    min_markers=min_markers,
+                    min_aspect=min_aspect,
+                ))
 
             rgb_path = os.path.join(root, cinfo.get("rgb_path", ""))
             img = cv2.imread(rgb_path) if rgb_path else None
@@ -2045,6 +2069,14 @@ def main():
         "num_cube_pnp_gripper": len(pnp_obs.get(gripper_cam_idx, {})),
         "num_object_sets": int(len(T_B_O_by_set)),
         "object_set_indices": [int(x) for x in sorted(T_B_O_by_set)],
+        "cube_config_source": cube_cfg_source,
+        "cube_config_used": cube_config_to_dict(cfg),
+        "cube_config_selection": {
+            "mode": "explicit_json" if args.cube_config_json else "auto",
+            "chosen_source": cube_cfg_source,
+            "meta_source": meta.get("cube_config_source", meta_cfg_source),
+            "stored_meta_candidates_enabled": bool(reuse_stored_cube_candidates),
+        },
         "t_base_o_source": t_base_o_source,
         "diagnostics": {
             "fixed_extrinsics": fixed_stats,

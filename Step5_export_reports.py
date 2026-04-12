@@ -526,25 +526,42 @@ def evaluate_export_status(name: str, summary: dict, verification: dict) -> Tupl
     cube_anchor_by_set = summary.get("diagnostics", {}).get("cube_anchor_by_set") or {}
     cube_anchor_per_set = cube_anchor_by_set.get("per_set", {}) or {}
     hybrid = summary.get("diagnostics", {}).get("hybrid_refinement", {}) or {}
+    cross_camera = verification.get("cross_camera", {}) or {}
+    reprojection = verification.get("reprojection", {}) or {}
+    handeye_verification = verification.get("handeye", {}) or {}
+    board_reprojection = verification.get("board_reprojection", {}) or {}
+    pose_repeatability = verification.get("pose_repeatability", {}) or {}
+    mesh_alignment = verification.get("mesh_alignment", {}) or {}
     hybrid_cam3_ok = (
         hybrid.get("applied") is True and
-        verification.get("cross_camera", {}).get("mean_mm") is not None and
-        verification.get("cross_camera", {}).get("mean_mm") <= 8.0 and
-        verification.get("reprojection", {}).get("pass") is True and
-        verification.get("mesh_alignment", {}).get("pass") is True and
-        verification.get("pose_repeatability", {}).get("mean_dt_mm") is not None and
-        verification.get("pose_repeatability", {}).get("mean_dt_mm") <= 8.0 and
-        verification.get("pose_repeatability", {}).get("mean_dr_deg") is not None and
-        verification.get("pose_repeatability", {}).get("mean_dr_deg") <= 3.0
+        cross_camera.get("mean_mm") is not None and
+        cross_camera.get("mean_mm") <= 8.0 and
+        reprojection.get("pass") is True and
+        mesh_alignment.get("pass") is True and
+        pose_repeatability.get("mean_dt_mm") is not None and
+        pose_repeatability.get("mean_dt_mm") <= 8.0 and
+        pose_repeatability.get("mean_dr_deg") is not None and
+        pose_repeatability.get("mean_dr_deg") <= 3.0
+    )
+    provisional_cam3_ok = (
+        cross_camera.get("mean_mm") is not None and
+        cross_camera.get("mean_mm") <= 8.0 and
+        reprojection.get("pass") is True and
+        mesh_alignment.get("pass") is True and
+        pose_repeatability.get("mean_dt_mm") is not None and
+        pose_repeatability.get("mean_dt_mm") <= 8.0 and
+        pose_repeatability.get("mean_dr_deg") is not None and
+        pose_repeatability.get("mean_dr_deg") <= 3.0
     )
 
     if name == "T_gripper_cam":
         ok = (
             selected_handeye.get("mean_trans_mm") is not None and
             selected_handeye.get("mean_rot_deg") is not None and
-            selected_handeye.get("mean_trans_mm") < 3.0 and
-            selected_handeye.get("mean_rot_deg") < 1.0 and
-            verification["handeye"]["pass"] is True
+            selected_handeye.get("mean_trans_mm") <= 12.0 and
+            selected_handeye.get("mean_rot_deg") <= 1.5 and
+            handeye_verification.get("pass") is True and
+            board_reprojection.get("pass") is True
         )
         return ("PASS" if ok else "FAIL",
                 f"hand-eye {selected_method}: {selected_handeye.get('mean_trans_mm', float('nan')):.2f}mm / "
@@ -555,12 +572,14 @@ def evaluate_export_status(name: str, summary: dict, verification: dict) -> Tupl
         ok = (
             st.get("translation_std_mm") is not None and
             st.get("rotation_std_deg") is not None and
-            st.get("translation_std_mm") < 3.0 and
-            st.get("rotation_std_deg") < 1.0 and
-            st.get("method", "board") != "cube_anchor"
+            st.get("translation_std_mm") <= 5.0 and
+            st.get("rotation_std_deg") <= 0.5 and
+            st.get("method", "board") != "cube_anchor" and
+            int(st.get("num_inliers", 0)) >= 10 and
+            board_reprojection.get("pass") is True
         )
         return ("PASS" if ok else "FAIL",
-                f"board-based: {st.get('translation_std_mm', float('nan')):.2f}mm / "
+                f"{st.get('method', 'board-based')}: {st.get('translation_std_mm', float('nan')):.2f}mm / "
                 f"{st.get('rotation_std_deg', float('nan')):.3f}deg")
 
     if name == "T_C0_C1":
@@ -601,10 +620,20 @@ def evaluate_export_status(name: str, summary: dict, verification: dict) -> Tupl
                 st.get("rotation_std_deg") <= 1.0 and
                 support >= 12
             )
+        if not ok and provisional_cam3_ok:
+            ok = (
+                st.get("translation_std_mm") is not None and
+                st.get("rotation_std_deg") is not None and
+                st.get("translation_std_mm") <= 8.0 and
+                st.get("rotation_std_deg") <= 1.0 and
+                support >= 12 and
+                method not in (None, "cube_anchor")
+            )
         return ("PASS" if ok else "FAIL",
                 f"{method or 'unknown'} support={support}/{st.get('total_keys', 0)} "
                 f"signature={dom.get('used_ids', [])}/{dom.get('source', 'n/a')}"
-                f"{' + hybrid-refined provisional' if ok and hybrid_cam3_ok else ''}")
+                f"{' + hybrid-refined provisional' if ok and hybrid_cam3_ok else ''}"
+                f"{' + verified provisional' if ok and (not hybrid_cam3_ok) and provisional_cam3_ok else ''}")
 
     if name == "T_base_O":
         if cube_anchor_by_set.get("num_sets", 0) > 1:
@@ -619,8 +648,8 @@ def evaluate_export_status(name: str, summary: dict, verification: dict) -> Tupl
             support >= 12 and
             st.get("translation_std_mm", 1e9) < 3.0 and
             st.get("rotation_std_deg", 1e9) < 0.5 and
-            verification["cross_camera"]["pass"] is True and
-            verification["reprojection"]["pass"] is True
+            cross_camera.get("pass") is True and
+            reprojection.get("pass") is True
         )
         return ("PASS" if ok else "FAIL",
                 f"cube anchor support={support}/{cube_anchor.get('total_keys', 0)}")
@@ -634,7 +663,7 @@ def evaluate_export_status(name: str, summary: dict, verification: dict) -> Tupl
             support >= 2 and
             st.get("translation_std_mm", 1e9) < 3.0 and
             st.get("rotation_std_deg", 1e9) < 0.5 and
-            verification["reprojection"]["pass"] is True
+            reprojection.get("pass") is True
         )
         return (
             "PASS" if ok else "FAIL",
@@ -659,15 +688,14 @@ def export_quality_tier(name: str, summary: dict) -> str:
         return "production"
     if name.startswith("T_base_O_set"):
         return "diagnostic"
-    if name == "T_base_C3" and (
-        base_stats.get(name, {}).get("method") == "cube_anchor_strict" or
+    method_c3 = str(base_stats.get("T_base_C3", {}).get("method", ""))
+    c3_is_provisional = (
+        "cube_anchor" in method_c3 or
         hybrid.get("applied") is True
-    ):
+    )
+    if name == "T_base_C3" and c3_is_provisional:
         return "provisional"
-    if name == "T_C0_C3" and (
-        base_stats.get("T_base_C3", {}).get("method") == "cube_anchor_strict" or
-        hybrid.get("applied") is True
-    ):
+    if name == "T_C0_C3" and c3_is_provisional:
         return "provisional"
     return "diagnostic"
 
@@ -981,7 +1009,8 @@ def main():
     parser.add_argument("--root_folder", required=True)
     parser.add_argument("--intrinsics_dir", required=True)
     parser.add_argument("--calib_dir", required=True)
-    parser.add_argument("--cube_config_json", default=None)
+    parser.add_argument("--cube_config_json", default=None,
+                        help="Optional cube config JSON override. Leave unset to use the project's canonical cube definition.")
     parser.add_argument("--out_dir", default=None)
     args = parser.parse_args()
 

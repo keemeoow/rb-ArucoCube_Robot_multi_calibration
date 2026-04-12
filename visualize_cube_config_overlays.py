@@ -243,7 +243,8 @@ def main() -> None:
     parser.add_argument("--root_folder", required=True)
     parser.add_argument("--out_dir", default=None)
     parser.add_argument("--calib_dir", default=None)
-    parser.add_argument("--cube_config_json", default=None)
+    parser.add_argument("--cube_config_json", default=None,
+                        help="Optional cube config JSON override. Leave unset to use the project's canonical cube definition.")
     parser.add_argument("--max_frames", type=int, default=0)
     args = parser.parse_args()
 

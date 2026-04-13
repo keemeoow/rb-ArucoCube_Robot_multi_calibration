@@ -660,6 +660,7 @@ def merge_fixed_camera_base_transforms(
     board_refine_alpha: float = 0.35,
     max_refine_dt_mm: float = 25.0,
     max_refine_dr_deg: float = 5.0,
+    adaptive_alpha: bool = True,
 ):
     merged = {}
     merged_stats = {}
@@ -691,10 +692,18 @@ def merge_fixed_camera_base_transforms(
             dt_mm = float(np.linalg.norm(T_final[:3, 3] - secondary[:3, 3]) * 1000.0)
             dr_deg = rotation_error_deg(T_final[:3, :3], secondary[:3, :3])
             if dt_mm <= float(max_refine_dt_mm) and dr_deg <= float(max_refine_dr_deg):
-                T_final = blend_rigid_transforms(T_final, secondary, float(board_refine_alpha))
-                method = f"{method}+board_refined"
+                alpha = float(board_refine_alpha)
+                if bool(adaptive_alpha):
+                    cube_std = float(st_cube.get("translation_std_mm", 99.0))
+                    board_std = float(st_board.get("translation_std_mm", 99.0))
+                    if board_std > 0 and cube_std > 0:
+                        ratio = min(cube_std / max(board_std, 0.1), 2.0)
+                        alpha = float(np.clip(board_refine_alpha * ratio, 0.1, 0.70))
+                T_final = blend_rigid_transforms(T_final, secondary, alpha)
+                method = f"{method}+board_refined(a={alpha:.2f})"
                 primary_stats["board_refine_delta_mm"] = dt_mm
                 primary_stats["board_refine_delta_deg"] = dr_deg
+                primary_stats["board_refine_alpha_used"] = alpha
 
         primary_stats["method"] = method
         merged[int(ci)] = T_final
@@ -1564,11 +1573,35 @@ def main():
     method_sel = str(args.handeye_method or "AUTO").strip().upper()
     method_iter = method_map.items() if method_sel == "AUTO" else [(method_sel, method_map.get(method_sel))]
 
+    def _evaluate_handeye(T_gTc_eval, eval_eids, eval_label=""):
+        """Evaluate a hand-eye solution: compute board stability and score."""
+        T_B_tgt_list = []
+        w_eval = []
+        for eid in eval_eids:
+            T_B_G = robot_T[eid]
+            if use_charuco:
+                T_cam_tgt = charuco_obs[eid]["T_cam_board"]
+            else:
+                T_cam_tgt = pnp_obs[gripper_cam_idx][eid]["T_C_O"]
+            T_B_tgt_list.append(T_B_G @ T_gTc_eval @ T_cam_tgt)
+            if use_charuco:
+                w_eval.append(1.0 / max(charuco_obs[eid]["reproj"], 1e-9))
+            else:
+                w_eval.append(1.0 / max(pnp_obs[gripper_cam_idx][eid]["err_mean"], 1e-9))
+        T_B_tgt_avg, st_bo = robust_weighted_se3_average(T_B_tgt_list, w_eval, return_stats=True)
+        trans_mm, rot_deg = [], []
+        for T in T_B_tgt_list:
+            trans_mm.append(float(np.linalg.norm(T[:3, 3] - T_B_tgt_avg[:3, 3]) * 1000.0))
+            rot_deg.append(rotation_error_deg(T[:3, :3], T_B_tgt_avg[:3, :3]))
+        board_score = float(np.mean(trans_mm)) + 10.0 * float(np.mean(rot_deg))
+        return T_B_tgt_list, T_B_tgt_avg, st_bo, trans_mm, rot_deg, board_score
+
     method_results = {}
     for mname, mcode in method_iter:
         if mcode is None:
             continue
         try:
+            # --- Initial hand-eye with all frames ---
             R_gc, t_gc = cv2.calibrateHandEye(
                 R_gripper2base=R_gripper2base,
                 t_gripper2base=t_gripper2base,
@@ -1580,24 +1613,67 @@ def main():
             T_gTc[:3, :3] = np.asarray(R_gc, dtype=np.float64).reshape(3, 3)
             T_gTc[:3, 3] = np.asarray(t_gc, dtype=np.float64).reshape(3)
 
-            # Consistency: T_base_target should be constant
-            T_B_tgt_list = []
-            for eid in common_he:
-                T_B_G = robot_T[eid]
+            T_B_tgt_list, T_B_tgt_avg, st_bo, trans_mm, rot_deg, board_score = \
+                _evaluate_handeye(T_gTc, common_he)
+
+            # --- Iterative refinement: remove worst frames, recompute ---
+            best_T_gTc = T_gTc.copy()
+            best_score = board_score
+            best_trans_mm = list(trans_mm)
+            best_rot_deg = list(rot_deg)
+            best_st_bo = dict(st_bo)
+            best_eids = list(common_he)
+
+            for refine_iter in range(3):
+                residuals = np.array(trans_mm, dtype=np.float64)
+                med = np.median(residuals)
+                mad = np.median(np.abs(residuals - med)) + 1e-12
+                thr = med + 2.0 * 1.4826 * mad
+                keep_mask = residuals <= thr
+                if keep_mask.sum() < max(8, int(0.6 * len(common_he))):
+                    break
+                if keep_mask.all():
+                    break
+                kept_eids = [eid for eid, k in zip(common_he, keep_mask) if k]
+                R_g2b = [robot_T[eid][:3, :3] for eid in kept_eids]
+                t_g2b = [robot_T[eid][:3, 3].reshape(3, 1) for eid in kept_eids]
                 if use_charuco:
-                    T_cam_tgt = charuco_obs[eid]["T_cam_board"]
+                    R_t2c = [charuco_obs[eid]["T_cam_board"][:3, :3] for eid in kept_eids]
+                    t_t2c = [charuco_obs[eid]["T_cam_board"][:3, 3].reshape(3, 1) for eid in kept_eids]
                 else:
-                    T_cam_tgt = pnp_obs[gripper_cam_idx][eid]["T_C_O"]
-                T_B_tgt_list.append(T_B_G @ T_gTc @ T_cam_tgt)
+                    R_t2c = [pnp_obs[gripper_cam_idx][eid]["T_C_O"][:3, :3] for eid in kept_eids]
+                    t_t2c = [pnp_obs[gripper_cam_idx][eid]["T_C_O"][:3, 3].reshape(3, 1) for eid in kept_eids]
+                try:
+                    R_gc2, t_gc2 = cv2.calibrateHandEye(
+                        R_gripper2base=R_g2b, t_gripper2base=t_g2b,
+                        R_target2cam=R_t2c, t_target2cam=t_t2c,
+                        method=int(mcode),
+                    )
+                except Exception:
+                    break
+                T_gTc2 = np.eye(4, dtype=np.float64)
+                T_gTc2[:3, :3] = np.asarray(R_gc2, dtype=np.float64).reshape(3, 3)
+                T_gTc2[:3, 3] = np.asarray(t_gc2, dtype=np.float64).reshape(3)
+                # Evaluate refined solution on ALL frames
+                _, _, st_bo2, trans_mm2, rot_deg2, board_score2 = \
+                    _evaluate_handeye(T_gTc2, common_he)
+                if board_score2 < best_score:
+                    best_T_gTc = T_gTc2.copy()
+                    best_score = board_score2
+                    best_trans_mm = list(trans_mm2)
+                    best_rot_deg = list(rot_deg2)
+                    best_st_bo = dict(st_bo2)
+                    best_eids = list(kept_eids)
+                    trans_mm = list(trans_mm2)
+                else:
+                    break
 
-            T_B_tgt_avg, st_bo = robust_weighted_se3_average(T_B_tgt_list, w_he, return_stats=True)
+            T_gTc = best_T_gTc
+            trans_mm = best_trans_mm
+            rot_deg = best_rot_deg
+            st_bo = best_st_bo
+            board_score = best_score
 
-            trans_mm, rot_deg = [], []
-            for T in T_B_tgt_list:
-                trans_mm.append(float(np.linalg.norm(T[:3, 3] - T_B_tgt_avg[:3, 3]) * 1000.0))
-                rot_deg.append(rotation_error_deg(T[:3, :3], T_B_tgt_avg[:3, :3]))
-
-            board_score = float(np.mean(trans_mm)) + 10.0 * float(np.mean(rot_deg))
             cube_score_info = score_handeye_with_cube_support(
                 meta, robot_T, pnp_obs, gripper_cam_idx, fixed_cam_ids, T_gTc,
                 min_cams=max(int(args.event_anchor_min_cams), 2),
@@ -1606,6 +1682,7 @@ def main():
                 score = board_score + float(cube_score_info.get("cube_score", 0.0))
             else:
                 score = board_score
+            refine_note = f" (refined {len(common_he)}->{len(best_eids)}fr)" if len(best_eids) < len(common_he) else ""
             method_results[mname] = {
                 "T_gTc": T_gTc,
                 "score": score,
@@ -1618,7 +1695,7 @@ def main():
             print(
                 f"  [{mname}] score={score:.3f} "
                 f"(board={board_score:.3f}, cube={cube_score_info.get('cube_score', 0.0):.3f}) "
-                f"trans={np.mean(trans_mm):.2f}mm rot={np.mean(rot_deg):.3f}deg"
+                f"trans={np.mean(trans_mm):.2f}mm rot={np.mean(rot_deg):.3f}deg{refine_note}"
             )
         except Exception as e:
             print(f"  [{mname}] FAILED: {e}")

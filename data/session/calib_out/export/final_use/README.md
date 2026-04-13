@@ -10,7 +10,7 @@ This folder contains the final-use export package for the selected calibration r
 - `verification_metrics.json`: verification metrics snapshot
 
 ## Current quality summary
-- Cross-camera mean: 2.3354512765028606
+- Cross-camera mean: 2.335450413560107
 - Reprojection mean: 0.656836755150114
 - Hand-eye pass: True
 

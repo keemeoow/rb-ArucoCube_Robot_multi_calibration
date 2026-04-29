@@ -2,7 +2,7 @@
 """
 Step 3: 통합 캘리브레이션.
 
-Step2_capture_capture.py의 meta.json을 입력으로 받아:
+Step2_capture.py의 meta.json을 입력으로 받아:
   A) 저장된/재검출 cube pose 후보를 읽는다
   B) 고정 카메라 상대변환을 cube 기준으로 계산한다
   C) Hand-eye는 gripper ChArUco 보드로 계산하되 cube 일관성까지 함께 평가한다

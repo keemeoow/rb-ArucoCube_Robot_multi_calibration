@@ -62,9 +62,12 @@ PC waypoint step mode:
 """
 
 import os
+import sys as _sys_top
 import json
 import time
 import argparse
+import select as _select
+import threading as _threading
 from typing import Dict, List, Optional, Tuple
 
 import cv2
@@ -179,6 +182,113 @@ def annotate_image(bgr, cube, cam_idx, is_gripper, n_markers, ids, corners,
         cv2.putText(out, line, (8, y), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255, 255, 255), 2)
         y += 22
     return out
+
+
+def wait_for_start_command_capture(cams, cam_order, gripper_cam_idx,
+                                     extra_lines: Optional[List[str]] = None) -> bool:
+    """캘리브레이션 캡처 시작 전 cv2 프리뷰 + 'start' 입력 대기.
+
+    아르코 큐브 / charuco 오버레이는 표시하지 않고, 단순 4-캠 raw 프리뷰 만
+    띄운다 (사용자가 카메라 시야/노출만 확인). 터미널에서:
+      start  -> 캡처 메인 루프 진입
+      quit   -> 캡처 시작 안 하고 종료
+    Returns: True 시작 / False 사용자 취소.
+    """
+    print("")
+    print("=" * 60)
+    print(" Live preview — type 'start' (then ENTER) in this terminal to begin")
+    print(" or type 'quit' / press q in the preview window to abort")
+    print("=" * 60)
+    if extra_lines:
+        for ln in extra_lines:
+            print(" " + ln)
+
+    start_event = _threading.Event()
+    quit_event = _threading.Event()
+
+    def _stdin_reader():
+        while not (start_event.is_set() or quit_event.is_set()):
+            try:
+                r, _, _ = _select.select([_sys_top.stdin], [], [], 0.2)
+                if not r:
+                    continue
+                line = _sys_top.stdin.readline()
+                if not line:
+                    quit_event.set(); return
+                token = line.strip().lower()
+                if token == "start":
+                    start_event.set(); return
+                if token in ("quit", "q", "exit"):
+                    quit_event.set(); return
+                if token:
+                    print(f"  type 'start' or 'quit' (got: {token!r})")
+            except Exception:
+                quit_event.set(); return
+
+    t = _threading.Thread(target=_stdin_reader, daemon=True)
+    t.start()
+
+    win = "Calibration Preview - waiting for 'start'"
+    while not start_event.is_set() and not quit_event.is_set():
+        tiles = []
+        tile_h = tile_w = None
+        for ci in cam_order:
+            cam = cams.get(ci)
+            color = None
+            if cam is not None:
+                color, _depth, _ts = cam.get_latest()
+            if color is not None:
+                if tile_h is None:
+                    tile_h, tile_w = color.shape[:2]
+                disp = color.copy()
+                tag = "GRIP" if (gripper_cam_idx is not None and ci == gripper_cam_idx) else "FIX"
+                col = (0, 200, 255) if tag == "GRIP" else (0, 255, 0)
+                cv2.putText(disp, f"cam{ci} [{tag}]", (10, 28),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.7, col, 2)
+                tiles.append(disp)
+            else:
+                if tile_h is None:
+                    tile_h, tile_w = 480, 640
+                blank = np.zeros((tile_h, tile_w, 3), dtype=np.uint8)
+                cv2.putText(blank, f"cam{ci} N/A", (20, tile_h // 2),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 0, 255), 2)
+                tiles.append(blank)
+        while len(tiles) < 4:
+            tiles.append(np.zeros((tile_h or 480, tile_w or 640, 3), dtype=np.uint8))
+        tiles = tiles[:4]
+        top = cv2.hconcat([tiles[0], tiles[1]])
+        bot = cv2.hconcat([tiles[2], tiles[3]])
+        quad = cv2.vconcat([top, bot])
+
+        # footer
+        foot_h = 28 + 26 * (1 + (len(extra_lines) if extra_lines else 0))
+        foot = np.zeros((foot_h, quad.shape[1], 3), dtype=np.uint8)
+        cv2.putText(foot, "[WAITING] Type 'start' + ENTER in terminal to begin",
+                    (12, 22), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 200, 255), 1)
+        if extra_lines:
+            y = 48
+            for ln in extra_lines:
+                cv2.putText(foot, ln, (12, y),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.55, (220, 220, 220), 1)
+                y += 24
+        quad = cv2.vconcat([quad, foot])
+        h2 = int(quad.shape[0] * 0.6); w2 = int(quad.shape[1] * 0.6)
+        cv2.imshow(win, cv2.resize(quad, (w2, h2)))
+
+        key = cv2.waitKey(50) & 0xFF
+        if key == 27 or key == ord('q'):
+            quit_event.set()
+            break
+
+    try:
+        cv2.destroyWindow(win)
+    except Exception:
+        pass
+    if start_event.is_set():
+        print("[start] confirmed, proceeding...")
+        return True
+    print("[abort] user cancelled before start.")
+    return False
 
 
 def make_quad_image(frames_dict, cam_order, cube, gripper_cam_idx):
@@ -670,6 +780,9 @@ def main():
                         help="Manual robot mode: server sends capture commands interactively (use with robot_calb.py)")
     parser.add_argument("--settle_time", type=float, default=1.5,
                         help="Wait time (s) after robot signals capture before taking images")
+    # start gate
+    parser.add_argument("--no_start_gate", action="store_true",
+                        help="기본은 cv2 프리뷰 + 'start' 입력 대기. 이 플래그 시 즉시 시작.")
 
     args = parser.parse_args()
 
@@ -949,6 +1062,20 @@ def main():
                     print(f"  [ChArUco] FAILED (corners={int(fr.get('charuco_detect_n', 0))})")
 
         return fr
+
+    # ── start 게이트: 첫 cv2 프리뷰 + 'start' 입력 대기 ──
+    if not args.no_start_gate:
+        extra = []
+        if args.use_robot:
+            extra.append(f"robot {args.robot_ip}:{args.robot_port}"
+                         + (" (manual)" if args.manual_robot else ""))
+        if waypoint_list:
+            extra.append(f"{len(waypoint_list)} waypoints loaded")
+        if not wait_for_start_command_capture(cams, cam_order, gripper_cam_idx, extra):
+            for cam in cams.values():
+                cam.stop()
+            cv2.destroyAllWindows()
+            return
 
     print("\nControls:")
     if args.use_robot and waypoint_list and not args.manual_robot:

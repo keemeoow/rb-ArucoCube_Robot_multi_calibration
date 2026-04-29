@@ -11,8 +11,10 @@
   show              : 현재 TCP 포즈 및 관절 값 표시
   speed <0-100>     : 속도 설정 (클수록 빠름)
 
-  --- 촬영 ---
+  --- 촬영 & 중지 ---
   c                 : 현재 위치에서 촬영
+  x                 : 촬영 + auto-replay 중지 (soft stop) 
+  X(shift + x)      : 촬영 + auto-replay 중지 (hard abort) 
 
   --- 설정 ---
   set               : 현재 TCP + 관절값을 object station 기준점으로 저장
@@ -103,6 +105,8 @@ import sys
 import time
 import socket
 import json
+import select
+import threading
 
 HOST = '0.0.0.0'
 PORT = 12348
@@ -120,6 +124,90 @@ STATIC_MAX_TCP_TRANSLATION_MM = 1.0
 STATIC_MAX_TCP_ROTATION_DEG = 0.20
 
 VALID_CAPTURE_MODES = ('auto', 'placed', 'held', 'object_fixed')
+
+# 자동 촬영(replay) 중 사용자가 'stop'/'x'/'abort'/'xx' 를 입력하면 set.
+# run_auto_capture 와 inline_replay_current_station 의 viewpoint 루프가
+# 이걸 체크해서 다음 viewpoint 시작 전에 빠져나간다 (cooperative).
+# 콘솔에서 입력하면 현재 진행 중인 rb.move() 자체도 rb.stop()/rb.abort() 로
+# 즉시 인터럽트 된다 (immediate).
+stop_flag = threading.Event()
+abort_flag = threading.Event()
+
+
+def _drain_stdin():
+    """stdin 에 남은 입력을 깨끗하게 비운다 (auto 종료 후 잔류 키 방지)."""
+    try:
+        while True:
+            r, _, _ = select.select([sys.stdin], [], [], 0)
+            if not r:
+                break
+            sys.stdin.readline()
+    except Exception:
+        pass
+
+
+def _stdin_stop_listener(rb_ref):
+    """auto-replay 중 별도 thread 에서 stdin 을 폴링.
+
+    인식 명령:
+      stop / x   : rb.stop()  (soft, 감속 정지) + stop_flag.set()
+      abort / xx : rb.abort() (hard, 즉시 정지) + stop_flag.set() + abort_flag.set()
+
+    rb.stop() / rb.abort() 는 현재 진행 중인 rb.move() 를 즉시 인터럽트.
+    """
+    try:
+        while not stop_flag.is_set():
+            r, _, _ = select.select([sys.stdin], [], [], 0.2)
+            if not r:
+                continue
+            try:
+                line = sys.stdin.readline()
+            except Exception:
+                break
+            if not line:
+                break
+            cmd = line.strip().lower()
+            if cmd in ('stop', 'x'):
+                stop_flag.set()
+                print ''
+                print '[STOP] received -- rb.stop() (soft, decelerating)...'
+                try:
+                    rb_ref.stop()
+                except Exception as exc:
+                    print '[STOP] rb.stop() failed: {}'.format(exc)
+                break
+            elif cmd in ('abort', 'xx'):
+                stop_flag.set()
+                abort_flag.set()
+                print ''
+                print '[ABORT] received -- rb.abort() (hard, motion interrupted)...'
+                try:
+                    rb_ref.abort()
+                except Exception as exc:
+                    print '[ABORT] rb.abort() failed: {}'.format(exc)
+                break
+            elif cmd:
+                print '[INFO] auto-replay 중에는 stop/x (soft) 또는 abort/xx (hard) 만 인식 (입력: {!r})'.format(cmd)
+    except Exception as exc:
+        print '[stop_listener] {}'.format(exc)
+
+
+def _safe_move(rb_ref, target):
+    """rb.move() 또는 rb.line() wrapper. stop_flag set 상태이면 호출 자체를 skip
+    하고, move 도중 rb.stop()/rb.abort() 로 인터럽트되어 예외가 떠도 흡수한다.
+
+    Returns: True 정상 완료 / False 인터럽트되거나 skip."""
+    if stop_flag.is_set():
+        return False
+    try:
+        rb_ref.move(target)
+        return True
+    except Exception as exc:
+        if stop_flag.is_set():
+            print '[move] interrupted by stop/abort: {}'.format(exc)
+            return False
+        # 비정지 예외는 다시 던짐
+        raise
 
 TCP_AXIS_MAP = {'x': 'dx', 'y': 'dy', 'z': 'dz', 'rz': 'drz', 'ry': 'dry', 'rx': 'drx'}
 JOINT_AXIS_MAP = {'d1': 'dj1', 'd2': 'dj2', 'd3': 'dj3', 'd4': 'dj4', 'd5': 'dj5', 'd6': 'dj6'}
@@ -569,6 +657,28 @@ def do_capture(conn, pose_index, set_index=None, set_joints=None,
         print 'Client disconnected!'
         return None, None
 
+    # PC 클라가 'captured' 대신 stop/abort 를 보내면 auto-replay 루프 abort.
+    # (preview 창에서 x = soft, X = hard 키 누른 경우)
+    if isinstance(resp, dict):
+        action = resp.get('action')
+        if action == 'stop':
+            stop_flag.set()
+            print '*** Capture {} -- client requested STOP (soft) ***'.format(pose_index)
+            try:
+                rb.stop()
+            except Exception as exc:
+                print '[STOP] rb.stop() failed: {}'.format(exc)
+            return 'skipped', tcp
+        if action == 'abort':
+            stop_flag.set()
+            abort_flag.set()
+            print '*** Capture {} -- client requested ABORT (hard) ***'.format(pose_index)
+            try:
+                rb.abort()
+            except Exception as exc:
+                print '[ABORT] rb.abort() failed: {}'.format(exc)
+            return 'skipped', tcp
+
     status = resp.get('status', 'unknown') if isinstance(resp, dict) else 'unknown'
     reason = resp.get('reason') if isinstance(resp, dict) else None
     if reason:
@@ -604,13 +714,31 @@ def run_auto_capture(rb, conn, waypoint_file, speed=30):
 
     rb.override(speed)
     print '[Auto] Moving to SET...'
-    rb.move(Joint(*set_joints[:6]))
+    if not _safe_move(rb, Joint(*set_joints[:6])):
+        print '[Auto] aborted before sweep started.'
+        return 0, True
     print '[Auto] At SET. Ensure the object is fixed and the gripper will not touch it.'
-    raw_input('Press ENTER to start viewpoint sweep...')
+    while True:
+        try:
+            line = raw_input("Type 'start' (or 'quit') to begin viewpoint sweep: ").strip().lower()
+        except EOFError:
+            line = 'quit'
+        if line == 'start':
+            break
+        if line in ('quit', 'q', 'exit'):
+            print '[Auto] aborted before sweep started.'
+            return 0, True
+        if line:
+            print "  type 'start' or 'quit' (got: {!r})".format(line)
 
     success_count = 0
+    aborted = False
 
     for i, wp in enumerate(wps):
+        if stop_flag.is_set():
+            print '[Auto] stop_flag set -- aborting before viewpoint {}/{}'.format(i + 1, len(wps))
+            aborted = True
+            break
         place_j = wp.get('place_joints') or list(set_joints)
         capture_j = wp['capture_joints']
         viewpoint_name = wp.get('name')
@@ -620,10 +748,12 @@ def run_auto_capture(rb, conn, waypoint_file, speed=30):
             i + 1, len(wps), viewpoint_name
         )
 
-        rb.move(Joint(*place_j[:6]))
+        if not _safe_move(rb, Joint(*place_j[:6])):
+            aborted = True; break
         time.sleep(0.3)
 
-        rb.move(Joint(*capture_j[:6]))
+        if not _safe_move(rb, Joint(*capture_j[:6])):
+            aborted = True; break
         time.sleep(0.5)
 
         status, _ = do_capture(
@@ -646,16 +776,116 @@ def run_auto_capture(rb, conn, waypoint_file, speed=30):
         else:
             print '[Auto] -> SKIPPED'
 
-        rb.move(Joint(*place_j[:6]))
+        if not _safe_move(rb, Joint(*place_j[:6])):
+            aborted = True; break
         time.sleep(0.2)
-        rb.move(Joint(*set_joints[:6]))
+        if not _safe_move(rb, Joint(*set_joints[:6])):
+            aborted = True; break
         time.sleep(0.2)
 
-    send_json(conn, {"command": "quit"})
+    if aborted:
+        print '  Auto Aborted: {}/{} captured at station {}'.format(
+            success_count, len(wps), station_id
+        )
+    else:
+        send_json(conn, {"command": "quit"})
+        print ''
+        print '  Auto Complete: {}/{} captured at station {}'.format(
+            success_count, len(wps), station_id
+        )
+    return success_count, aborted
+
+
+def inline_replay_current_station(rb, conn, station_id, station_rec, speed=30):
+    """현재 station_records 에 누적된 waypoints 를 in-memory 로 즉시 replay.
+    (run_auto_capture 와 거의 동일하지만 파일 로드 대신 dict 를 받음.)
+    stop_flag 가 set 되면 다음 viewpoint 시작 전에 빠져나간다."""
+    set_joints = station_rec.get('set_joints')
+    set_tcp = station_rec.get('set_tcp')
+    wps = station_rec.get('waypoints') or []
+    if not set_joints:
+        print '[InlineAuto] station #{} has no set_joints'.format(station_id)
+        return 0, True
+    if not wps:
+        print '[InlineAuto] station #{} has no waypoints. Capture some with `c` first.'.format(station_id)
+        return 0, True
+
+    capture_modes = station_rec.get('capture_modes_seen') or []
+    if capture_modes and len(set(capture_modes)) == 1:
+        capture_mode = capture_modes[0]
+    else:
+        capture_mode = 'object_fixed'
+
     print ''
-    print '  Auto Complete: {}/{} captured at station {}'.format(
-        success_count, len(wps), station_id
-    )
+    print '=========================================='
+    print '  Inline Replay: station #{}, {} viewpoints, speed={}'.format(
+        station_id, len(wps), speed)
+    print '  mode={}'.format(capture_mode)
+    print '=========================================='
+    print '  Type "stop" or "x" + ENTER to abort between viewpoints.'
+
+    rb.override(speed)
+    print '[InlineAuto] Moving to SET...'
+    if not _safe_move(rb, Joint(*set_joints[:6])):
+        print '[InlineAuto] aborted before sweep started.'
+        return 0, True
+    time.sleep(0.3)
+
+    success_count = 0
+    aborted = False
+    for i, wp in enumerate(wps):
+        if stop_flag.is_set():
+            print '[InlineAuto] stop_flag set -- aborting before viewpoint {}/{}'.format(i + 1, len(wps))
+            aborted = True
+            break
+        place_j = wp.get('place_joints') or list(set_joints)
+        capture_j = wp.get('capture_joints')
+        if capture_j is None:
+            print '[InlineAuto] viewpoint {} has no capture_joints, skipping'.format(i)
+            continue
+        viewpoint_name = wp.get('name') or normalize_waypoint_name(None, i)
+        pose_index = int(wp.get('pose_index', i))
+        print ''
+        print '======== Replay {}/{}: {} ========'.format(
+            i + 1, len(wps), viewpoint_name)
+
+        if not _safe_move(rb, Joint(*place_j[:6])):
+            aborted = True; break
+        time.sleep(0.3)
+        if not _safe_move(rb, Joint(*capture_j[:6])):
+            aborted = True; break
+        time.sleep(0.5)
+
+        status, _ = do_capture(
+            conn, pose_index,
+            set_index=station_id,
+            set_joints=set_joints, set_tcp=set_tcp,
+            place_joints=place_j, place_tcp=wp.get('place_tcp'),
+            capture_mode_override=capture_mode,
+            station_index=station_id,
+            viewpoint_name=viewpoint_name,
+        )
+        if status is None:
+            break
+        if status == 'success':
+            success_count += 1
+            print '[InlineAuto] -> OK'
+        else:
+            print '[InlineAuto] -> SKIPPED'
+
+        if not _safe_move(rb, Joint(*place_j[:6])):
+            aborted = True; break
+        time.sleep(0.2)
+        if not _safe_move(rb, Joint(*set_joints[:6])):
+            aborted = True; break
+        time.sleep(0.2)
+
+    print ''
+    if aborted:
+        print '  Inline Replay Aborted: {}/{} captured'.format(success_count, len(wps))
+    else:
+        print '  Inline Replay Complete: {}/{} captured'.format(success_count, len(wps))
+    return success_count, aborted
 
 
 # ── Main ──
@@ -731,7 +961,12 @@ def main():
         print '  c: capture  set: save station TCP/joints'
         print '  mode <auto|placed|held|object_fixed>: capture mode override'
         print '  go: grip open  gc: grip close'
-        print '  undo [N|all|<axes>|set]  q: quit'
+        print '  undo [N|all|<axes>|set]'
+        print '  auto [file] [speed] : replay current station OR a JSON file'
+        print '  stop / x   : rb.stop()  (soft, decelerating)'
+        print '  abort / xx : rb.abort() (hard, motion interrupted)'
+        print '  (during auto-replay, type stop/x/abort/xx + ENTER)'
+        print '  q: quit'
         print '=========================================='
         print ''
 
@@ -937,6 +1172,69 @@ def main():
                     show_pose()
                 except Exception as e:
                     print 'Error: {}. Usage: j <axis>,<value>'.format(e)
+
+            # Stop / abort (replay 가 돌고있지 않을 때 즉시 호출)
+            elif cl == 'stop' or cl == 'x':
+                stop_flag.set()
+                print '[stop] flag set + rb.stop() (soft, decelerating)...'
+                try:
+                    rb.stop()
+                except Exception as exc:
+                    print '[stop] rb.stop() failed: {}'.format(exc)
+            elif cl == 'abort' or cl == 'xx':
+                stop_flag.set()
+                abort_flag.set()
+                print '[abort] flag set + rb.abort() (hard, motion interrupted)...'
+                try:
+                    rb.abort()
+                except Exception as exc:
+                    print '[abort] rb.abort() failed: {}'.format(exc)
+
+            # Auto replay  (in-memory current station OR a JSON file)
+            elif cl == 'auto' or cl.startswith('auto'):
+                parts = cmd.split()
+                file_arg = None
+                speed_arg = 30
+                # `auto`              -> 현재 station replay
+                # `auto 50`           -> 현재 station, speed 50
+                # `auto file.json`    -> 파일 replay
+                # `auto file.json 50` -> 파일 replay, speed 50
+                for tok in parts[1:]:
+                    if tok.endswith('.json'):
+                        file_arg = tok
+                    else:
+                        try:
+                            speed_arg = int(tok)
+                        except ValueError:
+                            print '[auto] ignored token: {}'.format(tok)
+
+                # 플래그 초기화 + stdin listener 시작 (auto 동안만 stdin 점유)
+                stop_flag.clear()
+                abort_flag.clear()
+                listener = threading.Thread(target=_stdin_stop_listener, args=(rb,))
+                listener.daemon = True
+                listener.start()
+                try:
+                    if file_arg:
+                        run_auto_capture(rb, conn, file_arg, speed_arg)
+                    else:
+                        if set_index < 0 or set_index not in station_records:
+                            print '[auto] No current station. Either `set` first + `c` a few times, or pass a JSON file.'
+                        else:
+                            inline_replay_current_station(
+                                rb, conn,
+                                station_id=set_index,
+                                station_rec=station_records[set_index],
+                                speed=speed_arg,
+                            )
+                finally:
+                    # listener 종료 유도: stop_flag 가 set 안돼있으면 set 해서
+                    # listener 가 select 다음 회차에 깨어나 빠지게 함.
+                    stop_flag.set()
+                    listener.join(timeout=0.5)
+                    stop_flag.clear()
+                    abort_flag.clear()
+                    _drain_stdin()
 
             else:
                 print 'Unknown: {}'.format(cmd)

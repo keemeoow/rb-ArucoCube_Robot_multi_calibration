@@ -285,6 +285,14 @@ def run_auto_capture(rb, conn, waypoint_file, speed=30):
     with open(waypoint_file, 'r') as f:
         data = json.load(f)
 
+    if data.get('format_version') == 2 and 'placements' in data:
+        _run_auto_v2(rb, conn, data, speed)
+    else:
+        _run_auto_v1(rb, conn, data, speed)
+
+
+def _run_auto_v1(rb, conn, data, speed):
+    """Legacy: flat waypoints list, joint-based captures, 1 capture per pick-place cycle."""
     set_joints = data.get('set_joints')
     set_cube_center = data.get('set_cube_center')
     wps = data.get('waypoints', [])
@@ -303,7 +311,7 @@ def run_auto_capture(rb, conn, waypoint_file, speed=30):
 
     print ''
     print '=========================================='
-    print '  Auto Capture: {} waypoints, speed={}'.format(len(wps), speed)
+    print '  Auto Capture v1: {} waypoints, speed={}'.format(len(wps), speed)
     print '=========================================='
 
     rb.override(speed)
@@ -345,7 +353,114 @@ def run_auto_capture(rb, conn, waypoint_file, speed=30):
 
     send_json(conn, {"command": "quit"})
     print ''
-    print '  Auto Complete: {}/{} captured'.format(success_count, len(wps))
+    print '  Auto Complete v1: {}/{} captured'.format(success_count, len(wps))
+
+
+def _run_auto_v2(rb, conn, data, speed):
+    """v2: per-placement multi-capture. Place once, capture N TCP poses, re-grip, next placement."""
+    set_joints = data.get('set_joints')
+    set_tcp = data.get('set_tcp')
+    placements = data.get('placements', [])
+
+    if set_joints is None:
+        print '[ERROR] set_joints not found!'
+        send_json(conn, {"command": "quit"})
+        return
+
+    for i, p in enumerate(placements):
+        if 'place_joints' not in p:
+            print '[ERROR] placement {} missing place_joints'.format(i)
+            send_json(conn, {"command": "quit"})
+            return
+        for j, cap in enumerate(p.get('captures', [])):
+            if 'capture_tcp' not in cap:
+                print '[ERROR] placement {} capture {} missing capture_tcp'.format(i, j)
+                send_json(conn, {"command": "quit"})
+                return
+
+    total_caps = sum(len(p.get('captures', [])) for p in placements)
+    print ''
+    print '=========================================='
+    print '  Auto Capture v2: {} placements, {} captures, speed={}'.format(
+        len(placements), total_caps, speed)
+    print '=========================================='
+
+    rb.override(speed)
+    print '[Auto] Moving to SET...'
+    rb.move(Joint(*set_joints[:6]))
+    print '[Auto] At SET. Ensure cube is gripped!'
+    raw_input('Press ENTER to start...')
+
+    success_count = 0
+    skipped_count = 0
+    disconnected = False
+
+    for pi, placement in enumerate(placements):
+        if disconnected:
+            break
+
+        place_j = placement['place_joints']
+        captures = placement.get('captures', [])
+        set_idx = placement.get('set_index')
+        set_cube = placement.get('set_cube_center')
+
+        print ''
+        print '======== Placement {}/{} (set_index={}, {} captures) ========'.format(
+            pi + 1, len(placements), set_idx, len(captures))
+
+        rb.move(Joint(*place_j[:6]))
+        time.sleep(0.3)
+        gripper_open()
+        time.sleep(0.3)
+
+        for ci, cap in enumerate(captures):
+            tcp = cap['capture_tcp']
+            pose_idx = cap.get('pose_index', ci)
+            print '  -- capture {}/{} pose_index={} --'.format(
+                ci + 1, len(captures), pose_idx)
+
+            try:
+                rb.line(Position(*tcp[:6]))
+            except Exception as e:
+                print '  [WARN] move failed: {}. Skipping.'.format(e)
+                skipped_count += 1
+                continue
+            time.sleep(0.5)
+
+            status, _, _ = do_capture(
+                conn, pose_idx, set_cube,
+                set_index=set_idx,
+                set_joints=set_joints,
+                set_tcp=set_tcp,
+                place_joints=place_j)
+
+            if status is None:
+                print '  [Auto] Disconnected, stopping.'
+                disconnected = True
+                break
+            elif status == 'success':
+                success_count += 1
+                print '  [Auto] -> OK'
+            else:
+                skipped_count += 1
+                print '  [Auto] -> SKIPPED'
+
+        if disconnected:
+            break
+
+        # Return to place pose, re-grip cube, return to SET
+        print '  [Auto] Re-gripping cube and returning to SET...'
+        rb.move(Joint(*place_j[:6]))
+        time.sleep(0.3)
+        gripper_close()
+        time.sleep(0.3)
+        rb.move(Joint(*set_joints[:6]))
+
+    if not disconnected:
+        send_json(conn, {"command": "quit"})
+    print ''
+    print '  Auto Complete v2: {}/{} captured ({} skipped)'.format(
+        success_count, total_caps, skipped_count)
 
 
 # ── Main ──

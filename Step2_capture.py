@@ -190,8 +190,8 @@ def wait_for_start_command_capture(cams, cam_order, gripper_cam_idx,
 
     아르코 큐브 / charuco 오버레이는 표시하지 않고, 단순 4-캠 raw 프리뷰 만
     띄운다 (사용자가 카메라 시야/노출만 확인). 터미널에서:
-      start  -> 캡처 메인 루프 진입
-      quit   -> 캡처 시작 안 하고 종료
+      start  -> 캡처 메인 루프 진입 (창은 닫지 않고 후속 모드에서 같은 창 갱신)
+      quit   -> 캡처 시작 안 하고 종료 (창 닫음)
     Returns: True 시작 / False 사용자 취소.
     """
     print("")
@@ -228,7 +228,7 @@ def wait_for_start_command_capture(cams, cam_order, gripper_cam_idx,
     t = _threading.Thread(target=_stdin_reader, daemon=True)
     t.start()
 
-    win = "Calibration Preview - waiting for 'start'"
+    win = "Capture Preview"
     while not start_event.is_set() and not quit_event.is_set():
         tiles = []
         tile_h = tile_w = None
@@ -280,13 +280,18 @@ def wait_for_start_command_capture(cams, cam_order, gripper_cam_idx,
             quit_event.set()
             break
 
+    if start_event.is_set():
+        print("[start] confirmed, proceeding...")
+        # 후속 모드 진입 전까지 창이 "응답 없음"으로 빠지지 않도록 한 번 펌프.
+        try:
+            cv2.waitKey(1)
+        except Exception:
+            pass
+        return True
     try:
         cv2.destroyWindow(win)
     except Exception:
         pass
-    if start_event.is_set():
-        print("[start] confirmed, proceeding...")
-        return True
     print("[abort] user cancelled before start.")
     return False
 
@@ -386,7 +391,8 @@ def evaluate_capture_gate(frames_dict: Dict[int, dict],
                 fixed_depth_valid_cams += 1
         if gripper_cam_idx is not None and int(ci) == int(gripper_cam_idx):
             gripper_markers = int(n_markers)
-            gripper_charuco_corners = len(fr.get("ch_ids") or [])
+            ch_ids = fr.get("ch_ids")
+            gripper_charuco_corners = 0 if ch_ids is None else len(ch_ids)
             gripper_cube_pnp_ok = cube_pnp_ok
             gripper_depth_valid = depth_valid
             if depth_plane_mean_mm is not None:
@@ -906,10 +912,19 @@ def main():
         print(f"[INFO] Loaded {len(waypoint_list)} waypoints from {args.waypoint_file}")
 
     # ─── 로봇 클라이언트 ───
+    # start 게이트 전에 연결을 끝내서 cv2 창이 응답 없음 상태가 되지 않도록 한다.
     robot_client: Optional[PlaceCaptureClient] = None
+    manual_sock = None
     if args.use_robot and not args.manual_robot:
         robot_client = PlaceCaptureClient(args.robot_ip, args.robot_port)
         robot_client.connect()
+    elif args.use_robot and args.manual_robot:
+        import socket as _sock
+        manual_sock = _sock.socket(_sock.AF_INET, _sock.SOCK_STREAM)
+        manual_sock.settimeout(None)
+        print(f"[ManualRobot] Connecting to {args.robot_ip}:{args.robot_port} ...")
+        manual_sock.connect((args.robot_ip, args.robot_port))
+        print(f"[ManualRobot] Connected to {args.robot_ip}:{args.robot_port}")
 
     # ─── 메타 데이터 (기존 meta.json이 있으면 이어서 저장) ───
     meta_path = os.path.join(root, "meta.json")
@@ -1103,16 +1118,38 @@ def main():
 
         frames: Dict[int, dict] = {}
 
+        # Software-sync: 각 카메라의 latest ts 중 가장 오래된 것(=가장 느린 카메라)을
+        # 기준으로 잡고, 다른 카메라들은 버퍼에서 그 시각에 가장 가까운 프레임을 고른다.
+        # 하드웨어 sync 없는 RealSense들의 timestamp span을 1프레임(~33ms) 이내로 좁힘.
+        latest_ts_list = []
         for ci, cam in cams.items():
-            color, depth, ts_ms = cam.get_latest()
-            if color is None:
-                continue
-            frames[ci] = build_frame_record(
-                ci, color, depth, ts_ms,
-                include_marker_poses=True,
-                include_charuco_pose=True,
-                log_pose_status=True,
-            )
+            _c, _d, ts_ms = cam.get_latest()
+            if ts_ms is not None:
+                latest_ts_list.append(ts_ms)
+
+        if latest_ts_list:
+            target_ts = min(latest_ts_list)
+            for ci, cam in cams.items():
+                color, depth, ts_ms = cam.get_at(target_ts)
+                if color is None:
+                    continue
+                frames[ci] = build_frame_record(
+                    ci, color, depth, ts_ms,
+                    include_marker_poses=True,
+                    include_charuco_pose=True,
+                    log_pose_status=True,
+                )
+        else:
+            for ci, cam in cams.items():
+                color, depth, ts_ms = cam.get_latest()
+                if color is None:
+                    continue
+                frames[ci] = build_frame_record(
+                    ci, color, depth, ts_ms,
+                    include_marker_poses=True,
+                    include_charuco_pose=True,
+                    log_pose_status=True,
+                )
 
         gate = evaluate_capture_gate(
             frames,
@@ -1236,59 +1273,13 @@ def main():
     try:
         if args.use_robot and args.manual_robot:
             # ─── 수동 로봇 모드 (robot_calb.py 서버 사용) ───
+            # cv2는 main thread 전용. 소켓 recv는 백그라운드 스레드.
+            # main thread가 recv에 블로킹되면 cv2 윈도우가 응답 없음 상태가 되므로
+            # 분리한다.
             print("[MODE] Manual Robot - waiting for server capture commands")
             print("[INFO] Move robot on server side, press 'c' to capture\n")
 
-            import socket as _sock
             import threading
-
-            manual_sock = _sock.socket(_sock.AF_INET, _sock.SOCK_STREAM)
-            manual_sock.settimeout(None)
-            manual_sock.connect((args.robot_ip, args.robot_port))
-            print(f"[ManualRobot] Connected to {args.robot_ip}:{args.robot_port}")
-
-            # ─── Live preview thread ───
-            preview_running = True
-
-            def preview_loop():
-                while preview_running:
-                    live_frames = {}
-                    for ci, cam in cams.items():
-                        color, depth, ts_ms = cam.get_latest()
-                        if color is None:
-                            continue
-                        live_frames[ci] = build_frame_record(
-                            ci, color, depth, ts_ms,
-                            include_marker_poses=False,
-                            include_charuco_pose=False,
-                            log_pose_status=False,
-                        )
-
-                    if live_frames:
-                        quad = make_quad_image(live_frames, cam_order, cube, gripper_cam_idx)
-                        gate = evaluate_capture_gate(
-                            live_frames,
-                            capture_gate_cfg,
-                            gripper_cam_idx=gripper_cam_idx,
-                        )
-                        gate_lines = build_capture_gate_lines(gate, gripper_cam_idx, live_frames)
-                        gate_colors = [(0, 255, 0)] if gate["pass"] else [(0, 0, 255)]
-                        gate_colors = gate_colors + [(255, 255, 255)] * (len(gate_lines) - 1)
-                        quad = append_status_footer(quad, gate_lines, gate_colors)
-                        # Resize for preview
-                        ph = int(quad.shape[0] * 0.6)
-                        pw = int(quad.shape[1] * 0.6)
-                        preview = cv2.resize(quad, (pw, ph))
-                        cv2.imshow("Live Preview (4 cameras)", preview)
-
-                    key = cv2.waitKey(100) & 0xFF
-                    if key == 27 or key == ord('q'):
-                        break
-
-            if args.show:
-                preview_thread = threading.Thread(target=preview_loop, daemon=True)
-                preview_thread.start()
-                print("[INFO] Live preview started (4-camera quad view)")
 
             # Waypoint accumulator (mirror of robot's capture_waypoints.json)
             wp_list: list = []
@@ -1296,131 +1287,224 @@ def main():
             wp_set_tcp = None
             wp_set_cube_center = None
 
-            try:
-                while True:
-                    data = manual_sock.recv(8192)
-                    if not data:
-                        print("[ManualRobot] Server disconnected.")
-                        break
+            network_done = threading.Event()
+            user_quit = threading.Event()
 
-                    msg = json.loads(data.decode("utf-8").strip())
-                    cmd = msg.get("command", "")
+            # 짧은 timeout으로 recv가 주기적으로 깨어나 종료 플래그를 확인하게 함.
+            manual_sock.settimeout(0.5)
 
-                    if cmd == "quit":
-                        print("[ManualRobot] Server sent quit.")
-                        break
-
-                    if cmd == "capture":
-                        capture_tcp = msg.get("capture_pose_6dof")
-                        pose_idx = msg.get("pose_index", event_id)
-                        g_tvec = msg.get("grip_target_tvec")
-                        r_joints = msg.get("robot_joints_6dof")
-                        s_cube = msg.get("set_cube_center_6dof")
-                        s_idx = msg.get("set_index")
-                        m_set_joints = msg.get("set_joints")
-                        m_set_tcp = msg.get("set_tcp")
-                        m_place_joints = msg.get("place_joints")
-
-                        print(f"\n[ManualRobot] Capture signal received (pose_index={pose_idx}, set_index={s_idx})")
-                        if capture_tcp:
-                            print(f"  TCP: {capture_tcp}")
-                        if r_joints:
-                            print(f"  Joints: {r_joints}")
-
-                        saved, gate = do_capture(
-                            capture_pose_6dof=capture_tcp,
-                            pose_index=pose_idx,
-                            grip_target_tvec=g_tvec,
-                            robot_joints_6dof=r_joints,
-                            set_cube_center_6dof=s_cube,
-                            set_index=s_idx,
-                        )
-
-                        status = "success" if saved else "skipped"
-                        resp = json.dumps({
-                            "action": "captured",
-                            "status": status,
-                            "reason": gate.get("reason"),
-                        })
-                        manual_sock.sendall(resp.encode("utf-8"))
-
-                        # Accumulate waypoint data
-                        if m_set_joints is not None:
-                            wp_set_joints = m_set_joints
-                        if m_set_tcp is not None:
-                            wp_set_tcp = m_set_tcp
-                        if s_cube is not None:
-                            wp_set_cube_center = s_cube
-
-                        wp_entry = {
-                            "pose_index": pose_idx,
-                            "capture_joints": r_joints,
-                            "capture_tcp": capture_tcp,
-                            "cube_center_6dof": msg.get("cube_center_pose_6dof"),
-                            "set_index": s_idx,
-                        }
-                        if m_place_joints is not None:
-                            wp_entry["place_joints"] = m_place_joints
-                        wp_list.append(wp_entry)
-
-                        if saved:
-                            print(f"[OK] Capture {pose_idx} saved")
-                        else:
-                            print(f"[SKIP] Capture {pose_idx} skipped")
-                    elif cmd == "detect":
-                        # Visual servoing: detect cube from gripper camera
-                        if gripper_cam_idx is None or gripper_cam_idx not in cams:
-                            resp = json.dumps({"ok": False, "reason": "no_gripper_cam"})
-                            manual_sock.sendall(resp.encode("utf-8"))
+            def network_loop():
+                nonlocal wp_set_joints, wp_set_tcp, wp_set_cube_center
+                try:
+                    while not network_done.is_set() and not user_quit.is_set():
+                        try:
+                            data = manual_sock.recv(8192)
+                        except _sock.timeout:
                             continue
-                        if gripper_cam_idx not in cam_intrinsics:
-                            resp = json.dumps({"ok": False, "reason": "no_intrinsics"})
-                            manual_sock.sendall(resp.encode("utf-8"))
+                        except OSError as e:
+                            # 정상 종료 시 main thread가 socket을 닫아서 EBADF가 뜸 → 무시
+                            if not (user_quit.is_set() or network_done.is_set()):
+                                print(f"[ManualRobot] socket error: {e}")
+                            break
+                        if not data:
+                            print("[ManualRobot] Server disconnected.")
+                            break
+
+                        try:
+                            msg = json.loads(data.decode("utf-8").strip())
+                        except Exception as e:
+                            print(f"[ManualRobot] JSON parse error: {e}")
                             continue
 
-                        g_color, g_depth, _ = cams[gripper_cam_idx].get_latest()
-                        if g_color is None:
-                            resp = json.dumps({"ok": False, "reason": "no_image"})
-                            manual_sock.sendall(resp.encode("utf-8"))
-                            continue
+                        cmd = msg.get("command", "")
+                        if cmd == "quit":
+                            print("[ManualRobot] Server sent quit.")
+                            break
 
-                        g_K, g_D, g_depth_scale = cam_intrinsics[gripper_cam_idx]
-                        detect_info = detect_cube_markers_in_frame(
-                            g_color,
-                            cube,
-                            cube_ids=cfg.marker_ids,
-                            charuco=charuco,
-                            is_gripper=True,
-                            board_mask_pad_px=float(args.board_mask_pad_px),
-                        )
-                        det_ok, det_rv, det_tv, det_used = cube.solve_pnp_cube(
-                            detect_info["cube_image"], g_K, g_D, use_ransac=False, min_markers=1,
-                            reproj_thr_mean_px=10.0,
-                            min_aspect=float(args.gripper_cube_min_aspect),
-                            depth_u16=g_depth, depth_scale=g_depth_scale)
+                        if cmd == "capture":
+                            capture_tcp = msg.get("capture_pose_6dof")
+                            pose_idx = msg.get("pose_index", event_id)
+                            g_tvec = msg.get("grip_target_tvec")
+                            r_joints = msg.get("robot_joints_6dof")
+                            s_cube = msg.get("set_cube_center_6dof")
+                            s_idx = msg.get("set_index")
+                            m_set_joints = msg.get("set_joints")
+                            m_set_tcp = msg.get("set_tcp")
+                            m_place_joints = msg.get("place_joints")
 
-                        if det_ok:
-                            resp = json.dumps({
-                                "ok": True,
-                                "tvec": det_tv.flatten().tolist(),
-                                "rvec": det_rv.flatten().tolist(),
-                                "used_ids": [int(x) for x in det_used],
-                            })
-                            print(f"[Detect] tvec=[{det_tv[0][0]:.4f}, {det_tv[1][0]:.4f}, {det_tv[2][0]:.4f}] ids={det_used}")
-                        else:
-                            resp = json.dumps({"ok": False, "reason": "detection_failed",
-                                               "n_markers": len(det_used) if det_used else 0})
-                            print(
-                                f"[Detect] Failed (cube_ids={det_used}, "
-                                f"raw_ids={detect_info['raw_ids']}, mask={detect_info['board_mask_applied']})"
+                            print(f"\n[ManualRobot] Capture signal received (pose_index={pose_idx}, set_index={s_idx})")
+                            if capture_tcp:
+                                print(f"  TCP: {capture_tcp}")
+                            if r_joints:
+                                print(f"  Joints: {r_joints}")
+
+                            saved, gate = do_capture(
+                                capture_pose_6dof=capture_tcp,
+                                pose_index=pose_idx,
+                                grip_target_tvec=g_tvec,
+                                robot_joints_6dof=r_joints,
+                                set_cube_center_6dof=s_cube,
+                                set_index=s_idx,
                             )
-                        manual_sock.sendall(resp.encode("utf-8"))
+
+                            status = "success" if saved else "skipped"
+                            resp = json.dumps({
+                                "action": "captured",
+                                "status": status,
+                                "reason": gate.get("reason"),
+                            })
+                            try:
+                                manual_sock.sendall(resp.encode("utf-8"))
+                            except OSError:
+                                break
+
+                            if m_set_joints is not None:
+                                wp_set_joints = m_set_joints
+                            if m_set_tcp is not None:
+                                wp_set_tcp = m_set_tcp
+                            if s_cube is not None:
+                                wp_set_cube_center = s_cube
+
+                            wp_entry = {
+                                "pose_index": pose_idx,
+                                "capture_joints": r_joints,
+                                "capture_tcp": capture_tcp,
+                                "cube_center_6dof": msg.get("cube_center_pose_6dof"),
+                                "set_index": s_idx,
+                            }
+                            if m_place_joints is not None:
+                                wp_entry["place_joints"] = m_place_joints
+                            wp_list.append(wp_entry)
+
+                            if saved:
+                                print(f"[OK] Capture {pose_idx} saved")
+                            else:
+                                print(f"[SKIP] Capture {pose_idx} skipped")
+
+                        elif cmd == "detect":
+                            if gripper_cam_idx is None or gripper_cam_idx not in cams:
+                                resp = json.dumps({"ok": False, "reason": "no_gripper_cam"})
+                                try:
+                                    manual_sock.sendall(resp.encode("utf-8"))
+                                except OSError:
+                                    break
+                                continue
+                            if gripper_cam_idx not in cam_intrinsics:
+                                resp = json.dumps({"ok": False, "reason": "no_intrinsics"})
+                                try:
+                                    manual_sock.sendall(resp.encode("utf-8"))
+                                except OSError:
+                                    break
+                                continue
+
+                            g_color, g_depth, _ = cams[gripper_cam_idx].get_latest()
+                            if g_color is None:
+                                resp = json.dumps({"ok": False, "reason": "no_image"})
+                                try:
+                                    manual_sock.sendall(resp.encode("utf-8"))
+                                except OSError:
+                                    break
+                                continue
+
+                            g_K, g_D, g_depth_scale = cam_intrinsics[gripper_cam_idx]
+                            detect_info = detect_cube_markers_in_frame(
+                                g_color, cube,
+                                cube_ids=cfg.marker_ids,
+                                charuco=charuco,
+                                is_gripper=True,
+                                board_mask_pad_px=float(args.board_mask_pad_px),
+                            )
+                            det_ok, det_rv, det_tv, det_used = cube.solve_pnp_cube(
+                                detect_info["cube_image"], g_K, g_D, use_ransac=False, min_markers=1,
+                                reproj_thr_mean_px=10.0,
+                                min_aspect=float(args.gripper_cube_min_aspect),
+                                depth_u16=g_depth, depth_scale=g_depth_scale)
+
+                            if det_ok:
+                                resp = json.dumps({
+                                    "ok": True,
+                                    "tvec": det_tv.flatten().tolist(),
+                                    "rvec": det_rv.flatten().tolist(),
+                                    "used_ids": [int(x) for x in det_used],
+                                })
+                                print(f"[Detect] tvec=[{det_tv[0][0]:.4f}, {det_tv[1][0]:.4f}, {det_tv[2][0]:.4f}] ids={det_used}")
+                            else:
+                                resp = json.dumps({"ok": False, "reason": "detection_failed",
+                                                   "n_markers": len(det_used) if det_used else 0})
+                                print(
+                                    f"[Detect] Failed (cube_ids={det_used}, "
+                                    f"raw_ids={detect_info['raw_ids']}, mask={detect_info['board_mask_applied']})"
+                                )
+                            try:
+                                manual_sock.sendall(resp.encode("utf-8"))
+                            except OSError:
+                                break
+                        else:
+                            print(f"[ManualRobot] Unknown command: {cmd}")
+                except Exception as e:
+                    import traceback
+                    print(f"[ManualRobot] network thread crashed: {e}")
+                    traceback.print_exc()
+                finally:
+                    network_done.set()
+
+            net_thread = threading.Thread(target=network_loop, daemon=True)
+            net_thread.start()
+            if args.show:
+                print("[INFO] Live preview started (4-camera quad view)")
+
+            try:
+                # Main thread: cv2 preview만 담당. recv는 net_thread.
+                while not network_done.is_set():
+                    if args.show:
+                        live_frames = {}
+                        for ci, cam in cams.items():
+                            color, depth, ts_ms = cam.get_latest()
+                            if color is None:
+                                continue
+                            live_frames[ci] = build_frame_record(
+                                ci, color, depth, ts_ms,
+                                include_marker_poses=False,
+                                include_charuco_pose=False,
+                                log_pose_status=False,
+                            )
+
+                        if live_frames:
+                            quad = make_quad_image(live_frames, cam_order, cube, gripper_cam_idx)
+                            gate = evaluate_capture_gate(
+                                live_frames,
+                                capture_gate_cfg,
+                                gripper_cam_idx=gripper_cam_idx,
+                            )
+                            gate_lines = build_capture_gate_lines(gate, gripper_cam_idx, live_frames)
+                            gate_colors = [(0, 255, 0)] if gate["pass"] else [(0, 0, 255)]
+                            gate_colors = gate_colors + [(255, 255, 255)] * (len(gate_lines) - 1)
+                            quad = append_status_footer(quad, gate_lines, gate_colors)
+                            ph = int(quad.shape[0] * 0.6)
+                            pw = int(quad.shape[1] * 0.6)
+                            preview = cv2.resize(quad, (pw, ph))
+                            cv2.imshow("Capture Preview", preview)
+
+                        key = cv2.waitKey(50) & 0xFF
+                        if key == 27 or key == ord('q'):
+                            print("[ManualRobot] User quit preview.")
+                            user_quit.set()
+                            break
                     else:
-                        print(f"[ManualRobot] Unknown command: {cmd}")
+                        time.sleep(0.1)
 
             finally:
-                preview_running = False
-                manual_sock.close()
+                network_done.set()
+                user_quit.set()
+                try:
+                    manual_sock.shutdown(_sock.SHUT_RDWR)
+                except Exception:
+                    pass
+                try:
+                    manual_sock.close()
+                except Exception:
+                    pass
+                net_thread.join(timeout=2.0)
 
                 # Save capture_waypoints.json (mirror of robot server's file)
                 if wp_list:
@@ -1497,7 +1581,7 @@ def main():
                             2,
                         )
                     preview = cv2.vconcat([quad, footer])
-                    cv2.imshow("Robot Waypoint Step Mode", preview)
+                    cv2.imshow("Capture Preview", preview)
 
                     key = cv2.waitKey(30) & 0xFF
                     if key in (27, ord('q')):

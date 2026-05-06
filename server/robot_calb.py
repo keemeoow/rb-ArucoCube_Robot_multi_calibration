@@ -44,54 +44,6 @@
 
   --- 종료 ---
   q                 : 종료
-
-══════════════════════════════════════════════════════════════
-전체 파이프라인
-══════════════════════════════════════════════════════════════
-
-Step 1 -- 카메라 내부 파라미터 (intrinsics)
---------------------------------------------------------------
-  [PC]
-  python Step1_dump_all_intrinsics.py \
-    --out_dir ./intrinsics \
-    --gripper_serial <그리퍼_카메라_시리얼>
-
-Step 2 -- 큐브 놓으면서 촬영
---------------------------------------------------------------
-  수동으로 큐브 돌출부 중점에 정확히 잡은 상태에서 "set" 저장.
-  이후 이동 -> 놓기 -> 촬영 -> "undo set" 복귀 -> 잡기 반복.
-
-  - 그리퍼 카메라: ChArUco 보드 + ArUco 큐브 검출
-  - 고정 카메라: ArUco 큐브만 검출
-
-  [로봇-서버]
-  python robot_calb.py
-
-  [PC]
-  python Step2_to_capture_capture.py \
-    --root_folder ./data/session \
-    --intrinsics_dir ./intrinsics \
-    --use_robot --manual_robot \
-    --robot_ip 192.168.0.23 --robot_port 12348 \
-    --show --save_depth \
-    --min_markers 1 --min_cams_with_cube 1
-
-  플로우 (큐브 위치별 멀티 캘리브레이션):
-    1. 큐브를 바닥에 놓기
-    2. "set"          -> 큐브 위치 #N 저장 (TCP, 관절값, 큐브 중점)
-    3. 그리퍼 카메라 위치를 다양하게 이동
-    4. "c"            -> 촬영 (TCP, 관절값, set_index가 PC로 전송)
-    5. 3~4 반복 (같은 큐브 위치에서 여러 각도)
-    6. 큐브를 새 위치로 옮기고 2~5 반복
-    * PC에 capture_waypoints.json + meta.json 동시 저장
-
-Step 3 -- 캘리브레이션
---------------------------------------------------------------
-  [PC]
-  python Step3_to_calibration.py \
-    --root_folder ./data/session \
-    --intrinsics_dir ./intrinsics
-
 """
 
 

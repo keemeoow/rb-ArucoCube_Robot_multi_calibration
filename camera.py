@@ -6,6 +6,12 @@ Supports multiple cameras simultaneously.
 Each camera keeps a short ring buffer of (timestamp, color, depth) frames
 so callers can retrieve the frame closest to a target timestamp via
 `get_at()`, enabling software synchronization across multiple cameras.
+
+`start()` is resilient: on "Frame didn't arrive" timeout it performs a
+hardware reset of the device (by serial), waits for USB re-enumeration,
+rebuilds the pipeline, and retries up to 3 times. Warmup uses a longer
+10-second timeout to tolerate slow first-frame delivery on multi-camera
+USB hubs.
 """
 
 import threading
@@ -42,6 +48,15 @@ class RealSenseCamera:
         self.warmup_frames = int(warmup_frames)
         self.buffer_size = max(1, int(buffer_size))
 
+        self._lock = threading.Lock()
+        self._running = False
+        self._thread: Optional[threading.Thread] = None
+        self._buf: deque = deque(maxlen=self.buffer_size)
+
+        self._build_pipeline()
+
+    def _build_pipeline(self):
+        """(Re)create pipeline/config/align — needed after hardware_reset()."""
         self.pipeline = rs.pipeline()
         self.cfg = rs.config()
         self.cfg.enable_device(self.serial)
@@ -57,10 +72,30 @@ class RealSenseCamera:
             else None
         )
 
-        self._lock = threading.Lock()
-        self._running = False
-        self._thread: Optional[threading.Thread] = None
-        self._buf: deque = deque(maxlen=self.buffer_size)
+    def _hardware_reset(self, wait_s: float = 6.0):
+        """Hardware-reset device by serial and wait for USB re-enumeration."""
+        try:
+            ctx = rs.context()
+            for dev in ctx.query_devices():
+                if dev.get_info(rs.camera_info.serial_number) == self.serial:
+                    dev.hardware_reset()
+                    break
+        except Exception:
+            pass
+
+        deadline = time.time() + wait_s
+        while time.time() < deadline:
+            time.sleep(0.5)
+            try:
+                serials = [
+                    d.get_info(rs.camera_info.serial_number)
+                    for d in rs.context().query_devices()
+                ]
+                if self.serial in serials:
+                    time.sleep(0.8)  # extra settle time after re-enumeration
+                    return
+            except Exception:
+                continue
 
     @staticmethod
     def list_devices() -> Dict[str, str]:
@@ -73,13 +108,35 @@ class RealSenseCamera:
             out[serial] = name
         return out
 
-    def start(self):
-        self.pipeline.start(self.cfg)
-        for _ in range(self.warmup_frames):
-            self.pipeline.wait_for_frames()
-        self._running = True
-        self._thread = threading.Thread(target=self._loop, daemon=True)
-        self._thread.start()
+    def start(self, max_attempts: int = 3, warmup_timeout_ms: int = 10000):
+        last_err = None
+        for attempt in range(max_attempts):
+            try:
+                if attempt > 0:
+                    print(f"[WARN] cam {self.serial}: retrying after hardware reset "
+                          f"(attempt {attempt + 1}/{max_attempts})")
+                    self._hardware_reset()
+                    self._build_pipeline()
+                self.pipeline.start(self.cfg)
+                for _ in range(self.warmup_frames):
+                    self.pipeline.wait_for_frames(timeout_ms=warmup_timeout_ms)
+                self._running = True
+                self._thread = threading.Thread(target=self._loop, daemon=True)
+                self._thread.start()
+                return
+            except RuntimeError as e:
+                last_err = e
+                print(f"[WARN] cam {self.serial}: start failed "
+                      f"(attempt {attempt + 1}/{max_attempts}): {e}")
+                try:
+                    self.pipeline.stop()
+                except Exception:
+                    pass
+        raise RuntimeError(
+            f"Camera {self.serial} failed to start after {max_attempts} attempts "
+            f"(last error: {last_err}). Try unplugging/replugging USB or check "
+            f"`rs-enumerate-devices` output."
+        )
 
     def stop(self):
         self._running = False

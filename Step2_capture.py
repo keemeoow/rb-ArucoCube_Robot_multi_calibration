@@ -848,8 +848,11 @@ def main():
             print(f"[WARN] No intrinsics for cam{ci}. Per-marker PnP will be skipped.")
 
     # ─── 카메라 시작 ───
+    # USB 협상 안정화를 위해 카메라 간 0.8초 간격으로 순차 시작
     cams: Dict[int, RealSenseCamera] = {}
-    for ci, serial in idx_serial_pairs:
+    for i, (ci, serial) in enumerate(idx_serial_pairs):
+        if i > 0:
+            time.sleep(0.8)
         cam = RealSenseCamera(
             serial=serial,
             width=args.width,

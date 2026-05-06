@@ -29,6 +29,19 @@
   undo <axis...>    : 특정 축만 되돌리기 (undo x ry rz)
   undo set          : 어디서든 set 위치로 이동
 
+  --- 자동화 ---
+  start              : 멀티-set 자동 캡처 시작 (PC에서 waypoints 받음)
+  start <path>       : 로컬 파일에서 waypoints 로드 (테스트용)
+  start - <spd>      : PC에서 받기 + 속도 지정
+  start <path> <spd> : 로컬 + 속도 지정
+                      사전: 큐브가 그리퍼에 잡혀 있어야 함.
+                      플로우: PC로부터 capture_waypoints.json 받음
+                              -> +Z 30mm 초기 lift
+                              -> set의 place_joints로 이동 -> 그리퍼 오픈
+                              -> +Z 100mm 클리어런스 -> 각 capture_joints 촬영
+                              -> 다음 set로 큐브 이동 (re-grip + +Z 30mm transit lift)
+                              -> 반복.
+
   --- 종료 ---
   q                 : 종료
 
@@ -281,14 +294,219 @@ def do_capture(conn, pose_index, set_cube_center=None, set_index=None,
 
 # ── Auto capture ──
 
-def run_auto_capture(rb, conn, waypoint_file, speed=30):
-    with open(waypoint_file, 'r') as f:
-        data = json.load(f)
+def request_waypoints_from_pc(conn, timeout_sec=10.0):
+    """Request capture_waypoints.json content from the PC over the socket.
 
-    if data.get('format_version') == 2 and 'placements' in data:
+    Returns the parsed dict on success, or None on failure / timeout.
+    """
+    print 'Requesting waypoints from PC...'
+    send_json(conn, {"command": "request_waypoints"})
+    conn.settimeout(timeout_sec)
+    try:
+        resp = recv_json(conn)
+    except socket.timeout:
+        print '[ERROR] PC did not respond within {}s'.format(timeout_sec)
+        conn.settimeout(None)
+        return None
+    finally:
+        try:
+            conn.settimeout(None)
+        except Exception:
+            pass
+    if not isinstance(resp, dict):
+        print '[ERROR] invalid response from PC'
+        return None
+    if resp.get('status') != 'ok':
+        print '[ERROR] PC reported error: {}'.format(resp.get('reason', 'unknown'))
+        return None
+    data = resp.get('waypoints_data')
+    if not isinstance(data, dict):
+        print '[ERROR] PC response missing waypoints_data'
+        return None
+    n_wps = len(data.get('waypoints', []))
+    print '  received {} waypoints from PC'.format(n_wps)
+    return data
+
+
+def run_auto_capture(rb, conn, waypoint_file=None, speed=30):
+    """Run auto capture. If waypoint_file is None or empty, request waypoints
+    from PC over the socket. Otherwise, load from local filesystem (legacy)."""
+    if not waypoint_file:
+        data = request_waypoints_from_pc(conn)
+        if data is None:
+            return
+    else:
+        with open(waypoint_file, 'r') as f:
+            data = json.load(f)
+
+    # Multi-set joint-based: waypoints[] has per-waypoint set_index (5+ sets)
+    waypoints = data.get('waypoints', [])
+    if waypoints and any('set_index' in wp for wp in waypoints):
+        _run_auto_multiset(rb, conn, data, speed)
+    elif data.get('format_version') == 2 and 'placements' in data:
         _run_auto_v2(rb, conn, data, speed)
     else:
         _run_auto_v1(rb, conn, data, speed)
+
+
+def _run_auto_multiset(rb, conn, data, speed,
+                        z_clearance_mm=100.0,
+                        z_transit_lift_mm=30.0):
+    """Multi-set joint-based auto capture (start-command flow).
+
+    Per set in capture_waypoints.json (waypoints[].set_index grouping):
+      1. Approach: move via place_joints + z_transit_lift_mm (line down) so the
+         cube lowers gently to the floor instead of arriving via direct joint
+         interpolation (avoids floor contact during transit).
+      2. Open gripper -> cube released on the floor.
+      3. Move up by z_clearance_mm in +Z direction (line motion in TCP frame).
+      4. For each waypoint in this set: move to capture_joints, capture.
+      5. If a next set exists: return to place_joints, close gripper, line-lift
+         +z_transit_lift_mm before the next set's joint transit (cube clears
+         the floor every time it is moved between sets).
+    """
+    waypoints = data.get('waypoints', [])
+    if not waypoints:
+        print '[ERROR] no waypoints'
+        send_json(conn, {"command": "quit"})
+        return
+
+    # Group by set_index, preserving first-appearance order.
+    sets_order = []
+    by_set = {}
+    for wp in waypoints:
+        sidx = wp.get('set_index')
+        if sidx is None:
+            print '[ERROR] waypoint pose_index={} missing set_index'.format(wp.get('pose_index'))
+            send_json(conn, {"command": "quit"})
+            return
+        if 'place_joints' not in wp or 'capture_joints' not in wp:
+            print '[ERROR] waypoint pose_index={} missing place_joints/capture_joints'.format(wp.get('pose_index'))
+            send_json(conn, {"command": "quit"})
+            return
+        if sidx not in by_set:
+            by_set[sidx] = []
+            sets_order.append(sidx)
+        by_set[sidx].append(wp)
+
+    total_caps = len(waypoints)
+    n_sets = len(sets_order)
+    print ''
+    print '=========================================='
+    print '  Multi-Set Auto Capture'
+    print '  - sets:     {} ({})'.format(n_sets, sets_order)
+    print '  - captures: {}'.format(total_caps)
+    print '  - speed:    {}'.format(speed)
+    print '  - +Z capture clearance: {}mm'.format(z_clearance_mm)
+    print '  - +Z transit lift:      {}mm'.format(z_transit_lift_mm)
+    print '=========================================='
+    print ''
+    print 'PRECONDITION: cube must be gripped before starting.'
+    print 'Robot will move to set {}\'s place_joints first, then release the cube.'.format(sets_order[0])
+    raw_input('Press ENTER to confirm cube is gripped and start...')
+
+    rb.override(speed)
+    success = 0
+    skipped = 0
+
+    # Pre-loop: cube is on the floor with the gripper around it (user just placed
+    # it there). Lift +z_transit_lift_mm before the first joint transit to make
+    # sure the cube clears the floor on the way to set 0's place_joints.
+    print '[Auto] +Z {:.0f}mm initial transit lift (cube clears floor)'.format(z_transit_lift_mm)
+    try:
+        cur = Position(*rb.getpos().pos2list()[:6])
+        rb.line(cur.offset(dz=z_transit_lift_mm))
+    except Exception as e:
+        print '[WARN] initial transit lift failed: {} (continuing)'.format(e)
+    time.sleep(0.3)
+
+    for si, sidx in enumerate(sets_order):
+        wps = by_set[sidx]
+        place_j = wps[0]['place_joints']
+
+        print ''
+        print '======== SET {}/{} (set_index={}, {} captures) ========'.format(
+            si + 1, n_sets, sidx, len(wps))
+
+        # Step 1: move to place_joints (cube placement position). Robot is
+        # already lifted +z_transit_lift_mm from the previous set transit (or
+        # is at the start position holding the cube), so the joint motion to
+        # place_joints brings the cube down to the floor naturally.
+        print '[Auto] -> set {} place_joints'.format(sidx)
+        rb.move(Joint(*place_j[:6]))
+        time.sleep(0.5)
+
+        # Step 2: open gripper -> cube released.
+        print '[Auto] gripper OPEN (release cube on floor)'
+        gripper_open()
+        time.sleep(0.3)
+
+        # Step 3: clearance up in +Z (capture clearance — bigger than transit).
+        print '[Auto] -> +Z {:.0f}mm clearance'.format(z_clearance_mm)
+        try:
+            cur = Position(*rb.getpos().pos2list()[:6])
+            rb.line(cur.offset(dz=z_clearance_mm))
+        except Exception as e:
+            print '[WARN] +Z clearance failed: {} (continuing)'.format(e)
+        time.sleep(0.5)
+
+        # Step 4: visit each capture pose.
+        for wi, wp in enumerate(wps):
+            cap_j = wp['capture_joints']
+            pose_idx = wp.get('pose_index', wi)
+            print '  -- capture {}/{} pose_index={} --'.format(
+                wi + 1, len(wps), pose_idx)
+            try:
+                rb.move(Joint(*cap_j[:6]))
+            except Exception as e:
+                print '  [WARN] move failed: {}. Skipping.'.format(e)
+                skipped += 1
+                continue
+            time.sleep(0.5)
+
+            status, _, _ = do_capture(
+                conn, pose_idx,
+                set_cube_center=data.get('set_cube_center'),
+                set_index=sidx,
+                set_joints=place_j,
+                set_tcp=None,
+                place_joints=place_j,
+            )
+            if status is None:
+                print '[Auto] disconnected, stopping.'
+                return
+            if status == 'success':
+                success += 1
+                print '  [Auto] -> OK'
+            else:
+                skipped += 1
+                print '  [Auto] -> SKIPPED'
+
+        # Step 5: if more sets remain, re-grip the cube and lift before transit.
+        if si < n_sets - 1:
+            print '[Auto] returning to place_joints to re-grip cube...'
+            rb.move(Joint(*place_j[:6]))
+            time.sleep(0.3)
+            gripper_close()
+            time.sleep(0.3)
+            # Lift +Z transit_lift_mm so the cube clears the floor during the
+            # joint transit to the next set's place_joints.
+            print '[Auto] +Z {:.0f}mm transit lift (cube clears floor)'.format(z_transit_lift_mm)
+            try:
+                cur = Position(*rb.getpos().pos2list()[:6])
+                rb.line(cur.offset(dz=z_transit_lift_mm))
+            except Exception as e:
+                print '[WARN] transit lift failed: {} (continuing)'.format(e)
+            time.sleep(0.3)
+
+    # Final state: gripper open at last set's place_joints (cube on floor).
+    send_json(conn, {"command": "quit"})
+    print ''
+    print '=========================================='
+    print '  Multi-Set Auto Complete'
+    print '  - success: {}/{}'.format(success, total_caps)
+    print '  - skipped: {}'.format(skipped)
+    print '=========================================='
 
 
 def _run_auto_v1(rb, conn, data, speed):
@@ -534,6 +752,9 @@ def main():
         print '  c: capture  set: save TCP+cube'
         print '  go: grip open  gc: grip close'
         print '  undo [N|all|<axes>|set]  q: quit'
+        print '  start                 -> auto capture (PC sends waypoints)'
+        print '  start <path> [speed]  -> auto capture (local file)'
+        print '    (cube must be gripped before start)'
         print '=========================================='
         print ''
 
@@ -552,6 +773,29 @@ def main():
             # Quit
             if cl == 'q':
                 send_json(conn, {"command": "quit"})
+                break
+
+            # Start: multi-set auto capture.
+            #   "start"         -> request waypoints from PC over socket
+            #   "start <path>"  -> load local file (legacy/testing)
+            #   "start <path> <speed>" or "start - <speed>" supported
+            elif cl.startswith('start'):
+                parts = cmd.split(None, 2)
+                wp_file = None
+                spd = 30
+                if len(parts) >= 2 and parts[1] != '-':
+                    wp_file = parts[1]
+                if len(parts) >= 3:
+                    try:
+                        spd = int(parts[2])
+                    except ValueError:
+                        print '[ERROR] invalid speed: {}'.format(parts[2])
+                        continue
+                try:
+                    run_auto_capture(rb, conn, wp_file, spd)
+                except IOError as e:
+                    print '[ERROR] cannot read {}: {}'.format(wp_file, e)
+                    continue
                 break
 
             # Show

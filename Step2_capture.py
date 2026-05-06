@@ -1321,6 +1321,37 @@ def main():
                             print("[ManualRobot] Server sent quit.")
                             break
 
+                        if cmd == "request_waypoints":
+                            wp_path = os.path.join(args.root_folder, "capture_waypoints.json")
+                            print(f"[ManualRobot] Robot requested waypoints. Sending {wp_path}")
+                            try:
+                                with open(wp_path, "r") as wf:
+                                    wp_data = json.load(wf)
+                                resp_msg = json.dumps({
+                                    "action": "waypoints",
+                                    "status": "ok",
+                                    "waypoints_data": wp_data,
+                                })
+                                manual_sock.sendall(resp_msg.encode("utf-8"))
+                                print(f"[ManualRobot]   sent {len(wp_data.get('waypoints', []))} waypoints")
+                            except FileNotFoundError:
+                                err = json.dumps({
+                                    "action": "waypoints",
+                                    "status": "error",
+                                    "reason": f"file_not_found: {wp_path}",
+                                })
+                                manual_sock.sendall(err.encode("utf-8"))
+                                print(f"[ManualRobot]   ERROR: file not found")
+                            except Exception as e:
+                                err = json.dumps({
+                                    "action": "waypoints",
+                                    "status": "error",
+                                    "reason": str(e),
+                                })
+                                manual_sock.sendall(err.encode("utf-8"))
+                                print(f"[ManualRobot]   ERROR: {e}")
+                            continue
+
                         if cmd == "capture":
                             capture_tcp = msg.get("capture_pose_6dof")
                             pose_idx = msg.get("pose_index", event_id)

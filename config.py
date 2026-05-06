@@ -2,47 +2,14 @@
 """
 캘리브레이션 파이프라인 공통 설정.
 
-이 파일의 기본 CubeConfig는 현재 프로젝트에서 계속 재사용하는 단일 기준 큐브 정의다.
+이 파일의 CubeConfig dataclass가 큐브 모델의 단일 source of truth다.
 동일한 물리 큐브를 계속 사용할 경우, 별도 override 없이 이 정의를 그대로 사용한다.
 예외적으로 다른 큐브/실험 정의가 필요할 때만 명시적인 JSON override를 사용한다.
 """
 
-import copy
-import json
-import os
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
 import numpy as np
-
-
-_CANONICAL_CUBE_CONFIG_FALLBACK_DATA = {
-    "cube_side_m": 0.03,
-    "marker_size_m": 0.022,
-    "dictionary_name": "DICT_4X4_50",
-    "marker_ids": [0, 1, 2, 3, 4],
-    "id_to_face": {
-        "0": "+Z",
-        "1": "+X",
-        "2": "+Y",
-        "3": "-X",
-        "4": "-Y",
-    },
-    "corner_reorder": {
-        "0": [0, 1, 2, 3],
-        "1": [0, 1, 2, 3],
-        "2": [0, 1, 2, 3],
-        "3": [0, 1, 2, 3],
-        "4": [0, 1, 2, 3],
-    },
-    "face_roll_deg": {
-        "0": 0.0,
-        "1": 270.0,
-        "2": 0.0,
-        "3": 90.0,
-        "4": 180.0,
-    },
-    "marker_pose_4x4": {},
-}
 
 
 @dataclass
@@ -87,45 +54,13 @@ class CubeConfig:
     marker_pose_4x4: Dict[int, list] = field(default_factory=dict)
 
 
-def get_default_cube_config_json_path() -> str:
-    repo_root = os.path.dirname(os.path.abspath(__file__))
-    return os.path.join(repo_root, "configs", "cube_models", "cube_model_hybrid_v1.json")
-
-
-def _load_canonical_cube_config_data() -> Tuple[dict, str]:
-    path = get_default_cube_config_json_path()
-    try:
-        with open(path, "r") as f:
-            data = json.load(f)
-        if isinstance(data, dict):
-            return data, f"project_json_default:{path}"
-    except Exception:
-        pass
-    return copy.deepcopy(_CANONICAL_CUBE_CONFIG_FALLBACK_DATA), "config_py_fallback"
-
-
 def get_default_cube_config() -> CubeConfig:
-    """Return a fresh copy of the validated reusable cube definition."""
-    data, _ = _load_canonical_cube_config_data()
-    data = copy.deepcopy(data)
-    return CubeConfig(
-        cube_side_m=float(data["cube_side_m"]),
-        marker_size_m=float(data["marker_size_m"]),
-        dictionary_name=str(data["dictionary_name"]),
-        marker_ids=tuple(int(x) for x in data["marker_ids"]),
-        id_to_face={int(k): str(v) for k, v in data["id_to_face"].items()},
-        corner_reorder={int(k): [int(x) for x in v] for k, v in data["corner_reorder"].items()},
-        face_roll_deg={int(k): float(v) for k, v in data["face_roll_deg"].items()},
-        marker_pose_4x4={
-            int(k): [[float(x) for x in row] for row in value]
-            for k, value in data["marker_pose_4x4"].items()
-        },
-    )
+    """Return a fresh copy of the canonical cube definition (CubeConfig dataclass defaults)."""
+    return CubeConfig()
 
 
 def get_default_cube_config_source() -> str:
-    _, source = _load_canonical_cube_config_data()
-    return source
+    return "config_py:CubeConfig"
 
 
 @dataclass

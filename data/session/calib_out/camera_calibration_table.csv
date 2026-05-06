@@ -1,0 +1,6 @@
+entity,role,transform,solve_method,status,x_mm,y_mm,z_mm,rz_deg,ry_deg,rx_deg,error_trans_mm,error_rot_deg,support_inliers,support_total,status_reason,notes
+cam2,gripper,T_gripper_cam,hand-eye:DANIILIDIS,PASS,32.144,31.734,-113.653,179.510,-0.436,12.852,6.456,0.824,18,19,hand-eye DANIILIDIS: 6.46mm / 0.824deg,"gripper->camera extrinsic, 19 ChArUco frames"
+cam0,fixed,T_base_C0,board-based,FAIL,-404.767,150.876,107.930,-42.517,-0.467,-101.499,6.661,0.205,11,19,cube_anchor_primary+board_refined(a=0.70): 6.66mm / 0.205deg,fixed camera extrinsic from ChArUco board
+cam1,fixed,T_base_C1,board-based,FAIL,352.418,569.542,100.183,93.095,-1.925,-105.488,2.308,0.044,9,19,cube_anchor_primary: 2.31mm / 0.044deg,fixed camera extrinsic from ChArUco board
+cam3,fixed,T_base_C3,cube_anchor_primary+board_refined(a=0.45),PASS,-248.582,960.001,119.289,-159.166,3.527,-99.954,4.313,0.387,14,19,cube_anchor_primary+board_refined(a=0.45) support=19/19 signature=[]/n/a + verified provisional,fallback from cube anchor support=19/19
+cube,object,T_base_O,cube_consensus_fixed_cams+set_prior_refined,FAIL,-108.240,462.216,0.431,174.096,-0.296,0.545,39.885,47.237,19,19,compatibility average across 7 set_index groups; use T_base_O_set*,compatibility average across set anchors

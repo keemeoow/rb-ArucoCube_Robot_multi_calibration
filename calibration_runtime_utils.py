@@ -35,11 +35,74 @@ def candidate_face_weight(cand: dict, single_face_weight: float = 0.35) -> float
     return float(single_face_weight) if candidate_face_count(cand) <= 1 else 1.0
 
 
+def observation_weight(cand: dict,
+                       single_face_weight: float = 1.0,
+                       depth_penalty_factor: float = 0.15,
+                       depth_penalty_max: float = 6.0) -> float:
+    """Combined per-candidate weight for multi-camera consensus.
+
+    n_markers² scaling means a 4-marker observation has 16× the weight of a
+    single-marker observation — single-marker contributes only when it is the
+    only data available, otherwise it is effectively a tie-breaker.
+    Components:
+      - 1/err_mean    : reprojection accuracy
+      - n_marker²     : marker support (1, 4, 9, 16 for 1..4 markers)
+      - face weight   : legacy single-face down-weight (single_face_weight=1 = no extra penalty)
+      - depth penalty : down-weight when depth disagrees with the pose
+    """
+    err_mean = max(float(cand.get("err_mean", 1.0)), 1e-9)
+    n_markers = max(int(candidate_face_count(cand)), 1)
+    marker_support = float(n_markers * n_markers)
+    face_w = candidate_face_weight(cand, single_face_weight)
+    depth_p = candidate_depth_penalty(cand, missing_penalty=float(depth_penalty_max))
+    return marker_support * face_w / err_mean / (1.0 + float(depth_penalty_factor) * depth_p)
+
+
+def robust_consensus_weights(rows: List[dict],
+                             pose_avg_fn,
+                             irls_iters: int = 2,
+                             dampening_mm: float = 5.0,
+                             dampening_deg: float = 2.0) -> Tuple[List[float], np.ndarray]:
+    """IRLS-style robust re-weighting for multi-camera consensus.
+
+    Each row is {"T_base_obj": (4,4), "weight": float}. After 'irls_iters' passes
+    of (compute weighted pose → re-weight by 1/(1+dt/dampening_mm+dr/dampening_deg)),
+    return the final weights and consensus pose. Cameras far from the consensus get
+    automatically down-weighted without being excluded.
+    """
+    if len(rows) < 2:
+        ws = [float(r["weight"]) for r in rows]
+        T_avg = pose_avg_fn([r["T_base_obj"] for r in rows], ws) if rows else None
+        return ws, T_avg
+    Ts = [r["T_base_obj"] for r in rows]
+    base_ws = [float(r["weight"]) for r in rows]
+    ws = list(base_ws)
+    T_avg = pose_avg_fn(Ts, ws)
+    for _ in range(max(int(irls_iters), 1)):
+        new_ws = []
+        for T, bw in zip(Ts, base_ws):
+            dt_mm = float(np.linalg.norm(T[:3, 3] - T_avg[:3, 3]) * 1000.0)
+            dr = rotation_error_deg(T[:3, :3], T_avg[:3, :3])
+            damp = 1.0 / (1.0 + dt_mm / max(dampening_mm, 1e-6) + dr / max(dampening_deg, 1e-6))
+            new_ws.append(bw * damp)
+        ws = new_ws
+        T_avg = pose_avg_fn(Ts, ws)
+    return ws, T_avg
+
+
 def filter_candidates_for_camera_role(candidates: List[dict],
                                       cam_idx: int,
                                       gripper_cam_idx: Optional[int],
-                                      min_fixed_faces: int = 2,
+                                      min_fixed_faces: int = 1,
                                       max_fixed_err: float = 2.75) -> List[dict]:
+    """Per-camera candidate filter.
+
+    Policy: a fixed cam with even 1 visible marker contributes to calibration
+    (cube design supports single-marker pose via face mapping + IPPE+depth
+    disambiguation). Reproj quality gate (max_fixed_err) still applies.
+    Influence of single-marker observations is suppressed downstream by
+    n_markers² weighting and the consensus pruning threshold (7mm/1°).
+    """
     filtered: List[dict] = []
     is_gripper = gripper_cam_idx is not None and int(cam_idx) == int(gripper_cam_idx)
     max_face_count = max((candidate_face_count(cand) for cand in candidates), default=0)
@@ -124,8 +187,10 @@ def cube_selection_profile_kwargs(profile: str = "default",
         "score_prior_weight": 4.0,
         "prior_translation_divisor_mm": 6.0,
         "prior_rotation_divisor_deg": 2.0,
-        "max_consensus_translation_mm": 7.0,
-        "max_consensus_rotation_deg": 1.0,
+        # Tightened from 7.0/1.0 to 4.0/0.7 to drop borderline outliers
+        # that previously snuck through and degraded pose_repeatability max.
+        "max_consensus_translation_mm": 4.0,
+        "max_consensus_rotation_deg": 0.7,
         "min_consensus_cams": 2,
     }
 
@@ -574,13 +639,7 @@ def _event_candidate_pose_rows(cap: dict,
         T_base_cam = get_event_base_camera_transform(cap, int(ci), transforms, gripper_cam_idx)
         if T_base_cam is None:
             continue
-        err_mean = max(float(cand.get("err_mean", 1.0)), 1e-9)
-        depth_penalty = candidate_depth_penalty(cand, missing_penalty=6.0)
-        weight = (
-            candidate_face_weight(cand, single_face_weight)
-            / err_mean
-            / (1.0 + 0.15 * depth_penalty)
-        )
+        weight = observation_weight(cand, single_face_weight=single_face_weight)
         rows.append({
             "cam_idx": int(ci),
             "cand": cand,
@@ -598,7 +657,20 @@ def _prune_inconsistent_event_selection(cap: dict,
                                         max_consensus_translation_mm: float,
                                         max_consensus_rotation_deg: float,
                                         min_consensus_cams: int,
-                                        prune_score_rot_weight: float = 5.0) -> Dict[int, dict]:
+                                        prune_score_rot_weight: float = 5.0,
+                                        soft_trim_min_cams: int = 4,
+                                        soft_trim_mad_threshold: float = 2.0,
+                                        soft_trim_min_dt_mm: float = 2.5) -> Dict[int, dict]:
+    """Two-phase pruning.
+
+    Phase 1 (HARD): drop cameras that violate max_consensus_*. Iterates until
+    all surviving cameras agree within the threshold or min_consensus_cams remain.
+
+    Phase 2 (SOFT, NEW): when 4+ cameras still agree, MAD-detect a single outlier
+    that is significantly worse than the rest (median + 2*1.4826*MAD) and drop it.
+    Improves pose_repeatability max by trimming the noisiest contributor in
+    high-coverage events without losing data in low-coverage events.
+    """
     if len(selected) < 2:
         return selected
     if max_consensus_translation_mm <= 0.0 and max_consensus_rotation_deg <= 0.0:
@@ -607,6 +679,7 @@ def _prune_inconsistent_event_selection(cap: dict,
     active = {int(ci): cand for ci, cand in selected.items()}
     min_keep = max(int(min_consensus_cams), 2)
 
+    # ── Phase 1: hard threshold pruning ──
     for _ in range(max(len(active), 1)):
         rows = _event_candidate_pose_rows(cap, active, transforms, gripper_cam_idx, single_face_weight)
         if len(rows) < 2:
@@ -643,6 +716,41 @@ def _prune_inconsistent_event_selection(cap: dict,
             ),
         )
         active.pop(int(worst["cam_idx"]), None)
+
+    # ── Phase 2: soft MAD-based trimming when 4+ cams remain ──
+    for _ in range(max(len(active), 1)):
+        if len(active) < int(soft_trim_min_cams):
+            break
+        rows = _event_candidate_pose_rows(cap, active, transforms, gripper_cam_idx, single_face_weight)
+        if len(rows) < 3:
+            break
+        T_ref = weighted_pose_average(
+            [row["T_base_obj"] for row in rows],
+            [row["weight"] for row in rows],
+        )
+        residuals = []
+        for row in rows:
+            T_evt = row["T_base_obj"]
+            residuals.append({
+                "cam_idx": int(row["cam_idx"]),
+                "dt_mm": float(np.linalg.norm(T_evt[:3, 3] - T_ref[:3, 3]) * 1000.0),
+                "dr_deg": rotation_error_deg(T_evt[:3, :3], T_ref[:3, :3]),
+            })
+        dts = np.array([r["dt_mm"] for r in residuals], dtype=np.float64)
+        med = float(np.median(dts))
+        mad = float(np.median(np.abs(dts - med)))
+        # If everything tightly clustered, nothing to trim.
+        if mad < 0.3:
+            break
+        threshold = med + float(soft_trim_mad_threshold) * 1.4826 * mad
+        worst_local = int(np.argmax(dts))
+        if dts[worst_local] <= threshold:
+            break
+        if dts[worst_local] < float(soft_trim_min_dt_mm):
+            break  # outlier but absolute size still small — keep
+        if len(active) <= min_keep:
+            break
+        active.pop(int(residuals[worst_local]["cam_idx"]), None)
 
     return active
 

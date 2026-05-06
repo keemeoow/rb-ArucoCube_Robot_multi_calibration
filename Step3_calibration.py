@@ -260,9 +260,94 @@ def marker_aspect_ratio(img_pts: np.ndarray) -> float:
     return float(min(edge_w, edge_h) / (max(edge_w, edge_h) + 1e-6))
 
 
+def refine_fixed_cams_with_set_anchors(
+    meta: dict,
+    pnp_obs: Dict[int, Dict[int, dict]],
+    T_base_Ci: Dict[int, np.ndarray],
+    fixed_cam_ids: List[int],
+    T_B_O_by_set: Dict[int, np.ndarray],
+    min_events_per_cam: int = 3,
+    max_delta_trans_mm: float = 15.0,
+    max_delta_rot_deg: float = 3.0,
+):
+    """Set-consistency refinement (single pass, conservative).
+
+    Strategy:
+      - Use the existing per-set T_base_O[set] as a FIXED anchor (computed
+        already in Step3 from multi-cam consensus).
+      - For each fixed cam, candidate T_base_Ci = T_B_O[set] @ inv(T_C_O[event]).
+        Average across all events in all sets with n_markers² weighting.
+      - Only adopt the refinement if it does not move T_base_Ci by more than
+        max_delta_trans_mm or max_delta_rot_deg from its starting value
+        (guard against degenerate cases like single-marker-dominated cams).
+
+    Returns (refined_T_base_Ci, T_B_O_by_set unchanged, diag).
+    """
+    refined_cams: Dict[int, np.ndarray] = {}
+    diag: Dict[str, Any] = {"per_cam": {}}
+
+    events_by_set: Dict[int, List[int]] = defaultdict(list)
+    for cap in meta.get("captures", []):
+        eid = int(cap.get("event_id", -1))
+        if eid < 0:
+            continue
+        sidx = get_capture_set_index(cap)
+        if sidx is None:
+            continue
+        events_by_set[int(sidx)].append(eid)
+
+    for ci in fixed_cam_ids:
+        ci = int(ci)
+        if ci not in T_base_Ci:
+            continue
+        cands: List[np.ndarray] = []
+        ws: List[float] = []
+        for sidx, eids in events_by_set.items():
+            if int(sidx) not in T_B_O_by_set:
+                continue
+            T_anchor = np.asarray(T_B_O_by_set[int(sidx)], dtype=np.float64)
+            for eid in eids:
+                obs = pnp_obs.get(ci, {}).get(int(eid))
+                if obs is None:
+                    continue
+                T_C_O = np.asarray(obs.get("T_C_O"), dtype=np.float64)
+                if T_C_O.shape != (4, 4) or not np.all(np.isfinite(T_C_O)):
+                    continue
+                T_cand = T_anchor @ inv_T(T_C_O)
+                cands.append(T_cand)
+                ws.append(candidate_weight(obs))
+
+        T_old = np.asarray(T_base_Ci[ci], dtype=np.float64)
+        if len(cands) < int(min_events_per_cam):
+            refined_cams[ci] = T_old
+            diag["per_cam"][f"T_base_C{ci}"] = {"adopted": False, "reason": "insufficient_events",
+                                                 "n_events": int(len(cands))}
+            continue
+
+        T_new, st = robust_weighted_se3_average(cands, ws, return_stats=True)
+        dt_change = float(np.linalg.norm(T_new[:3, 3] - T_old[:3, 3]) * 1000.0)
+        dr_change = rotation_error_deg(T_new[:3, :3], T_old[:3, :3])
+        adopt = (dt_change <= float(max_delta_trans_mm) and dr_change <= float(max_delta_rot_deg))
+        refined_cams[ci] = T_new if adopt else T_old
+        diag["per_cam"][f"T_base_C{ci}"] = {
+            "adopted": bool(adopt),
+            "n_events": int(len(cands)),
+            "delta_trans_mm": dt_change,
+            "delta_rot_deg": dr_change,
+            "trans_std_mm": float(st.get("translation_std_mm", 0.0)),
+            "rot_std_deg": float(st.get("rotation_std_deg", 0.0)),
+            "reason": "adopted" if adopt else "delta_exceeds_guard",
+        }
+
+    return refined_cams, T_B_O_by_set, diag
+
+
 def candidate_weight(cand: dict, single_face_scale: float = 0.35) -> float:
+    # n_markers² weighting: single-marker observations are tie-breakers only.
+    # 4-marker observation has 16× the weight of a 1-marker observation,
+    # plus an additional single_face_scale (0.35) penalty on top.
     face_count = max(len(set(int(x) for x in cand.get("used_ids", []))), 1)
-    weight = face_count / max(float(cand.get("err_mean", 1.0)), 1e-9)
+    weight = (face_count * face_count) / max(float(cand.get("err_mean", 1.0)), 1e-9)
     if face_count <= 1:
         weight *= float(single_face_scale)
     if bool(cand.get("depth_valid")) and cand.get("depth_plane_mean_mm") is not None:
@@ -1285,7 +1370,12 @@ def main():
     parser.add_argument("--handeye_method", type=str, default="AUTO")
     parser.add_argument("--gripper_cube_min_markers", type=int, default=1)
     parser.add_argument("--gripper_cube_min_aspect", type=float, default=0.35)
-    parser.add_argument("--event_anchor_min_cams", type=int, default=2)
+    parser.add_argument("--fixed_cube_min_aspect", type=float, default=0.0,
+                        help="Reject markers seen at aspect ratio < this from fixed cams. "
+                             "Higher values drop oblique markers but tested 0.5 hurt accuracy by 90% on real data.")
+    parser.add_argument("--event_anchor_min_cams", type=int, default=2,
+                        help="Minimum cameras with cube visible per event for cube-anchor inclusion. "
+                             "Tested 3 — caused -22%% pose_rep_max and 5x HE pos std (too few events for hand-eye).")
     parser.add_argument("--gripper_board_blend_alpha", type=float, default=0.8)
     parser.add_argument("--common_object_mode", type=str, default="cube_primary",
                         choices=["cube_primary", "board_primary"])
@@ -1380,7 +1470,7 @@ def main():
                 continue
             max_err = 5.0 if ci == gripper_cam_idx else 3.0
             min_markers = args.gripper_cube_min_markers if ci == gripper_cam_idx else 1
-            min_aspect = args.gripper_cube_min_aspect if ci == gripper_cam_idx else 0.0
+            min_aspect = args.gripper_cube_min_aspect if ci == gripper_cam_idx else float(args.fixed_cube_min_aspect)
 
             candidates = []
             if reuse_stored_cube_candidates:
@@ -1678,24 +1768,41 @@ def main():
                 meta, robot_T, pnp_obs, gripper_cam_idx, fixed_cam_ids, T_gTc,
                 min_cams=max(int(args.event_anchor_min_cams), 2),
             )
+            cube_score_value = float(cube_score_info.get("cube_score", 0.0))
+            no_refinement = (len(best_eids) >= len(common_he))
+            mean_trans = float(np.mean(trans_mm))
+            # Robust scoring:
+            # - board_score (gripper hand-eye stability) is the direct quality signal → weight high
+            # - cube_score (fixed-cam consensus side metric) gets de-weighted; can be artificially
+            #   low for bad hand-eye when gripper anchor events are filtered out
+            # - mean_trans (board-position deviation) directly penalizes large translation errors
+            # - no-refinement penalty: if MAD outlier removal didn't drop a single frame, residuals
+            #   are uniformly bad rather than having outliers — a known ANDREFF failure pattern
+            no_refinement_penalty = 50.0 if no_refinement else 0.0
             if str(args.common_object_mode) == "cube_primary":
-                score = board_score + float(cube_score_info.get("cube_score", 0.0))
+                score = (board_score * 5.0
+                         + cube_score_value * 0.1
+                         + mean_trans * 5.0
+                         + no_refinement_penalty)
             else:
-                score = board_score
-            refine_note = f" (refined {len(common_he)}->{len(best_eids)}fr)" if len(best_eids) < len(common_he) else ""
+                score = board_score * 5.0 + mean_trans * 5.0 + no_refinement_penalty
+            refine_note = f" (refined {len(common_he)}->{len(best_eids)}fr)" if not no_refinement else " (NO REFINE)"
             method_results[mname] = {
                 "T_gTc": T_gTc,
                 "score": score,
                 "board_score": board_score,
-                "mean_trans_mm": float(np.mean(trans_mm)),
+                "cube_score": cube_score_value,
+                "mean_trans_mm": mean_trans,
                 "mean_rot_deg": float(np.mean(rot_deg)),
+                "no_refinement_penalty": no_refinement_penalty,
                 "stability": st_bo,
                 "cube_support": cube_score_info,
             }
             print(
                 f"  [{mname}] score={score:.3f} "
-                f"(board={board_score:.3f}, cube={cube_score_info.get('cube_score', 0.0):.3f}) "
-                f"trans={np.mean(trans_mm):.2f}mm rot={np.mean(rot_deg):.3f}deg{refine_note}"
+                f"(board={board_score:.3f}, cube={cube_score_value:.3f}, trans={mean_trans:.2f}mm"
+                f"{', NO_REFINE+50' if no_refinement else ''}) "
+                f"rot={np.mean(rot_deg):.3f}deg{refine_note}"
             )
         except Exception as e:
             print(f"  [{mname}] FAILED: {e}")
@@ -2042,6 +2149,34 @@ def main():
                         set_prior_by_set=corrected_set_priors,
                     )
                 if T_B_O_by_set:
+                    # ── Set-consistency refinement (single pass, conservative guard) ──
+                    print()
+                    print("=" * 60)
+                    print("[STEP-D-2] Set-consistency refinement of T_base_C*")
+                    print("=" * 60)
+                    refined_cams, _, refine_diag = refine_fixed_cams_with_set_anchors(
+                        meta, pnp_obs, T_base_Ci, fixed_cam_ids, T_B_O_by_set,
+                        min_events_per_cam=3,
+                        max_delta_trans_mm=15.0, max_delta_rot_deg=3.0,
+                    )
+                    for cam_key, info in refine_diag["per_cam"].items():
+                        if info.get("adopted"):
+                            print(f"  refined {cam_key}: trans_std={info['trans_std_mm']:.2f}mm "
+                                  f"rot_std={info['rot_std_deg']:.3f}° "
+                                  f"(Δ {info['delta_trans_mm']:.2f}mm/{info['delta_rot_deg']:.3f}°)")
+                        else:
+                            print(f"  KEPT    {cam_key}: skipped refinement "
+                                  f"(reason={info.get('reason', 'unknown')}, "
+                                  f"Δ would be {info.get('delta_trans_mm', 0):.1f}mm/"
+                                  f"{info.get('delta_rot_deg', 0):.2f}°)")
+                    T_base_Ci = refined_cams
+                    cube_anchor_diag["set_consistency_refinement"] = refine_diag
+                    # Overwrite saved T_base_C*.npy with refined values (only those adopted)
+                    for ci in fixed_cam_ids:
+                        if int(ci) in T_base_Ci:
+                            np.save(os.path.join(out_dir, f"T_base_C{int(ci)}.npy"),
+                                    np.asarray(T_base_Ci[int(ci)], dtype=np.float64))
+
                     if len(T_B_O_by_set) > 1:
                         T_B_O_avg = weighted_se3_average([T_B_O_by_set[s] for s in sorted(T_B_O_by_set)])
                     else:

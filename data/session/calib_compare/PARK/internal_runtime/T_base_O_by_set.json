@@ -1,0 +1,183 @@
+{
+  "0": {
+    "transform_key": "T_base_O_set0",
+    "transform": [
+      [
+        -0.2501688745402207,
+        -0.9681979731513529,
+        -0.0028668792950418127,
+        -0.05798229792090552
+      ],
+      [
+        0.9681958985995784,
+        -0.2501554471729478,
+        -0.004353640391293871,
+        0.9069841409559705
+      ],
+      [
+        0.003498020330638507,
+        -0.0038648460920825967,
+        0.9999864133169264,
+        -0.015188235772061
+      ],
+      [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    ],
+    "source": "fixed_translation+gripper_rotation",
+    "support": 4,
+    "events": [
+      24,
+      25,
+      26,
+      27
+    ],
+    "stability": {
+      "num_frames": 4,
+      "num_inliers": 3,
+      "inlier_ratio": 0.75,
+      "translation_std_mm": 0.0,
+      "rotation_std_deg": 0.045950931156733064
+    },
+    "fixed_support": 4,
+    "gripper_support": 4,
+    "fixed_stability": {
+      "num_frames": 4,
+      "num_inliers": 3,
+      "inlier_ratio": 0.75,
+      "translation_std_mm": 0.0,
+      "rotation_std_deg": 0.0
+    },
+    "gripper_stability": {
+      "num_frames": 4,
+      "num_inliers": 3,
+      "inlier_ratio": 0.75,
+      "translation_std_mm": 0.657526184929282,
+      "rotation_std_deg": 0.045950931156733064
+    }
+  },
+  "1": {
+    "transform_key": "T_base_O_set1",
+    "transform": [
+      [
+        0.6003675478645059,
+        0.799500264306794,
+        -0.018924450970284445,
+        -0.0951552501304297
+      ],
+      [
+        -0.7996611369410057,
+        0.6004492833288829,
+        -0.001650519932989764,
+        0.5227452619775951
+      ],
+      [
+        0.010043581899830914,
+        0.01612406658375262,
+        0.9998195541893666,
+        0.011214556195914455
+      ],
+      [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    ],
+    "source": "fixed_translation+gripper_rotation",
+    "support": 6,
+    "events": [
+      31,
+      32,
+      33,
+      34,
+      35,
+      36
+    ],
+    "stability": {
+      "num_frames": 6,
+      "num_inliers": 6,
+      "inlier_ratio": 1.0,
+      "translation_std_mm": 1.9224232746786947,
+      "rotation_std_deg": 0.43812020427994375
+    },
+    "fixed_support": 6,
+    "gripper_support": 6,
+    "fixed_stability": {
+      "num_frames": 6,
+      "num_inliers": 6,
+      "inlier_ratio": 1.0,
+      "translation_std_mm": 1.9224232746786947,
+      "rotation_std_deg": 1.125764400445923
+    },
+    "gripper_stability": {
+      "num_frames": 6,
+      "num_inliers": 6,
+      "inlier_ratio": 1.0,
+      "translation_std_mm": 0.9201249134831448,
+      "rotation_std_deg": 0.43812020427994375
+    }
+  },
+  "4": {
+    "transform_key": "T_base_O_set4",
+    "transform": [
+      [
+        -0.7548801555305451,
+        0.655843585488273,
+        -0.005014195854331901,
+        -0.036947101425190115
+      ],
+      [
+        -0.6558597232623549,
+        -0.7548778452245266,
+        0.00273170119192766,
+        0.6572380294062184
+      ],
+      [
+        -0.0019935366578550107,
+        0.005350716126030594,
+        0.9999836976913832,
+        -0.003395745559511132
+      ],
+      [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    ],
+    "source": "fixed_translation+gripper_rotation",
+    "support": 3,
+    "events": [
+      28,
+      29,
+      30
+    ],
+    "stability": {
+      "num_frames": 3,
+      "num_inliers": 3,
+      "inlier_ratio": 1.0,
+      "translation_std_mm": 1.4300217990593118,
+      "rotation_std_deg": 0.15073654288202484
+    },
+    "fixed_support": 3,
+    "gripper_support": 3,
+    "fixed_stability": {
+      "num_frames": 3,
+      "num_inliers": 3,
+      "inlier_ratio": 1.0,
+      "translation_std_mm": 1.4300217990593118,
+      "rotation_std_deg": 0.36922738041659897
+    },
+    "gripper_stability": {
+      "num_frames": 3,
+      "num_inliers": 3,
+      "inlier_ratio": 1.0,
+      "translation_std_mm": 0.5639334094294639,
+      "rotation_std_deg": 0.15073654288202484
+    }
+  }
+}

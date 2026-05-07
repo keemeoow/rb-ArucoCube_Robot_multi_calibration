@@ -1,0 +1,135 @@
+{
+  "methods": [
+    "TSAI",
+    "PARK",
+    "HORAUD",
+    "ANDREFF",
+    "DANIILIDIS"
+  ],
+  "ranking": [
+    "ANDREFF",
+    "TSAI",
+    "DANIILIDIS",
+    "HORAUD",
+    "PARK"
+  ],
+  "scores": {
+    "ANDREFF": 821.339913447931,
+    "TSAI": 822.698616990153,
+    "DANIILIDIS": 822.7155927332357,
+    "HORAUD": 822.7321134135134,
+    "PARK": 822.7457465132243
+  },
+  "results": {
+    "TSAI": {
+      "cross_cam_mean_mm": 134.1577906468916,
+      "cross_cam_max_mm": 138.69784272813104,
+      "reproj_mean_px": 0.569758769192444,
+      "handeye_pos_std_mm": 3.1338807613562936,
+      "handeye_pos_max_mm": 13.765327678491568,
+      "board_reproj_mean_px": 0.5018567115460572,
+      "pose_rep_mean_mm": 134.1577906468916,
+      "pose_rep_max_mm": 242.63379291369043,
+      "pose_rep_mean_deg": 39.883584939319704,
+      "mesh_rmse_mm": 3.0515782279288945,
+      "dim_err_mean_mm": 6.13510243000225,
+      "all_pass": false
+    },
+    "PARK": {
+      "cross_cam_mean_mm": 134.15153782288763,
+      "cross_cam_max_mm": 138.6978427281312,
+      "reproj_mean_px": 0.569758769192444,
+      "handeye_pos_std_mm": 3.16143961407866,
+      "handeye_pos_max_mm": 13.85172781647351,
+      "board_reproj_mean_px": 0.5018567115460572,
+      "pose_rep_mean_mm": 134.1515378228876,
+      "pose_rep_max_mm": 242.6337929136907,
+      "pose_rep_mean_deg": 39.88573899724732,
+      "mesh_rmse_mm": 3.0515782279288945,
+      "dim_err_mean_mm": 6.13510243000225,
+      "all_pass": false
+    },
+    "HORAUD": {
+      "cross_cam_mean_mm": 134.14912022727657,
+      "cross_cam_max_mm": 138.69784272813004,
+      "reproj_mean_px": 0.569758769192444,
+      "handeye_pos_std_mm": 3.1598336164566136,
+      "handeye_pos_max_mm": 13.846762710143244,
+      "board_reproj_mean_px": 0.5018567115460572,
+      "pose_rep_mean_mm": 134.14912022727657,
+      "pose_rep_max_mm": 242.63379291368688,
+      "pose_rep_mean_deg": 39.88510533372106,
+      "mesh_rmse_mm": 3.0515782279288945,
+      "dim_err_mean_mm": 6.13510243000225,
+      "all_pass": false
+    },
+    "ANDREFF": {
+      "cross_cam_mean_mm": 134.2107995566956,
+      "cross_cam_max_mm": 138.697842728131,
+      "reproj_mean_px": 0.569758769192444,
+      "handeye_pos_std_mm": 2.3723053825135674,
+      "handeye_pos_max_mm": 10.29576296513257,
+      "board_reproj_mean_px": 0.5018567115460572,
+      "pose_rep_mean_mm": 134.21079955669558,
+      "pose_rep_max_mm": 242.63379291369026,
+      "pose_rep_mean_deg": 39.88466903653001,
+      "mesh_rmse_mm": 3.0515782279288945,
+      "dim_err_mean_mm": 6.13510243000225,
+      "all_pass": false
+    },
+    "DANIILIDIS": {
+      "cross_cam_mean_mm": 134.13698609337612,
+      "cross_cam_max_mm": 138.69784272813098,
+      "reproj_mean_px": 0.569758769192444,
+      "handeye_pos_std_mm": 3.1865088358176483,
+      "handeye_pos_max_mm": 13.949808160851047,
+      "board_reproj_mean_px": 0.5018567115460572,
+      "pose_rep_mean_mm": 134.13698609337615,
+      "pose_rep_max_mm": 242.63379291369043,
+      "pose_rep_mean_deg": 39.87841159026097,
+      "mesh_rmse_mm": 3.0515782279288945,
+      "dim_err_mean_mm": 6.13510243000225,
+      "all_pass": false
+    }
+  },
+  "timings": {
+    "TSAI": {
+      "step3_s": 1.3794231414794922,
+      "step4_s": 12.041532278060913
+    },
+    "PARK": {
+      "step3_s": 1.3201463222503662,
+      "step4_s": 12.215755939483643
+    },
+    "HORAUD": {
+      "step3_s": 1.2731657028198242,
+      "step4_s": 14.219390869140625
+    },
+    "ANDREFF": {
+      "step3_s": 1.5824840068817139,
+      "step4_s": 12.697858810424805
+    },
+    "DANIILIDIS": {
+      "step3_s": 1.6538171768188477,
+      "step4_s": 12.746435165405273
+    }
+  },
+  "winner": {
+    "name": "ANDREFF",
+    "score": 821.339913447931,
+    "metrics": {
+      "cross_cam_mean_mm": 134.2107995566956,
+      "cross_cam_max_mm": 138.697842728131,
+      "reproj_mean_px": 0.569758769192444,
+      "handeye_pos_std_mm": 2.3723053825135674,
+      "handeye_pos_max_mm": 10.29576296513257,
+      "board_reproj_mean_px": 0.5018567115460572,
+      "pose_rep_mean_mm": 134.21079955669558,
+      "pose_rep_max_mm": 242.63379291369026,
+      "pose_rep_mean_deg": 39.88466903653001,
+      "mesh_rmse_mm": 3.0515782279288945,
+      "dim_err_mean_mm": 6.13510243000225,
+      "all_pass": false
+    }
+  }
+}

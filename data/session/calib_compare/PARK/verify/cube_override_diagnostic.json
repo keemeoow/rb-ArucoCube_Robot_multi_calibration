@@ -1,0 +1,2352 @@
+{
+  "0": {
+    "marker_id": 0,
+    "num_observations": 21,
+    "current": {
+      "face": "+Z",
+      "corner_permutation": "p0123",
+      "corner_reorder": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "rank": 2,
+      "score": 450.398114157815,
+      "num_inliers": 0,
+      "mean_dt_mm": 144.737901402351,
+      "mean_dr_deg": 38.171987757697835,
+      "mean_reproj_px": 0.14215534694066442
+    },
+    "best": {
+      "face": "+Z",
+      "corner_permutation": "r0",
+      "corner_reorder": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "num_obs": 21,
+      "num_used": 21,
+      "num_inliers": 0,
+      "mean_dt_mm": 144.737901402351,
+      "mean_dr_deg": 38.171987757697835,
+      "mean_reproj_px": 0.14215534694066442,
+      "score": 450.398114157815
+    },
+    "top_candidates": [
+      {
+        "face": "+Z",
+        "corner_permutation": "r0",
+        "corner_reorder": [
+          0,
+          1,
+          2,
+          3
+        ],
+        "num_obs": 21,
+        "num_used": 21,
+        "num_inliers": 0,
+        "mean_dt_mm": 144.737901402351,
+        "mean_dr_deg": 38.171987757697835,
+        "mean_reproj_px": 0.14215534694066442,
+        "score": 450.398114157815
+      },
+      {
+        "face": "+Z",
+        "corner_permutation": "p0123",
+        "corner_reorder": [
+          0,
+          1,
+          2,
+          3
+        ],
+        "num_obs": 21,
+        "num_used": 21,
+        "num_inliers": 0,
+        "mean_dt_mm": 144.737901402351,
+        "mean_dr_deg": 38.171987757697835,
+        "mean_reproj_px": 0.14215534694066442,
+        "score": 450.398114157815
+      },
+      {
+        "face": "-Z",
+        "corner_permutation": "r0",
+        "corner_reorder": [
+          0,
+          1,
+          2,
+          3
+        ],
+        "num_obs": 21,
+        "num_used": 21,
+        "num_inliers": 0,
+        "mean_dt_mm": 149.40204193244296,
+        "mean_dr_deg": 38.171987757697835,
+        "mean_reproj_px": 0.14215534694066656,
+        "score": 455.06225468790694
+      },
+      {
+        "face": "-Z",
+        "corner_permutation": "p0123",
+        "corner_reorder": [
+          0,
+          1,
+          2,
+          3
+        ],
+        "num_obs": 21,
+        "num_used": 21,
+        "num_inliers": 0,
+        "mean_dt_mm": 149.40204193244296,
+        "mean_dr_deg": 38.171987757697835,
+        "mean_reproj_px": 0.14215534694066656,
+        "score": 455.06225468790694
+      },
+      {
+        "face": "+Z",
+        "corner_permutation": "r90",
+        "corner_reorder": [
+          1,
+          2,
+          3,
+          0
+        ],
+        "num_obs": 21,
+        "num_used": 21,
+        "num_inliers": 0,
+        "mean_dt_mm": 144.7379014023491,
+        "mean_dr_deg": 73.99926457213363,
+        "mean_reproj_px": 0.1421553469406758,
+        "score": 737.0163286732994
+      },
+      {
+        "face": "+Z",
+        "corner_permutation": "p1230",
+        "corner_reorder": [
+          1,
+          2,
+          3,
+          0
+        ],
+        "num_obs": 21,
+        "num_used": 21,
+        "num_inliers": 0,
+        "mean_dt_mm": 144.7379014023491,
+        "mean_dr_deg": 73.99926457213363,
+        "mean_reproj_px": 0.1421553469406758,
+        "score": 737.0163286732994
+      },
+      {
+        "face": "-Z",
+        "corner_permutation": "r90",
+        "corner_reorder": [
+          1,
+          2,
+          3,
+          0
+        ],
+        "num_obs": 21,
+        "num_used": 21,
+        "num_inliers": 0,
+        "mean_dt_mm": 149.40204193244122,
+        "mean_dr_deg": 73.99926457213363,
+        "mean_reproj_px": 0.14215534694066914,
+        "score": 741.6804692033916
+      },
+      {
+        "face": "+Z",
+        "corner_permutation": "flip_anti",
+        "corner_reorder": [
+          2,
+          1,
+          0,
+          3
+        ],
+        "num_obs": 21,
+        "num_used": 21,
+        "num_inliers": 0,
+        "mean_dt_mm": 144.09168015695755,
+        "mean_dr_deg": 82.94842454036697,
+        "mean_reproj_px": 0.48121051986742924,
+        "score": 808.6414975196282
+      }
+    ],
+    "score_improvement": 0.0,
+    "examples": [
+      {
+        "cam_idx": 2,
+        "event_id": 24,
+        "image_path": "/Users/woo/Documents/GitHub/Robot-Lab/rb-ArucoCube_Robot_multi_calibration/data/session/cam2/rgb_00024.jpg",
+        "corners": [
+          [
+            93.0,
+            42.0
+          ],
+          [
+            140.0,
+            45.0
+          ],
+          [
+            142.0,
+            91.0
+          ],
+          [
+            96.0,
+            91.0
+          ]
+        ],
+        "visible_ids": [
+          0,
+          10,
+          21,
+          32,
+          5,
+          16,
+          27,
+          22,
+          33,
+          11,
+          6,
+          17,
+          28,
+          34,
+          23,
+          12,
+          7,
+          29,
+          18,
+          24,
+          13,
+          35,
+          8,
+          30,
+          19,
+          41,
+          36,
+          25,
+          14,
+          9,
+          31,
+          42,
+          20,
+          15,
+          37,
+          26
+        ],
+        "area_px2": 2205.0
+      },
+      {
+        "cam_idx": 2,
+        "event_id": 35,
+        "image_path": "/Users/woo/Documents/GitHub/Robot-Lab/rb-ArucoCube_Robot_multi_calibration/data/session/cam2/rgb_00035.jpg",
+        "corners": [
+          [
+            139.0,
+            349.0
+          ],
+          [
+            101.0,
+            326.0
+          ],
+          [
+            134.0,
+            296.0
+          ],
+          [
+            171.0,
+            318.0
+          ]
+        ],
+        "visible_ids": [
+          0,
+          1,
+          4,
+          37,
+          42,
+          26,
+          31,
+          36,
+          41,
+          15,
+          20,
+          25,
+          30,
+          35,
+          40,
+          9,
+          14,
+          19,
+          24,
+          29,
+          39,
+          34,
+          8,
+          13,
+          18,
+          23,
+          28,
+          33,
+          38,
+          7,
+          12,
+          17,
+          27,
+          32,
+          22,
+          6,
+          11,
+          21,
+          16,
+          5,
+          10
+        ],
+        "area_px2": 1875.0
+      },
+      {
+        "cam_idx": 2,
+        "event_id": 27,
+        "image_path": "/Users/woo/Documents/GitHub/Robot-Lab/rb-ArucoCube_Robot_multi_calibration/data/session/cam2/rgb_00027.jpg",
+        "corners": [
+          [
+            22.0,
+            220.0
+          ],
+          [
+            66.0,
+            210.0
+          ],
+          [
+            87.0,
+            245.0
+          ],
+          [
+            45.0,
+            255.0
+          ]
+        ],
+        "visible_ids": [
+          0,
+          4,
+          3,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          13,
+          12,
+          14,
+          15,
+          16,
+          18,
+          20,
+          22,
+          19,
+          17,
+          23,
+          21,
+          24,
+          26,
+          27,
+          25,
+          30,
+          32,
+          29,
+          33,
+          31,
+          34,
+          28,
+          35,
+          37,
+          38,
+          36,
+          39,
+          41,
+          42,
+          40
+        ],
+        "area_px2": 1725.0
+      },
+      {
+        "cam_idx": 2,
+        "event_id": 36,
+        "image_path": "/Users/woo/Documents/GitHub/Robot-Lab/rb-ArucoCube_Robot_multi_calibration/data/session/cam2/rgb_00036.jpg",
+        "corners": [
+          [
+            540.0,
+            416.0
+          ],
+          [
+            514.0,
+            441.0
+          ],
+          [
+            487.0,
+            421.0
+          ],
+          [
+            512.0,
+            395.0
+          ]
+        ],
+        "visible_ids": [
+          0,
+          9,
+          15,
+          8,
+          7,
+          14,
+          6,
+          5,
+          20,
+          13,
+          11,
+          10,
+          26,
+          19,
+          12,
+          31,
+          18,
+          16,
+          25,
+          17,
+          24,
+          22,
+          23,
+          37,
+          30,
+          21,
+          29,
+          36,
+          27,
+          2,
+          42,
+          28,
+          35,
+          41,
+          34,
+          32,
+          40,
+          33,
+          38,
+          39
+        ],
+        "area_px2": 1224.0
+      },
+      {
+        "cam_idx": 2,
+        "event_id": 28,
+        "image_path": "/Users/woo/Documents/GitHub/Robot-Lab/rb-ArucoCube_Robot_multi_calibration/data/session/cam2/rgb_00028.jpg",
+        "corners": [
+          [
+            176.0,
+            39.0
+          ],
+          [
+            198.0,
+            21.0
+          ],
+          [
+            217.0,
+            50.0
+          ],
+          [
+            195.0,
+            67.0
+          ]
+        ],
+        "visible_ids": [
+          0,
+          25,
+          16,
+          18,
+          17,
+          11,
+          38,
+          1,
+          39,
+          40,
+          41,
+          42,
+          32,
+          33,
+          35,
+          36,
+          34,
+          27,
+          29,
+          28,
+          31,
+          30,
+          21,
+          26,
+          24,
+          23,
+          22,
+          20,
+          19,
+          10,
+          12,
+          14,
+          13,
+          15,
+          5,
+          6,
+          8,
+          7,
+          9
+        ],
+        "area_px2": 959.5
+      },
+      {
+        "cam_idx": 2,
+        "event_id": 34,
+        "image_path": "/Users/woo/Documents/GitHub/Robot-Lab/rb-ArucoCube_Robot_multi_calibration/data/session/cam2/rgb_00034.jpg",
+        "corners": [
+          [
+            542.0,
+            85.0
+          ],
+          [
+            561.0,
+            109.0
+          ],
+          [
+            530.0,
+            116.0
+          ],
+          [
+            512.0,
+            93.0
+          ]
+        ],
+        "visible_ids": [
+          32,
+          21,
+          38,
+          10,
+          27,
+          16,
+          5,
+          33,
+          22,
+          39,
+          11,
+          0,
+          28,
+          3,
+          17,
+          6,
+          34,
+          2,
+          40,
+          23,
+          12,
+          29,
+          18,
+          7,
+          35,
+          41,
+          24,
+          13,
+          30,
+          19,
+          36,
+          8,
+          42,
+          25,
+          14,
+          31,
+          37,
+          20,
+          26
+        ],
+        "area_px2": 855.5
+      }
+    ]
+  },
+  "1": {
+    "marker_id": 1,
+    "num_observations": 18,
+    "current": {
+      "face": "+X",
+      "corner_permutation": "p0123",
+      "corner_reorder": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "rank": 81,
+      "score": 896.2803330125784,
+      "num_inliers": 0,
+      "mean_dt_mm": 112.3032347040187,
+      "mean_dr_deg": 97.97408308513381,
+      "mean_reproj_px": 0.09221681374456292
+    },
+    "best": {
+      "face": "-X",
+      "corner_permutation": "flip_diag",
+      "corner_reorder": [
+        0,
+        3,
+        2,
+        1
+      ],
+      "num_obs": 18,
+      "num_used": 18,
+      "num_inliers": 0,
+      "mean_dt_mm": 121.5252827192526,
+      "mean_dr_deg": 35.9691650632007,
+      "mean_reproj_px": 0.09221681374456077,
+      "score": 409.46303685234733
+    },
+    "top_candidates": [
+      {
+        "face": "-X",
+        "corner_permutation": "flip_diag",
+        "corner_reorder": [
+          0,
+          3,
+          2,
+          1
+        ],
+        "num_obs": 18,
+        "num_used": 18,
+        "num_inliers": 0,
+        "mean_dt_mm": 121.5252827192526,
+        "mean_dr_deg": 35.9691650632007,
+        "mean_reproj_px": 0.09221681374456077,
+        "score": 409.46303685234733
+      },
+      {
+        "face": "-X",
+        "corner_permutation": "p0321",
+        "corner_reorder": [
+          0,
+          3,
+          2,
+          1
+        ],
+        "num_obs": 18,
+        "num_used": 18,
+        "num_inliers": 0,
+        "mean_dt_mm": 121.5252827192526,
+        "mean_dr_deg": 35.9691650632007,
+        "mean_reproj_px": 0.09221681374456077,
+        "score": 409.46303685234733
+      },
+      {
+        "face": "-Z",
+        "corner_permutation": "r0",
+        "corner_reorder": [
+          0,
+          1,
+          2,
+          3
+        ],
+        "num_obs": 18,
+        "num_used": 18,
+        "num_inliers": 0,
+        "mean_dt_mm": 115.00462524456458,
+        "mean_dr_deg": 88.35277886879297,
+        "mean_reproj_px": 0.20595340772867396,
+        "score": 822.2387630103656
+      },
+      {
+        "face": "-Z",
+        "corner_permutation": "p0123",
+        "corner_reorder": [
+          0,
+          1,
+          2,
+          3
+        ],
+        "num_obs": 18,
+        "num_used": 18,
+        "num_inliers": 0,
+        "mean_dt_mm": 115.00462524456458,
+        "mean_dr_deg": 88.35277886879297,
+        "mean_reproj_px": 0.20595340772867396,
+        "score": 822.2387630103656
+      },
+      {
+        "face": "+Z",
+        "corner_permutation": "r0",
+        "corner_reorder": [
+          0,
+          1,
+          2,
+          3
+        ],
+        "num_obs": 18,
+        "num_used": 18,
+        "num_inliers": 0,
+        "mean_dt_mm": 117.70508998564878,
+        "mean_dr_deg": 88.35277886879297,
+        "mean_reproj_px": 0.2059534077286738,
+        "score": 824.9392277514498
+      },
+      {
+        "face": "+Z",
+        "corner_permutation": "p0123",
+        "corner_reorder": [
+          0,
+          1,
+          2,
+          3
+        ],
+        "num_obs": 18,
+        "num_used": 18,
+        "num_inliers": 0,
+        "mean_dt_mm": 117.70508998564878,
+        "mean_dr_deg": 88.35277886879297,
+        "mean_reproj_px": 0.2059534077286738,
+        "score": 824.9392277514498
+      },
+      {
+        "face": "+Z",
+        "corner_permutation": "r270",
+        "corner_reorder": [
+          3,
+          0,
+          1,
+          2
+        ],
+        "num_obs": 18,
+        "num_used": 18,
+        "num_inliers": 0,
+        "mean_dt_mm": 114.2790551720651,
+        "mean_dr_deg": 90.53467175513765,
+        "mean_reproj_px": 0.15402079558395626,
+        "score": 838.8644708043342
+      },
+      {
+        "face": "-X",
+        "corner_permutation": "flip_y",
+        "corner_reorder": [
+          3,
+          2,
+          1,
+          0
+        ],
+        "num_obs": 18,
+        "num_used": 18,
+        "num_inliers": 0,
+        "mean_dt_mm": 121.52528271925313,
+        "mean_dr_deg": 94.9677222140635,
+        "mean_reproj_px": 0.09221681374455769,
+        "score": 881.4514940592503
+      }
+    ],
+    "score_improvement": 486.817296160231,
+    "examples": [
+      {
+        "cam_idx": 2,
+        "event_id": 35,
+        "image_path": "/Users/woo/Documents/GitHub/Robot-Lab/rb-ArucoCube_Robot_multi_calibration/data/session/cam2/rgb_00035.jpg",
+        "corners": [
+          [
+            147.0,
+            359.0
+          ],
+          [
+            179.0,
+            324.0
+          ],
+          [
+            178.0,
+            353.0
+          ],
+          [
+            147.0,
+            385.0
+          ]
+        ],
+        "visible_ids": [
+          0,
+          1,
+          4,
+          37,
+          42,
+          26,
+          31,
+          36,
+          41,
+          15,
+          20,
+          25,
+          30,
+          35,
+          40,
+          9,
+          14,
+          19,
+          24,
+          29,
+          39,
+          34,
+          8,
+          13,
+          18,
+          23,
+          28,
+          33,
+          38,
+          7,
+          12,
+          17,
+          27,
+          32,
+          22,
+          6,
+          11,
+          21,
+          16,
+          5,
+          10
+        ],
+        "area_px2": 849.5
+      },
+      {
+        "cam_idx": 0,
+        "event_id": 31,
+        "image_path": "/Users/woo/Documents/GitHub/Robot-Lab/rb-ArucoCube_Robot_multi_calibration/data/session/cam0/rgb_00031.jpg",
+        "corners": [
+          [
+            298.0,
+            338.0
+          ],
+          [
+            313.0,
+            328.0
+          ],
+          [
+            313.0,
+            364.0
+          ],
+          [
+            298.0,
+            376.0
+          ]
+        ],
+        "visible_ids": [
+          4,
+          1,
+          0,
+          37,
+          26,
+          31,
+          36,
+          42,
+          9,
+          25
+        ],
+        "area_px2": 555.0
+      },
+      {
+        "cam_idx": 0,
+        "event_id": 32,
+        "image_path": "/Users/woo/Documents/GitHub/Robot-Lab/rb-ArucoCube_Robot_multi_calibration/data/session/cam0/rgb_00032.jpg",
+        "corners": [
+          [
+            298.0,
+            338.0
+          ],
+          [
+            313.0,
+            328.0
+          ],
+          [
+            313.0,
+            364.0
+          ],
+          [
+            298.0,
+            376.0
+          ]
+        ],
+        "visible_ids": [
+          4,
+          36,
+          1,
+          0,
+          37,
+          26,
+          42,
+          31,
+          9,
+          25
+        ],
+        "area_px2": 555.0
+      },
+      {
+        "cam_idx": 0,
+        "event_id": 33,
+        "image_path": "/Users/woo/Documents/GitHub/Robot-Lab/rb-ArucoCube_Robot_multi_calibration/data/session/cam0/rgb_00033.jpg",
+        "corners": [
+          [
+            298.0,
+            338.0
+          ],
+          [
+            313.0,
+            328.0
+          ],
+          [
+            313.0,
+            364.0
+          ],
+          [
+            298.0,
+            376.0
+          ]
+        ],
+        "visible_ids": [
+          4,
+          1,
+          0,
+          37,
+          26,
+          42,
+          31,
+          36,
+          9,
+          25
+        ],
+        "area_px2": 555.0
+      },
+      {
+        "cam_idx": 0,
+        "event_id": 34,
+        "image_path": "/Users/woo/Documents/GitHub/Robot-Lab/rb-ArucoCube_Robot_multi_calibration/data/session/cam0/rgb_00034.jpg",
+        "corners": [
+          [
+            298.0,
+            338.0
+          ],
+          [
+            313.0,
+            328.0
+          ],
+          [
+            313.0,
+            364.0
+          ],
+          [
+            298.0,
+            376.0
+          ]
+        ],
+        "visible_ids": [
+          4,
+          1,
+          0,
+          37,
+          26,
+          42,
+          31,
+          36,
+          9,
+          25
+        ],
+        "area_px2": 555.0
+      },
+      {
+        "cam_idx": 0,
+        "event_id": 35,
+        "image_path": "/Users/woo/Documents/GitHub/Robot-Lab/rb-ArucoCube_Robot_multi_calibration/data/session/cam0/rgb_00035.jpg",
+        "corners": [
+          [
+            298.0,
+            338.0
+          ],
+          [
+            313.0,
+            328.0
+          ],
+          [
+            313.0,
+            364.0
+          ],
+          [
+            298.0,
+            376.0
+          ]
+        ],
+        "visible_ids": [
+          4,
+          1,
+          0,
+          37,
+          26,
+          42,
+          31,
+          36,
+          9,
+          25
+        ],
+        "area_px2": 555.0
+      }
+    ]
+  },
+  "2": {
+    "marker_id": 2,
+    "num_observations": 32,
+    "current": {
+      "face": "+Y",
+      "corner_permutation": "p0123",
+      "corner_reorder": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "rank": 4,
+      "score": 506.47689144782805,
+      "num_inliers": 0,
+      "mean_dt_mm": 202.94179234666066,
+      "mean_dr_deg": 37.882659908560015,
+      "mean_reproj_px": 0.23690991634362218
+    },
+    "best": {
+      "face": "-Y",
+      "corner_permutation": "flip_y",
+      "corner_reorder": [
+        3,
+        2,
+        1,
+        0
+      ],
+      "num_obs": 32,
+      "num_used": 32,
+      "num_inliers": 0,
+      "mean_dt_mm": 189.65296118682954,
+      "mean_dr_deg": 37.8826599085599,
+      "mean_reproj_px": 0.23690991634362596,
+      "score": 493.188060287996
+    },
+    "top_candidates": [
+      {
+        "face": "-Y",
+        "corner_permutation": "flip_y",
+        "corner_reorder": [
+          3,
+          2,
+          1,
+          0
+        ],
+        "num_obs": 32,
+        "num_used": 32,
+        "num_inliers": 0,
+        "mean_dt_mm": 189.65296118682954,
+        "mean_dr_deg": 37.8826599085599,
+        "mean_reproj_px": 0.23690991634362596,
+        "score": 493.188060287996
+      },
+      {
+        "face": "-Y",
+        "corner_permutation": "p3210",
+        "corner_reorder": [
+          3,
+          2,
+          1,
+          0
+        ],
+        "num_obs": 32,
+        "num_used": 32,
+        "num_inliers": 0,
+        "mean_dt_mm": 189.65296118682954,
+        "mean_dr_deg": 37.8826599085599,
+        "mean_reproj_px": 0.23690991634362596,
+        "score": 493.188060287996
+      },
+      {
+        "face": "+Y",
+        "corner_permutation": "r0",
+        "corner_reorder": [
+          0,
+          1,
+          2,
+          3
+        ],
+        "num_obs": 32,
+        "num_used": 32,
+        "num_inliers": 0,
+        "mean_dt_mm": 202.94179234666066,
+        "mean_dr_deg": 37.882659908560015,
+        "mean_reproj_px": 0.23690991634362218,
+        "score": 506.47689144782805
+      },
+      {
+        "face": "+Y",
+        "corner_permutation": "p0123",
+        "corner_reorder": [
+          0,
+          1,
+          2,
+          3
+        ],
+        "num_obs": 32,
+        "num_used": 32,
+        "num_inliers": 0,
+        "mean_dt_mm": 202.94179234666066,
+        "mean_dr_deg": 37.882659908560015,
+        "mean_reproj_px": 0.23690991634362218,
+        "score": 506.47689144782805
+      },
+      {
+        "face": "-X",
+        "corner_permutation": "flip_diag",
+        "corner_reorder": [
+          0,
+          3,
+          2,
+          1
+        ],
+        "num_obs": 32,
+        "num_used": 32,
+        "num_inliers": 0,
+        "mean_dt_mm": 187.77106606314078,
+        "mean_dr_deg": 69.19515279275195,
+        "mean_reproj_px": 0.19259695928977447,
+        "score": 741.717482323736
+      },
+      {
+        "face": "-X",
+        "corner_permutation": "p0321",
+        "corner_reorder": [
+          0,
+          3,
+          2,
+          1
+        ],
+        "num_obs": 32,
+        "num_used": 32,
+        "num_inliers": 0,
+        "mean_dt_mm": 187.77106606314078,
+        "mean_dr_deg": 69.19515279275195,
+        "mean_reproj_px": 0.19259695928977447,
+        "score": 741.717482323736
+      },
+      {
+        "face": "+X",
+        "corner_permutation": "r270",
+        "corner_reorder": [
+          3,
+          0,
+          1,
+          2
+        ],
+        "num_obs": 32,
+        "num_used": 32,
+        "num_inliers": 0,
+        "mean_dt_mm": 204.88284843920795,
+        "mean_dr_deg": 69.19515279275193,
+        "mean_reproj_px": 0.1925969592897699,
+        "score": 758.8292646998028
+      },
+      {
+        "face": "+X",
+        "corner_permutation": "p3012",
+        "corner_reorder": [
+          3,
+          0,
+          1,
+          2
+        ],
+        "num_obs": 32,
+        "num_used": 32,
+        "num_inliers": 0,
+        "mean_dt_mm": 204.88284843920795,
+        "mean_dr_deg": 69.19515279275193,
+        "mean_reproj_px": 0.1925969592897699,
+        "score": 758.8292646998028
+      }
+    ],
+    "score_improvement": 13.288831159832057,
+    "examples": [
+      {
+        "cam_idx": 2,
+        "event_id": 25,
+        "image_path": "/Users/woo/Documents/GitHub/Robot-Lab/rb-ArucoCube_Robot_multi_calibration/data/session/cam2/rgb_00025.jpg",
+        "corners": [
+          [
+            69.0,
+            118.0
+          ],
+          [
+            102.0,
+            115.0
+          ],
+          [
+            107.0,
+            137.0
+          ],
+          [
+            75.0,
+            141.0
+          ]
+        ],
+        "visible_ids": [
+          22,
+          23,
+          16,
+          17,
+          11,
+          38,
+          39,
+          40,
+          32,
+          41,
+          33,
+          42,
+          34,
+          35,
+          27,
+          36,
+          28,
+          37,
+          21,
+          29,
+          30,
+          2,
+          31,
+          24,
+          25,
+          0,
+          26,
+          18,
+          10,
+          19,
+          20,
+          12,
+          15,
+          5,
+          13,
+          14,
+          6,
+          7,
+          8,
+          9
+        ],
+        "area_px2": 750.5
+      },
+      {
+        "cam_idx": 3,
+        "event_id": 25,
+        "image_path": "/Users/woo/Documents/GitHub/Robot-Lab/rb-ArucoCube_Robot_multi_calibration/data/session/cam3/rgb_00025.jpg",
+        "corners": [
+          [
+            43.0,
+            400.0
+          ],
+          [
+            62.0,
+            386.0
+          ],
+          [
+            69.0,
+            420.0
+          ],
+          [
+            51.0,
+            435.0
+          ]
+        ],
+        "visible_ids": [
+          2,
+          32,
+          21,
+          38,
+          10,
+          27,
+          16,
+          5,
+          33,
+          22,
+          17,
+          40,
+          24,
+          8
+        ],
+        "area_px2": 747.0
+      },
+      {
+        "cam_idx": 3,
+        "event_id": 27,
+        "image_path": "/Users/woo/Documents/GitHub/Robot-Lab/rb-ArucoCube_Robot_multi_calibration/data/session/cam3/rgb_00027.jpg",
+        "corners": [
+          [
+            43.0,
+            400.0
+          ],
+          [
+            62.0,
+            386.0
+          ],
+          [
+            69.0,
+            420.0
+          ],
+          [
+            51.0,
+            435.0
+          ]
+        ],
+        "visible_ids": [
+          2,
+          32,
+          21,
+          38,
+          10,
+          16,
+          5,
+          33,
+          11,
+          17,
+          24,
+          8
+        ],
+        "area_px2": 747.0
+      },
+      {
+        "cam_idx": 3,
+        "event_id": 24,
+        "image_path": "/Users/woo/Documents/GitHub/Robot-Lab/rb-ArucoCube_Robot_multi_calibration/data/session/cam3/rgb_00024.jpg",
+        "corners": [
+          [
+            43.0,
+            400.0
+          ],
+          [
+            62.0,
+            387.0
+          ],
+          [
+            69.0,
+            420.0
+          ],
+          [
+            51.0,
+            435.0
+          ]
+        ],
+        "visible_ids": [
+          2,
+          32,
+          21,
+          38,
+          10,
+          27,
+          5,
+          33,
+          39,
+          17,
+          40,
+          6,
+          24,
+          8
+        ],
+        "area_px2": 734.0
+      },
+      {
+        "cam_idx": 3,
+        "event_id": 26,
+        "image_path": "/Users/woo/Documents/GitHub/Robot-Lab/rb-ArucoCube_Robot_multi_calibration/data/session/cam3/rgb_00026.jpg",
+        "corners": [
+          [
+            44.0,
+            399.0
+          ],
+          [
+            62.0,
+            387.0
+          ],
+          [
+            69.0,
+            420.0
+          ],
+          [
+            51.0,
+            435.0
+          ]
+        ],
+        "visible_ids": [
+          2,
+          32,
+          21,
+          38,
+          10,
+          16,
+          33,
+          5,
+          17,
+          24,
+          8
+        ],
+        "area_px2": 715.5
+      },
+      {
+        "cam_idx": 2,
+        "event_id": 34,
+        "image_path": "/Users/woo/Documents/GitHub/Robot-Lab/rb-ArucoCube_Robot_multi_calibration/data/session/cam2/rgb_00034.jpg",
+        "corners": [
+          [
+            503.0,
+            99.0
+          ],
+          [
+            521.0,
+            123.0
+          ],
+          [
+            511.0,
+            149.0
+          ],
+          [
+            494.0,
+            126.0
+          ]
+        ],
+        "visible_ids": [
+          32,
+          21,
+          38,
+          10,
+          27,
+          16,
+          5,
+          33,
+          22,
+          39,
+          11,
+          0,
+          28,
+          3,
+          17,
+          6,
+          34,
+          2,
+          40,
+          23,
+          12,
+          29,
+          18,
+          7,
+          35,
+          41,
+          24,
+          13,
+          30,
+          19,
+          36,
+          8,
+          42,
+          25,
+          14,
+          31,
+          37,
+          20,
+          26
+        ],
+        "area_px2": 687.0
+      }
+    ]
+  },
+  "3": {
+    "marker_id": 3,
+    "num_observations": 23,
+    "current": {
+      "face": "-X",
+      "corner_permutation": "p0123",
+      "corner_reorder": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "rank": 40,
+      "score": 1026.4079569435594,
+      "num_inliers": 0,
+      "mean_dt_mm": 206.77863902274163,
+      "mean_dr_deg": 102.3742556287074,
+      "mean_reproj_px": 0.31763644557931053
+    },
+    "best": {
+      "face": "-X",
+      "corner_permutation": "r90",
+      "corner_reorder": [
+        1,
+        2,
+        3,
+        0
+      ],
+      "num_obs": 23,
+      "num_used": 23,
+      "num_inliers": 0,
+      "mean_dt_mm": 206.77863902274808,
+      "mean_dr_deg": 47.15085658086796,
+      "mean_reproj_px": 0.3176364455790359,
+      "score": 584.6207645608498
+    },
+    "top_candidates": [
+      {
+        "face": "-X",
+        "corner_permutation": "r90",
+        "corner_reorder": [
+          1,
+          2,
+          3,
+          0
+        ],
+        "num_obs": 23,
+        "num_used": 23,
+        "num_inliers": 0,
+        "mean_dt_mm": 206.77863902274808,
+        "mean_dr_deg": 47.15085658086796,
+        "mean_reproj_px": 0.3176364455790359,
+        "score": 584.6207645608498
+      },
+      {
+        "face": "-X",
+        "corner_permutation": "p1230",
+        "corner_reorder": [
+          1,
+          2,
+          3,
+          0
+        ],
+        "num_obs": 23,
+        "num_used": 23,
+        "num_inliers": 0,
+        "mean_dt_mm": 206.77863902274808,
+        "mean_dr_deg": 47.15085658086796,
+        "mean_reproj_px": 0.3176364455790359,
+        "score": 584.6207645608498
+      },
+      {
+        "face": "+X",
+        "corner_permutation": "flip_anti",
+        "corner_reorder": [
+          2,
+          1,
+          0,
+          3
+        ],
+        "num_obs": 23,
+        "num_used": 23,
+        "num_inliers": 0,
+        "mean_dt_mm": 208.74055556765504,
+        "mean_dr_deg": 47.15085658086797,
+        "mean_reproj_px": 0.31763644557906084,
+        "score": 586.5826811057569
+      },
+      {
+        "face": "+X",
+        "corner_permutation": "p2103",
+        "corner_reorder": [
+          2,
+          1,
+          0,
+          3
+        ],
+        "num_obs": 23,
+        "num_used": 23,
+        "num_inliers": 0,
+        "mean_dt_mm": 208.74055556765504,
+        "mean_dr_deg": 47.15085658086797,
+        "mean_reproj_px": 0.31763644557906084,
+        "score": 586.5826811057569
+      },
+      {
+        "face": "-X",
+        "corner_permutation": "flip_diag",
+        "corner_reorder": [
+          0,
+          3,
+          2,
+          1
+        ],
+        "num_obs": 23,
+        "num_used": 23,
+        "num_inliers": 0,
+        "mean_dt_mm": 197.63509536541014,
+        "mean_dr_deg": 67.29911943560637,
+        "mean_reproj_px": 0.24240666594293322,
+        "score": 736.512864182147
+      },
+      {
+        "face": "-X",
+        "corner_permutation": "p0321",
+        "corner_reorder": [
+          0,
+          3,
+          2,
+          1
+        ],
+        "num_obs": 23,
+        "num_used": 23,
+        "num_inliers": 0,
+        "mean_dt_mm": 197.63509536541014,
+        "mean_dr_deg": 67.29911943560637,
+        "mean_reproj_px": 0.24240666594293322,
+        "score": 736.512864182147
+      },
+      {
+        "face": "+Y",
+        "corner_permutation": "flip_x",
+        "corner_reorder": [
+          1,
+          0,
+          3,
+          2
+        ],
+        "num_obs": 23,
+        "num_used": 23,
+        "num_inliers": 0,
+        "mean_dt_mm": 203.1799321344437,
+        "mean_dr_deg": 68.38527705115449,
+        "mean_reproj_px": 0.2116848233377713,
+        "score": 750.6855181903551
+      },
+      {
+        "face": "+Y",
+        "corner_permutation": "p1032",
+        "corner_reorder": [
+          1,
+          0,
+          3,
+          2
+        ],
+        "num_obs": 23,
+        "num_used": 23,
+        "num_inliers": 0,
+        "mean_dt_mm": 203.1799321344437,
+        "mean_dr_deg": 68.38527705115449,
+        "mean_reproj_px": 0.2116848233377713,
+        "score": 750.6855181903551
+      }
+    ],
+    "score_improvement": 441.7871923827096,
+    "examples": [
+      {
+        "cam_idx": 2,
+        "event_id": 27,
+        "image_path": "/Users/woo/Documents/GitHub/Robot-Lab/rb-ArucoCube_Robot_multi_calibration/data/session/cam2/rgb_00027.jpg",
+        "corners": [
+          [
+            97.0,
+            238.0
+          ],
+          [
+            77.0,
+            203.0
+          ],
+          [
+            87.0,
+            179.0
+          ],
+          [
+            106.0,
+            213.0
+          ]
+        ],
+        "visible_ids": [
+          0,
+          4,
+          3,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          13,
+          12,
+          14,
+          15,
+          16,
+          18,
+          20,
+          22,
+          19,
+          17,
+          23,
+          21,
+          24,
+          26,
+          27,
+          25,
+          30,
+          32,
+          29,
+          33,
+          31,
+          34,
+          28,
+          35,
+          37,
+          38,
+          36,
+          39,
+          41,
+          42,
+          40
+        ],
+        "area_px2": 805.5
+      },
+      {
+        "cam_idx": 3,
+        "event_id": 28,
+        "image_path": "/Users/woo/Documents/GitHub/Robot-Lab/rb-ArucoCube_Robot_multi_calibration/data/session/cam3/rgb_00028.jpg",
+        "corners": [
+          [
+            348.0,
+            399.0
+          ],
+          [
+            366.0,
+            414.0
+          ],
+          [
+            373.0,
+            460.0
+          ],
+          [
+            354.0,
+            442.0
+          ]
+        ],
+        "visible_ids": [
+          4,
+          3,
+          0,
+          38,
+          10,
+          21,
+          16,
+          5,
+          33,
+          17,
+          24
+        ],
+        "area_px2": 716.0
+      },
+      {
+        "cam_idx": 3,
+        "event_id": 29,
+        "image_path": "/Users/woo/Documents/GitHub/Robot-Lab/rb-ArucoCube_Robot_multi_calibration/data/session/cam3/rgb_00029.jpg",
+        "corners": [
+          [
+            348.0,
+            399.0
+          ],
+          [
+            366.0,
+            414.0
+          ],
+          [
+            372.0,
+            460.0
+          ],
+          [
+            354.0,
+            442.0
+          ]
+        ],
+        "visible_ids": [
+          4,
+          3,
+          0,
+          38,
+          10,
+          21,
+          16,
+          5,
+          33,
+          17,
+          40,
+          8
+        ],
+        "area_px2": 702.0
+      },
+      {
+        "cam_idx": 3,
+        "event_id": 30,
+        "image_path": "/Users/woo/Documents/GitHub/Robot-Lab/rb-ArucoCube_Robot_multi_calibration/data/session/cam3/rgb_00030.jpg",
+        "corners": [
+          [
+            348.0,
+            399.0
+          ],
+          [
+            366.0,
+            414.0
+          ],
+          [
+            372.0,
+            460.0
+          ],
+          [
+            354.0,
+            442.0
+          ]
+        ],
+        "visible_ids": [
+          4,
+          3,
+          0,
+          38,
+          10,
+          21,
+          16,
+          5,
+          33,
+          17,
+          6,
+          41,
+          24,
+          8
+        ],
+        "area_px2": 702.0
+      },
+      {
+        "cam_idx": 2,
+        "event_id": 34,
+        "image_path": "/Users/woo/Documents/GitHub/Robot-Lab/rb-ArucoCube_Robot_multi_calibration/data/session/cam2/rgb_00034.jpg",
+        "corners": [
+          [
+            532.0,
+            127.0
+          ],
+          [
+            563.0,
+            119.0
+          ],
+          [
+            551.0,
+            144.0
+          ],
+          [
+            521.0,
+            152.0
+          ]
+        ],
+        "visible_ids": [
+          32,
+          21,
+          38,
+          10,
+          27,
+          16,
+          5,
+          33,
+          22,
+          39,
+          11,
+          0,
+          28,
+          3,
+          17,
+          6,
+          34,
+          2,
+          40,
+          23,
+          12,
+          29,
+          18,
+          7,
+          35,
+          41,
+          24,
+          13,
+          30,
+          19,
+          36,
+          8,
+          42,
+          25,
+          14,
+          31,
+          37,
+          20,
+          26
+        ],
+        "area_px2": 670.5
+      },
+      {
+        "cam_idx": 2,
+        "event_id": 33,
+        "image_path": "/Users/woo/Documents/GitHub/Robot-Lab/rb-ArucoCube_Robot_multi_calibration/data/session/cam2/rgb_00033.jpg",
+        "corners": [
+          [
+            528.0,
+            133.0
+          ],
+          [
+            559.0,
+            125.0
+          ],
+          [
+            545.0,
+            150.0
+          ],
+          [
+            517.0,
+            157.0
+          ]
+        ],
+        "visible_ids": [
+          32,
+          21,
+          38,
+          10,
+          27,
+          16,
+          5,
+          33,
+          22,
+          39,
+          11,
+          0,
+          28,
+          3,
+          17,
+          34,
+          6,
+          2,
+          40,
+          23,
+          12,
+          29,
+          18,
+          35,
+          7,
+          24,
+          41,
+          13,
+          30,
+          36,
+          19,
+          8,
+          42,
+          25,
+          14,
+          31,
+          20,
+          37,
+          26
+        ],
+        "area_px2": 629.0
+      }
+    ]
+  },
+  "4": {
+    "marker_id": 4,
+    "num_observations": 11,
+    "current": {
+      "face": "-Y",
+      "corner_permutation": "p0123",
+      "corner_reorder": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "rank": 103,
+      "score": 1347.6445373692763,
+      "num_inliers": 0,
+      "mean_dt_mm": 79.1363956157675,
+      "mean_dr_deg": 158.47536502267224,
+      "mean_reproj_px": 0.3526107860654503
+    },
+    "best": {
+      "face": "+X",
+      "corner_permutation": "r270",
+      "corner_reorder": [
+        3,
+        0,
+        1,
+        2
+      ],
+      "num_obs": 11,
+      "num_used": 11,
+      "num_inliers": 0,
+      "mean_dt_mm": 79.13639561576669,
+      "mean_dr_deg": 54.09188597535242,
+      "mean_reproj_px": 0.3526107860654322,
+      "score": 512.5767049907168
+    },
+    "top_candidates": [
+      {
+        "face": "+X",
+        "corner_permutation": "r270",
+        "corner_reorder": [
+          3,
+          0,
+          1,
+          2
+        ],
+        "num_obs": 11,
+        "num_used": 11,
+        "num_inliers": 0,
+        "mean_dt_mm": 79.13639561576669,
+        "mean_dr_deg": 54.09188597535242,
+        "mean_reproj_px": 0.3526107860654322,
+        "score": 512.5767049907168
+      },
+      {
+        "face": "+X",
+        "corner_permutation": "p3012",
+        "corner_reorder": [
+          3,
+          0,
+          1,
+          2
+        ],
+        "num_obs": 11,
+        "num_used": 11,
+        "num_inliers": 0,
+        "mean_dt_mm": 79.13639561576669,
+        "mean_dr_deg": 54.09188597535242,
+        "mean_reproj_px": 0.3526107860654322,
+        "score": 512.5767049907168
+      },
+      {
+        "face": "-X",
+        "corner_permutation": "flip_diag",
+        "corner_reorder": [
+          0,
+          3,
+          2,
+          1
+        ],
+        "num_obs": 11,
+        "num_used": 11,
+        "num_inliers": 0,
+        "mean_dt_mm": 95.81786925274483,
+        "mean_dr_deg": 54.091885975352426,
+        "mean_reproj_px": 0.35261078606543117,
+        "score": 529.2581786276951
+      },
+      {
+        "face": "-X",
+        "corner_permutation": "p0321",
+        "corner_reorder": [
+          0,
+          3,
+          2,
+          1
+        ],
+        "num_obs": 11,
+        "num_used": 11,
+        "num_inliers": 0,
+        "mean_dt_mm": 95.81786925274483,
+        "mean_dr_deg": 54.091885975352426,
+        "mean_reproj_px": 0.35261078606543117,
+        "score": 529.2581786276951
+      },
+      {
+        "face": "-Y",
+        "corner_permutation": "r180",
+        "corner_reorder": [
+          2,
+          3,
+          0,
+          1
+        ],
+        "num_obs": 11,
+        "num_used": 11,
+        "num_inliers": 0,
+        "mean_dt_mm": 84.16156540541402,
+        "mean_dr_deg": 58.152414869384216,
+        "mean_reproj_px": 0.297679914656685,
+        "score": 549.976244189801
+      },
+      {
+        "face": "-Y",
+        "corner_permutation": "p2301",
+        "corner_reorder": [
+          2,
+          3,
+          0,
+          1
+        ],
+        "num_obs": 11,
+        "num_used": 11,
+        "num_inliers": 0,
+        "mean_dt_mm": 84.16156540541402,
+        "mean_dr_deg": 58.152414869384216,
+        "mean_reproj_px": 0.297679914656685,
+        "score": 549.976244189801
+      },
+      {
+        "face": "+Y",
+        "corner_permutation": "flip_x",
+        "corner_reorder": [
+          1,
+          0,
+          3,
+          2
+        ],
+        "num_obs": 11,
+        "num_used": 11,
+        "num_inliers": 0,
+        "mean_dt_mm": 92.08419212948377,
+        "mean_dr_deg": 58.152414869384096,
+        "mean_reproj_px": 0.2976799146567083,
+        "score": 557.8988709138699
+      },
+      {
+        "face": "+Y",
+        "corner_permutation": "p1032",
+        "corner_reorder": [
+          1,
+          0,
+          3,
+          2
+        ],
+        "num_obs": 11,
+        "num_used": 11,
+        "num_inliers": 0,
+        "mean_dt_mm": 92.08419212948377,
+        "mean_dr_deg": 58.152414869384096,
+        "mean_reproj_px": 0.2976799146567083,
+        "score": 557.8988709138699
+      }
+    ],
+    "score_improvement": 835.0678323785595,
+    "examples": [
+      {
+        "cam_idx": 3,
+        "event_id": 28,
+        "image_path": "/Users/woo/Documents/GitHub/Robot-Lab/rb-ArucoCube_Robot_multi_calibration/data/session/cam3/rgb_00028.jpg",
+        "corners": [
+          [
+            379.0,
+            414.0
+          ],
+          [
+            422.0,
+            402.0
+          ],
+          [
+            428.0,
+            447.0
+          ],
+          [
+            385.0,
+            461.0
+          ]
+        ],
+        "visible_ids": [
+          4,
+          3,
+          0,
+          38,
+          10,
+          21,
+          16,
+          5,
+          33,
+          17,
+          24
+        ],
+        "area_px2": 2056.0
+      },
+      {
+        "cam_idx": 3,
+        "event_id": 29,
+        "image_path": "/Users/woo/Documents/GitHub/Robot-Lab/rb-ArucoCube_Robot_multi_calibration/data/session/cam3/rgb_00029.jpg",
+        "corners": [
+          [
+            379.0,
+            414.0
+          ],
+          [
+            422.0,
+            402.0
+          ],
+          [
+            428.0,
+            447.0
+          ],
+          [
+            385.0,
+            461.0
+          ]
+        ],
+        "visible_ids": [
+          4,
+          3,
+          0,
+          38,
+          10,
+          21,
+          16,
+          5,
+          33,
+          17,
+          40,
+          8
+        ],
+        "area_px2": 2056.0
+      },
+      {
+        "cam_idx": 3,
+        "event_id": 30,
+        "image_path": "/Users/woo/Documents/GitHub/Robot-Lab/rb-ArucoCube_Robot_multi_calibration/data/session/cam3/rgb_00030.jpg",
+        "corners": [
+          [
+            379.0,
+            414.0
+          ],
+          [
+            422.0,
+            402.0
+          ],
+          [
+            428.0,
+            447.0
+          ],
+          [
+            385.0,
+            461.0
+          ]
+        ],
+        "visible_ids": [
+          4,
+          3,
+          0,
+          38,
+          10,
+          21,
+          16,
+          5,
+          33,
+          17,
+          6,
+          41,
+          24,
+          8
+        ],
+        "area_px2": 2056.0
+      },
+      {
+        "cam_idx": 0,
+        "event_id": 31,
+        "image_path": "/Users/woo/Documents/GitHub/Robot-Lab/rb-ArucoCube_Robot_multi_calibration/data/session/cam0/rgb_00031.jpg",
+        "corners": [
+          [
+            252.0,
+            335.0
+          ],
+          [
+            287.0,
+            340.0
+          ],
+          [
+            287.0,
+            378.0
+          ],
+          [
+            252.0,
+            373.0
+          ]
+        ],
+        "visible_ids": [
+          4,
+          1,
+          0,
+          37,
+          26,
+          31,
+          36,
+          42,
+          9,
+          25
+        ],
+        "area_px2": 1330.0
+      },
+      {
+        "cam_idx": 0,
+        "event_id": 32,
+        "image_path": "/Users/woo/Documents/GitHub/Robot-Lab/rb-ArucoCube_Robot_multi_calibration/data/session/cam0/rgb_00032.jpg",
+        "corners": [
+          [
+            252.0,
+            335.0
+          ],
+          [
+            287.0,
+            340.0
+          ],
+          [
+            287.0,
+            378.0
+          ],
+          [
+            252.0,
+            373.0
+          ]
+        ],
+        "visible_ids": [
+          4,
+          36,
+          1,
+          0,
+          37,
+          26,
+          42,
+          31,
+          9,
+          25
+        ],
+        "area_px2": 1330.0
+      },
+      {
+        "cam_idx": 0,
+        "event_id": 33,
+        "image_path": "/Users/woo/Documents/GitHub/Robot-Lab/rb-ArucoCube_Robot_multi_calibration/data/session/cam0/rgb_00033.jpg",
+        "corners": [
+          [
+            252.0,
+            335.0
+          ],
+          [
+            287.0,
+            340.0
+          ],
+          [
+            287.0,
+            378.0
+          ],
+          [
+            252.0,
+            373.0
+          ]
+        ],
+        "visible_ids": [
+          4,
+          1,
+          0,
+          37,
+          26,
+          42,
+          31,
+          36,
+          9,
+          25
+        ],
+        "area_px2": 1330.0
+      }
+    ]
+  }
+}

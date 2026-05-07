@@ -28,9 +28,10 @@
       "source_folder": "data11111111",
       "capture_range": [
         0,
-        6
+        3
       ],
-      "count": 7,
+      "count": 4,
+      "physical_set_index": 0,
       "set_joints": [
         8.549350247524753,
         -53.12190594059406,
@@ -58,11 +59,35 @@
       "set_index_map": {
         "0": 0
       },
-      "set_index_map_after_split": {
-        "0_events_0-3": 0,
-        "0_events_4-6": 4
+      "note": "Original data11111111 events 0-3 \u2014 cube at recorded set position."
+    },
+    {
+      "source_folder": "data11111111",
+      "capture_range": [
+        4,
+        6
+      ],
+      "count": 3,
+      "physical_set_index": 4,
+      "set_joints": null,
+      "set_tcp": null,
+      "set_cube_center_recorded": [
+        1.088,
+        674.856,
+        -18.101,
+        105.0998828962479,
+        0.7999063777821422,
+        179.70007644209184
+      ],
+      "set_cube_center_observed_mm": [
+        -219.0,
+        676.0,
+        1.4
+      ],
+      "set_index_map": {
+        "0": 4
       },
-      "split_note": "Original set 0 from data11111111 contained 2 physical cube positions (~218mm apart). Split events 4-6 to set 4 retroactively."
+      "note": "Re-classified: cube physically moved ~218mm in -X between events 3 and 4 within original set 0. Recorded set_cube_center is from before move; observed position is multi-cam consensus."
     },
     {
       "source_folder": "data3333333",
@@ -132,8 +157,11 @@
         179.69961807585577
       ],
       "set_index_map": {
-        "0": 3
-      }
+        "0": 3,
+        "0_event_17": 5,
+        "0_event_18": 6
+      },
+      "split_note": "Original set 3 (3 events) split into singletons due to ~6mm cube drift across events. event 16 stays in set 3, event 17 \u2192 set 5, event 18 \u2192 set 6."
     }
   ],
   "waypoints": [
@@ -775,7 +803,7 @@
         10.799280409964297,
         146.69994197795745
       ],
-      "set_index": 3,
+      "set_index": 5,
       "place_joints": [
         19.72694925742574,
         -34.03496287128713,
@@ -811,7 +839,7 @@
         -17.20156810853563,
         167.69901705684063
       ],
-      "set_index": 3,
+      "set_index": 6,
       "place_joints": [
         19.72694925742574,
         -34.03496287128713,
@@ -820,6 +848,76 @@
         -14.93386448019802,
         316.576577970297
       ]
+    }
+  ],
+  "sets": [
+    {
+      "set_index": 0,
+      "events": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "n_events": 4,
+      "source_folder": "data11111111"
+    },
+    {
+      "set_index": 1,
+      "events": [
+        7,
+        8,
+        9,
+        10,
+        11,
+        12
+      ],
+      "n_events": 6,
+      "source_folder": "data3333333"
+    },
+    {
+      "set_index": 2,
+      "events": [
+        13,
+        14,
+        15
+      ],
+      "n_events": 3,
+      "source_folder": "data3333333"
+    },
+    {
+      "set_index": 3,
+      "events": [
+        16
+      ],
+      "n_events": 1,
+      "source_folder": "data"
+    },
+    {
+      "set_index": 4,
+      "events": [
+        4,
+        5,
+        6
+      ],
+      "n_events": 3,
+      "source_folder": "data11111111"
+    },
+    {
+      "set_index": 5,
+      "events": [
+        17
+      ],
+      "n_events": 1,
+      "source_folder": null
+    },
+    {
+      "set_index": 6,
+      "events": [
+        18
+      ],
+      "n_events": 1,
+      "source_folder": null
     }
   ]
 }

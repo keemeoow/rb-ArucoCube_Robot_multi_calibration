@@ -6,7 +6,9 @@
   --- 이동 ---
   p <축>,<값>       : TCP 상대 이동 (예: "p z,50", "p rz,15")
   j <축>,<값>       : 관절 상대 이동 (예: "j d1,10")
-  goto x,y,z,rz,ry,rx : TCP 절대 좌표로 이동
+  gotop x,y,z[,rz,ry,rx]    : TCP 절대 좌표로 이동 (line motion)
+  gotoj d1,d2,d3,d4,d5,d6   : 관절 절대 좌표로 이동 (joint move)
+  goto  x,y,z[,rz,ry,rx]    : (gotop 별칭, 기존 호환)
   show              : 현재 TCP 포즈 및 관절 값 표시
   speed <0-100>     : 속도 설정 (클수록 빠름)
 
@@ -39,7 +41,11 @@
                               -> +Z 30mm 초기 lift
                               -> set의 place_joints로 이동 -> 그리퍼 오픈
                               -> +Z 100mm 클리어런스 -> 각 capture_joints 촬영
-                              -> 다음 set로 큐브 이동 (re-grip + +Z 30mm transit lift)
+                                 (save gate 실패 시 해당 위치에서 ±2cm 지터링하며
+                                  최대 5회 재시도, 그래도 실패하면 해당 위치 스킵)
+                              -> 다음 set로 큐브 이동 (재-그립 시 항상 place 위치
+                                 +Z 20mm 위에서 접근 후 하강하여 close +
+                                 +Z 30mm transit lift)
                               -> 반복.
 
   --- 종료 ---
@@ -76,6 +82,12 @@ CUBE_CENTER_OFFSET_Z = CUBE_SIZE_MM / 2.0 - CUBE_GRIP_DEPTH_MM
 TOOL_GRIPPER_Z = 150.0
 TOOL_CUBE_CENTER_Z = TOOL_GRIPPER_Z - CUBE_CENTER_OFFSET_Z
 
+# 큐브를 잡을 때 항상 place 위치 +Z 위에서 접근 후 하강
+GRIP_APPROACH_Z_MM = 20.0
+# save gate 실패 시 ±2cm 지터링 재시도 (최대 5회)
+CAPTURE_RETRY_MAX_ATTEMPTS = 5
+CAPTURE_RETRY_JITTER_MM = 20.0
+
 TCP_AXIS_MAP = {'x': 'dx', 'y': 'dy', 'z': 'dz', 'rz': 'drz', 'ry': 'dry', 'rx': 'drx'}
 JOINT_AXIS_MAP = {'d1': 'dj1', 'd2': 'dj2', 'd3': 'dj3', 'd4': 'dj4', 'd5': 'dj5', 'd6': 'dj6'}
 VALID_AXES = set(list(TCP_AXIS_MAP.keys()) + list(JOINT_AXIS_MAP.keys()))
@@ -83,23 +95,44 @@ VALID_AXES = set(list(TCP_AXIS_MAP.keys()) + list(JOINT_AXIS_MAP.keys()))
 
 # ── Socket ──
 
+# Newline-delimited JSON framing.
+# 한 메시지가 단일 recv() 청크 크기(예: waypoints_data 응답은 15KB+)를 넘거나
+# 여러 메시지가 한 청크에 합쳐져 도착해도 안전하게 한 건씩 잘라서 반환한다.
+_RECV_BUF = {'data': b''}
+
+
 def send_json(conn, obj):
     try:
         msg = json.dumps(obj)
-        conn.sendall(msg.encode('utf-8'))
+        conn.sendall((msg + '\n').encode('utf-8'))
         print "Sent: {}".format(msg)
     except socket.error as e:
         print "Send error: {}".format(e)
 
 
 def recv_json(conn):
+    """Receive one newline-delimited JSON object (handles large/split messages)."""
     try:
-        data = conn.recv(8192).decode('utf-8')
-        if not data:
-            return None
-        return json.loads(data.strip())
-    except Exception as e:
+        while b'\n' not in _RECV_BUF['data']:
+            chunk = conn.recv(65536)
+            if not chunk:
+                # peer closed; try to parse any unterminated remainder.
+                if _RECV_BUF['data']:
+                    line = _RECV_BUF['data']
+                    _RECV_BUF['data'] = b''
+                    try:
+                        return json.loads(line.decode('utf-8').strip())
+                    except Exception as e:
+                        print "Recv parse error: {}".format(e)
+                return None
+            _RECV_BUF['data'] += chunk
+        line, _, rest = _RECV_BUF['data'].partition(b'\n')
+        _RECV_BUF['data'] = rest
+        return json.loads(line.decode('utf-8').strip())
+    except socket.error as e:
         print "Recv error: {}".format(e)
+    except Exception as e:
+        print "Recv parse error: {}".format(e)
     return None
 
 
@@ -246,6 +279,84 @@ def do_capture(conn, pose_index, set_cube_center=None, set_index=None,
 
 # ── Auto capture ──
 
+def approach_and_close_gripper(rb, place_joints, place_tcp=None,
+                                approach_z_mm=GRIP_APPROACH_Z_MM):
+    """그리퍼 닫기 전 항상 +Z 위에서 접근 후 하강하여 닫는다.
+
+    place_tcp이 주어지면 (place_tcp + +Z) -> place_tcp 라인 모션으로 접근.
+    주어지지 않으면 place_joints로 직접 이동 후 닫는다(폴백).
+    """
+    if place_tcp is not None:
+        above = list(place_tcp[:6])
+        above[2] += approach_z_mm
+        try:
+            print '[Auto] +Z {:.0f}mm approach above grip pose'.format(approach_z_mm)
+            rb.line(Position(*above))
+            time.sleep(0.3)
+            print '[Auto] descend to grip pose'
+            rb.line(Position(*place_tcp[:6]))
+            time.sleep(0.2)
+        except Exception as e:
+            print '[WARN] line approach failed: {} -> joint move fallback'.format(e)
+            rb.move(Joint(*place_joints[:6]))
+            time.sleep(0.3)
+    else:
+        rb.move(Joint(*place_joints[:6]))
+        time.sleep(0.3)
+    gripper_close()
+
+
+def capture_with_retry(rb, conn, pose_idx, base_tcp,
+                        set_cube_center=None, set_index=None,
+                        set_joints=None, set_tcp=None, place_joints=None,
+                        max_attempts=CAPTURE_RETRY_MAX_ATTEMPTS,
+                        jitter_mm=CAPTURE_RETRY_JITTER_MM):
+    """save gate가 통과될 때까지 base_tcp 기준 ±2cm 지터링하며 촬영 재시도.
+
+    최대 max_attempts번 시도. 모두 실패하면 'skipped' 반환.
+    save gate 통과 시 'success', 클라이언트 연결 끊김 시 None.
+    회전(rz/ry/rx)은 유지하고 x/y만 ±jitter_mm로 흔든다(z는 충돌 위험으로 고정).
+    """
+    deltas = [
+        (0.0, 0.0, 0.0),
+        (jitter_mm, 0.0, 0.0),
+        (-jitter_mm, 0.0, 0.0),
+        (0.0, jitter_mm, 0.0),
+        (0.0, -jitter_mm, 0.0),
+    ]
+    n = min(max_attempts, len(deltas))
+    for attempt in range(n):
+        dx, dy, dz = deltas[attempt]
+        if attempt > 0:
+            adj = list(base_tcp[:6])
+            adj[0] += dx
+            adj[1] += dy
+            adj[2] += dz
+            print '  [retry {}/{}] dx={:+.0f} dy={:+.0f} dz={:+.0f}'.format(
+                attempt + 1, n, dx, dy, dz)
+            try:
+                rb.line(Position(*adj))
+            except Exception as e:
+                print '  [WARN] jitter move failed: {}'.format(e)
+                continue
+            time.sleep(0.3)
+
+        status, _, _ = do_capture(
+            conn, pose_idx,
+            set_cube_center=set_cube_center,
+            set_index=set_index,
+            set_joints=set_joints,
+            set_tcp=set_tcp,
+            place_joints=place_joints,
+        )
+        if status is None:
+            return None
+        if status == 'success':
+            return 'success'
+        print '  [Auto] save gate failed (status={})'.format(status)
+    return 'skipped'
+
+
 def request_waypoints_from_pc(conn, timeout_sec=10.0):
     """Request capture_waypoints.json content from the PC over the socket.
 
@@ -387,6 +498,8 @@ def _run_auto_multiset(rb, conn, data, speed,
         print '[Auto] -> set {} place_joints'.format(sidx)
         rb.move(Joint(*place_j[:6]))
         time.sleep(0.5)
+        # 재-그립 시 +Z 위에서 line 접근하기 위한 기준 TCP를 기록.
+        place_tcp = get_tcp()
 
         # Step 2: open gripper -> cube released.
         print '[Auto] gripper OPEN (release cube on floor)'
@@ -402,7 +515,7 @@ def _run_auto_multiset(rb, conn, data, speed,
             print '[WARN] +Z clearance failed: {} (continuing)'.format(e)
         time.sleep(0.5)
 
-        # Step 4: visit each capture pose.
+        # Step 4: visit each capture pose. save gate 실패 시 ±2cm 지터링 재시도.
         for wi, wp in enumerate(wps):
             cap_j = wp['capture_joints']
             pose_idx = wp.get('pose_index', wi)
@@ -415,31 +528,32 @@ def _run_auto_multiset(rb, conn, data, speed,
                 skipped += 1
                 continue
             time.sleep(0.5)
+            base_tcp = get_tcp()
 
-            status, _, _ = do_capture(
-                conn, pose_idx,
+            result = capture_with_retry(
+                rb, conn, pose_idx, base_tcp,
                 set_cube_center=data.get('set_cube_center'),
                 set_index=sidx,
                 set_joints=place_j,
                 set_tcp=None,
                 place_joints=place_j,
             )
-            if status is None:
+            if result is None:
                 print '[Auto] disconnected, stopping.'
                 return
-            if status == 'success':
+            if result == 'success':
                 success += 1
                 print '  [Auto] -> OK'
             else:
                 skipped += 1
-                print '  [Auto] -> SKIPPED'
+                print '  [Auto] -> SKIPPED ({} attempts failed)'.format(
+                    CAPTURE_RETRY_MAX_ATTEMPTS)
 
         # Step 5: if more sets remain, re-grip the cube and lift before transit.
         if si < n_sets - 1:
-            print '[Auto] returning to place_joints to re-grip cube...'
-            rb.move(Joint(*place_j[:6]))
-            time.sleep(0.3)
-            gripper_close()
+            print '[Auto] re-grip cube (+Z {:.0f}mm approach above)'.format(
+                GRIP_APPROACH_Z_MM)
+            approach_and_close_gripper(rb, place_j, place_tcp)
             time.sleep(0.3)
             # Lift +Z transit_lift_mm so the cube clears the floor during the
             # joint transit to the next set's place_joints.
@@ -491,6 +605,7 @@ def _run_auto_v1(rb, conn, data, speed):
     raw_input('Press ENTER to start...')
 
     success_count = 0
+    skipped_count = 0
 
     for i, wp in enumerate(wps):
         place_j = wp['place_joints']
@@ -500,30 +615,34 @@ def _run_auto_v1(rb, conn, data, speed):
 
         rb.move(Joint(*place_j[:6]))
         time.sleep(0.3)
+        place_tcp = get_tcp()
         gripper_open()
         time.sleep(0.3)
 
         rb.move(Joint(*capture_j[:6]))
         time.sleep(0.5)
+        base_tcp = get_tcp()
 
-        status, _, _ = do_capture(conn, i, set_cube_center)
-        if status is None:
+        result = capture_with_retry(rb, conn, i, base_tcp,
+                                     set_cube_center=set_cube_center)
+        if result is None:
             break
-        if status == 'success':
+        if result == 'success':
             success_count += 1
             print '[Auto] -> OK'
         else:
-            print '[Auto] -> SKIPPED'
+            skipped_count += 1
+            print '[Auto] -> SKIPPED ({} attempts failed)'.format(
+                CAPTURE_RETRY_MAX_ATTEMPTS)
 
-        rb.move(Joint(*place_j[:6]))
-        time.sleep(0.3)
-        gripper_close()
+        approach_and_close_gripper(rb, place_j, place_tcp)
         time.sleep(0.3)
         rb.move(Joint(*set_joints[:6]))
 
     send_json(conn, {"command": "quit"})
     print ''
-    print '  Auto Complete v1: {}/{} captured'.format(success_count, len(wps))
+    print '  Auto Complete v1: {}/{} captured ({} skipped)'.format(
+        success_count, len(wps), skipped_count)
 
 
 def _run_auto_v2(rb, conn, data, speed):
@@ -580,6 +699,7 @@ def _run_auto_v2(rb, conn, data, speed):
 
         rb.move(Joint(*place_j[:6]))
         time.sleep(0.3)
+        place_tcp = get_tcp()
         gripper_open()
         time.sleep(0.3)
 
@@ -596,33 +716,36 @@ def _run_auto_v2(rb, conn, data, speed):
                 skipped_count += 1
                 continue
             time.sleep(0.5)
+            base_tcp = get_tcp()
 
-            status, _, _ = do_capture(
-                conn, pose_idx, set_cube,
+            result = capture_with_retry(
+                rb, conn, pose_idx, base_tcp,
+                set_cube_center=set_cube,
                 set_index=set_idx,
                 set_joints=set_joints,
                 set_tcp=set_tcp,
-                place_joints=place_j)
+                place_joints=place_j,
+            )
 
-            if status is None:
+            if result is None:
                 print '  [Auto] Disconnected, stopping.'
                 disconnected = True
                 break
-            elif status == 'success':
+            elif result == 'success':
                 success_count += 1
                 print '  [Auto] -> OK'
             else:
                 skipped_count += 1
-                print '  [Auto] -> SKIPPED'
+                print '  [Auto] -> SKIPPED ({} attempts failed)'.format(
+                    CAPTURE_RETRY_MAX_ATTEMPTS)
 
         if disconnected:
             break
 
-        # Return to place pose, re-grip cube, return to SET
-        print '  [Auto] Re-gripping cube and returning to SET...'
-        rb.move(Joint(*place_j[:6]))
-        time.sleep(0.3)
-        gripper_close()
+        # Return to place pose, re-grip cube (+Z approach), return to SET
+        print '  [Auto] Re-gripping cube (+Z {:.0f}mm approach) and returning to SET...'.format(
+            GRIP_APPROACH_Z_MM)
+        approach_and_close_gripper(rb, place_j, place_tcp)
         time.sleep(0.3)
         rb.move(Joint(*set_joints[:6]))
 
@@ -698,8 +821,9 @@ def main():
 
         print ''
         print '=========================================='
-        print '  p <a>,<v> / j <a>,<v> : move'
-        print '  goto x,y,z[,rz,ry,rx] : abs move'
+        print '  p <a>,<v> / j <a>,<v>  : rel move'
+        print '  gotop x,y,z[,rz,ry,rx] : TCP abs move'
+        print '  gotoj d1,d2,d3,d4,d5,d6: joint abs move'
         print '  show / speed <0-100>'
         print '  c: capture  set: save TCP+cube'
         print '  go: grip open  gc: grip close'
@@ -859,17 +983,30 @@ def main():
 
                     show_pose()
 
-            # Goto
-            elif cl.startswith('goto '):
+            # Goto - joint absolute move
+            elif cl.startswith('gotoj '):
                 try:
-                    vals = [float(v.strip()) for v in cmd[5:].strip().split(',')]
+                    vals = [float(v.strip()) for v in cmd[6:].strip().split(',')]
+                    if len(vals) != 6:
+                        print 'Usage: gotoj d1,d2,d3,d4,d5,d6'
+                        continue
+                    rb.move(Joint(*vals))
+                    show_pose()
+                except Exception as e:
+                    print 'Error: {}'.format(e)
+
+            # Goto - TCP absolute move (gotop / 기존 goto는 별칭으로 호환 유지)
+            elif cl.startswith('gotop ') or cl.startswith('goto '):
+                try:
+                    rest = cmd[6:] if cl.startswith('gotop ') else cmd[5:]
+                    vals = [float(v.strip()) for v in rest.strip().split(',')]
                     if len(vals) == 6:
                         rb.line(Position(*vals))
                     elif len(vals) == 3:
                         tcp = get_tcp()
                         rb.line(Position(vals[0], vals[1], vals[2], tcp[3], tcp[4], tcp[5]))
                     else:
-                        print 'Usage: goto x,y,z[,rz,ry,rx]'
+                        print 'Usage: gotop x,y,z[,rz,ry,rx]'
                         continue
                     show_pose()
                 except Exception as e:

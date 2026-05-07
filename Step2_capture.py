@@ -1335,7 +1335,7 @@ def main():
                                     "status": "ok",
                                     "waypoints_data": wp_data,
                                 })
-                                manual_sock.sendall(resp_msg.encode("utf-8"))
+                                manual_sock.sendall((resp_msg + "\n").encode("utf-8"))
                                 print(f"[ManualRobot]   sent {len(wp_data.get('waypoints', []))} waypoints")
                             except FileNotFoundError:
                                 err = json.dumps({
@@ -1343,7 +1343,7 @@ def main():
                                     "status": "error",
                                     "reason": f"file_not_found: {wp_path}",
                                 })
-                                manual_sock.sendall(err.encode("utf-8"))
+                                manual_sock.sendall((err + "\n").encode("utf-8"))
                                 print(f"[ManualRobot]   ERROR: file not found")
                             except Exception as e:
                                 err = json.dumps({
@@ -1351,7 +1351,7 @@ def main():
                                     "status": "error",
                                     "reason": str(e),
                                 })
-                                manual_sock.sendall(err.encode("utf-8"))
+                                manual_sock.sendall((err + "\n").encode("utf-8"))
                                 print(f"[ManualRobot]   ERROR: {e}")
                             continue
 
@@ -1388,7 +1388,7 @@ def main():
                                 "reason": gate.get("reason"),
                             })
                             try:
-                                manual_sock.sendall(resp.encode("utf-8"))
+                                manual_sock.sendall((resp + "\n").encode("utf-8"))
                             except OSError:
                                 break
 
@@ -1419,14 +1419,14 @@ def main():
                             if gripper_cam_idx is None or gripper_cam_idx not in cams:
                                 resp = json.dumps({"ok": False, "reason": "no_gripper_cam"})
                                 try:
-                                    manual_sock.sendall(resp.encode("utf-8"))
+                                    manual_sock.sendall((resp + "\n").encode("utf-8"))
                                 except OSError:
                                     break
                                 continue
                             if gripper_cam_idx not in cam_intrinsics:
                                 resp = json.dumps({"ok": False, "reason": "no_intrinsics"})
                                 try:
-                                    manual_sock.sendall(resp.encode("utf-8"))
+                                    manual_sock.sendall((resp + "\n").encode("utf-8"))
                                 except OSError:
                                     break
                                 continue
@@ -1435,7 +1435,7 @@ def main():
                             if g_color is None:
                                 resp = json.dumps({"ok": False, "reason": "no_image"})
                                 try:
-                                    manual_sock.sendall(resp.encode("utf-8"))
+                                    manual_sock.sendall((resp + "\n").encode("utf-8"))
                                 except OSError:
                                     break
                                 continue
@@ -1470,7 +1470,7 @@ def main():
                                     f"raw_ids={detect_info['raw_ids']}, mask={detect_info['board_mask_applied']})"
                                 )
                             try:
-                                manual_sock.sendall(resp.encode("utf-8"))
+                                manual_sock.sendall((resp + "\n").encode("utf-8"))
                             except OSError:
                                 break
                         else:

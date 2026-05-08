@@ -65,6 +65,7 @@ import os
 import sys as _sys_top
 import json
 import time
+import shutil
 import argparse
 import select as _select
 import threading as _threading
@@ -1353,6 +1354,53 @@ def main():
                                 })
                                 manual_sock.sendall((err + "\n").encode("utf-8"))
                                 print(f"[ManualRobot]   ERROR: {e}")
+                            continue
+
+                        if cmd == "save_waypoints":
+                            # teach_extend.py가 머지된 전체 waypoint 데이터를 통째로 보내며
+                            # PC에 영구 저장을 요청. 기존 파일은 .bak으로 백업한 뒤 덮어씀.
+                            wp_path = os.path.join(args.root_folder, "capture_waypoints.json")
+                            wp_data = msg.get("waypoints_data")
+                            if not isinstance(wp_data, dict):
+                                err = json.dumps({
+                                    "action": "save_waypoints",
+                                    "status": "error",
+                                    "reason": "missing_or_invalid_waypoints_data",
+                                })
+                                try:
+                                    manual_sock.sendall((err + "\n").encode("utf-8"))
+                                except OSError:
+                                    break
+                                continue
+                            try:
+                                if os.path.exists(wp_path):
+                                    bak_path = wp_path + ".bak"
+                                    shutil.copyfile(wp_path, bak_path)
+                                    print(f"[ManualRobot]   backup: {bak_path}")
+                                with open(wp_path, "w") as wf:
+                                    json.dump(wp_data, wf, indent=2)
+                                n_wp = len(wp_data.get("waypoints", []))
+                                print(f"[ManualRobot] Waypoints saved by robot: {wp_path} ({n_wp} poses)")
+                                resp_msg = json.dumps({
+                                    "action": "save_waypoints",
+                                    "status": "ok",
+                                    "n_waypoints": n_wp,
+                                })
+                                # robot 측에 저장이 끝났음을 알려주면 robot 측 wp_list 재기록을
+                                # 막을 수 있도록 표시. 메인 thread에서는 wp_list가 비어있을 때만
+                                # 저장하므로, 이 메시지 처리 시 wp_list를 비워두면 두 번 안 씀.
+                                wp_list.clear()
+                            except Exception as e:
+                                resp_msg = json.dumps({
+                                    "action": "save_waypoints",
+                                    "status": "error",
+                                    "reason": str(e),
+                                })
+                                print(f"[ManualRobot]   save error: {e}")
+                            try:
+                                manual_sock.sendall((resp_msg + "\n").encode("utf-8"))
+                            except OSError:
+                                break
                             continue
 
                         if cmd == "capture":

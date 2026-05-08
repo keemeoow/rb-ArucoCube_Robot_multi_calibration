@@ -1,6 +1,6 @@
 {
   "created_at_epoch": 1777473952.3074734,
-  "updated_at_epoch": 1778162257.9501388,
+  "updated_at_epoch": 1778165015.6226134,
   "serial_to_idx": {
     "039422061216": 0,
     "314522062542": 1,
@@ -11,19 +11,19 @@
   "gripper_serial": "752112070297",
   "detected_now": [
     {
-      "serial": "752112070297",
-      "name": "Intel RealSense D435"
-    },
-    {
-      "serial": "314522062542",
-      "name": "Intel RealSense D415"
-    },
-    {
       "serial": "039422061216",
       "name": "Intel RealSense D415"
     },
     {
       "serial": "912322060991",
+      "name": "Intel RealSense D415"
+    },
+    {
+      "serial": "752112070297",
+      "name": "Intel RealSense D435"
+    },
+    {
+      "serial": "314522062542",
       "name": "Intel RealSense D415"
     }
   ]

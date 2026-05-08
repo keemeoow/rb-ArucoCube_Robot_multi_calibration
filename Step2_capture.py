@@ -10,14 +10,12 @@ Step 2: 멀티카메라 캘리브레이션용 캡처 수집.
   5. `set_index`, robot pose, set_cube_center_6dof, capture gate 결과를 함께 저장한다.
 
 실행 명령어:
-python Step2_capture.py \
+python Step2_capture.py   \
     --root_folder ./data/session \
     --intrinsics_dir ./intrinsics \
     --use_robot --manual_robot \
     --robot_ip 192.168.0.23 --robot_port 12348 \
-    --settle_time 1.5 \
-    --show \
-    --min_markers 1 --min_cams_with_cube 1
+    --show --save_depth
 
 [서버코드 작동법] (큐브 위치별 멀티 캘리브레이션)
 # ── 1. 큐브를 바닥에 놓고 위치 저장 ──
@@ -849,7 +847,11 @@ def main():
             print(f"[WARN] No intrinsics for cam{ci}. Per-marker PnP will be skipped.")
 
     # ─── 카메라 시작 ───
-    # USB 협상 안정화를 위해 카메라 간 0.8초 간격으로 순차 시작
+    # 이전 실행이 비정상 종료(세그폴트 등)된 경우 디바이스가 비정상 상태로
+    # 남을 수 있어 D435가 첫 pipeline.start()에서 "Frame didn't arrive"로
+    # 타임아웃하는 일이 잦다. 모든 디바이스를 한 번 hardware_reset해서 깨끗한
+    # 상태에서 시작한다. 그 뒤 USB 협상 안정화를 위해 카메라 간 0.8초 간격으로 순차 시작.
+    RealSenseCamera.reset_all_devices()
     cams: Dict[int, RealSenseCamera] = {}
     for i, (ci, serial) in enumerate(idx_serial_pairs):
         if i > 0:

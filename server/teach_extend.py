@@ -14,8 +14,10 @@
 명령어:
   --- 조회 ---
   show              : 현재 TCP/관절 표시
-  list              : 로드된 waypoints 요약
-  status            : 현재 set 컨텍스트, 신규 추가 개수 등
+  list              : 전체 waypoints 요약 (pose_index, set, joints, tcp)
+  list <S>          : set S 한정 상세 (각 pose의 joints/tcp/cube + place_joints)
+  list sets         : set별 요약 (capture 개수, place_joints)
+  status            : 현재 set 컨텍스트, 신규 추가 개수, pending sets
 
   --- 수동 이동 ---
   p <축>,<값>       : TCP 상대 (z,50 / rx,15 ...)
@@ -36,9 +38,16 @@
   gotow <N>         : waypoint N(pose_index)의 capture_joints로 이동 (큐브 핸들링 없음).
   gotoplace <S>     : set S의 place_joints로 이동 (그리퍼 동작 없음).
 
+  --- 신규 set 추가 (큐브를 새 위치로 옮길 때) ---
+  addset            : 현재 joints를 새 set의 place_joints로 등록. set_index 자동 부여
+                      (= max(기존+pending) + 1). 등록 후 자동으로 그리퍼 open + +Z 100mm
+                      클리어런스. 이후 manual move + 'c'로 그 set에 캡처 추가.
+                      전제: 큐브를 그리퍼로 잡은 채 새 place 위치(joint값)에 와 있어야 함.
+  addset <S>        : 명시적 set_index 지정 (기존/pending과 충돌 시 거부).
+
   --- 신규 포즈 추가 ---
   setidx <S>        : 'c'가 어느 set에 귀속될지 set 컨텍스트 지정.
-                      (playset 실행 시 자동으로 갱신됨)
+                      (playset / addset 실행 시 자동으로 갱신됨)
   c                 : 현재 위치에서 캡처. PC가 이미지 저장 + 게이트 검사 후
                       성공 시 메모리 waypoints에 append (set_index = 현재 컨텍스트).
   undoc             : 마지막 신규 캡처 1건 취소(메모리만; PC 측 저장 이미지는 보존됨).
@@ -247,8 +256,12 @@ def group_by_set(waypoints):
     return sets_order, by_set
 
 
-def find_place_joints_for_set(waypoints, set_index):
-    """해당 set의 첫 waypoint에서 place_joints를 가져온다."""
+def find_place_joints_for_set(waypoints, set_index, pending=None):
+    """해당 set의 place_joints를 찾는다.
+    addset으로 등록만 하고 아직 capture가 없는 set은 `pending` dict에서 우선 조회.
+    """
+    if pending and set_index in pending:
+        return pending[set_index]
     for wp in waypoints:
         if wp.get('set_index') == set_index and 'place_joints' in wp:
             return wp['place_joints']
@@ -263,9 +276,13 @@ def do_capture(conn, pose_index, set_cube_center=None, set_index=None,
     cube_tcp = get_cube_center()
     joints = get_joints()
     print ''
-    print '*** CAPTURE pose_index={} (set={}) ***'.format(pose_index, set_index)
-    print '  fingertip:   {}'.format(fmt6(tcp))
-    print '  cube center: {}'.format(fmt6(cube_tcp))
+    print '  -- set = {} / pose_index={} --'.format(set_index, pose_index)
+    print '     joints: [{:.2f}, {:.2f}, {:.2f}, {:.2f}, {:.2f}, {:.2f}]'.format(
+        joints[0], joints[1], joints[2], joints[3], joints[4], joints[5])
+    print '     tcp:    ({:.1f}, {:.1f}, {:.1f}) / ({:.1f}, {:.1f}, {:.1f})'.format(
+        tcp[0], tcp[1], tcp[2], tcp[3], tcp[4], tcp[5])
+    print '     cube:   ({:.1f}, {:.1f}, {:.1f})'.format(
+        cube_tcp[0], cube_tcp[1], cube_tcp[2])
 
     msg = {
         "command": "capture",
@@ -302,7 +319,7 @@ def do_capture(conn, pose_index, set_cube_center=None, set_index=None,
 
 # ── Replay (no-capture navigation) ──
 
-def navigate_set(rb, sidx, by_set, hold_state, override_speed):
+def navigate_set(rb, sidx, waypoints, pending, hold_state, override_speed):
     """현재 큐브 상태(hold_state)를 보고 set sidx 진입.
 
     hold_state: dict { 'held': bool, 'placed_at': int|None, 'last_place_tcp': list|None }
@@ -313,7 +330,7 @@ def navigate_set(rb, sidx, by_set, hold_state, override_speed):
     완료 후 hold_state를 갱신:
       - placed_at = sidx, held = False, last_place_tcp = 새 place_tcp
     """
-    place_j = find_place_joints_for_set_in_dict(by_set, sidx)
+    place_j = find_place_joints_for_set(waypoints, sidx, pending)
     if place_j is None:
         print '[ERROR] set {} place_joints not found'.format(sidx)
         return False
@@ -331,7 +348,7 @@ def navigate_set(rb, sidx, by_set, hold_state, override_speed):
         else:
             # fallback: move via prev set's place_joints
             prev_set = hold_state['placed_at']
-            prev_j = find_place_joints_for_set_in_dict(by_set, prev_set)
+            prev_j = find_place_joints_for_set(waypoints, prev_set, pending)
             if prev_j is not None:
                 rb.move(Joint(*prev_j[:6]))
                 time.sleep(0.3)
@@ -365,15 +382,7 @@ def navigate_set(rb, sidx, by_set, hold_state, override_speed):
     return True
 
 
-def find_place_joints_for_set_in_dict(by_set, sidx):
-    wps = by_set.get(sidx, [])
-    for wp in wps:
-        if 'place_joints' in wp:
-            return wp['place_joints']
-    return None
-
-
-def replay_all(rb, conn, data, hold_state, override_speed):
+def replay_all(rb, conn, data, pending, hold_state, override_speed):
     """모든 set/waypoint를 캡처 없이 순회. (검증용)"""
     waypoints = data.get('waypoints', [])
     if not waypoints:
@@ -414,7 +423,7 @@ def replay_all(rb, conn, data, hold_state, override_speed):
         print '======== SET {}/{} (set_index={}, {} captures) ========'.format(
             si + 1, len(sets_order), sidx, len(wps))
 
-        if not navigate_set(rb, sidx, by_set, hold_state, override_speed):
+        if not navigate_set(rb, sidx, waypoints, pending, hold_state, override_speed):
             print '[Replay] aborting'
             return
 
@@ -442,12 +451,13 @@ def replay_all(rb, conn, data, hold_state, override_speed):
     print '=========================================='
 
 
-def replay_set(rb, conn, data, sidx, hold_state, override_speed):
+def replay_set(rb, conn, data, sidx, pending, hold_state, override_speed):
     """단일 set으로 진입. 큐브 상태 자동 처리."""
     waypoints = data.get('waypoints', [])
     sets_order, by_set = group_by_set(waypoints)
-    if sidx not in by_set:
-        print '[ERROR] set {} not in waypoints (available: {})'.format(sidx, sets_order)
+    if sidx not in by_set and sidx not in (pending or {}):
+        print '[ERROR] set {} not registered (available: {} pending: {})'.format(
+            sidx, sets_order, list((pending or {}).keys()))
         return
     rb.override(override_speed)
     # Pre-lift if cube currently held but not yet on floor.
@@ -458,7 +468,7 @@ def replay_set(rb, conn, data, sidx, hold_state, override_speed):
             time.sleep(0.3)
         except Exception as e:
             print '[WARN] lift failed: {}'.format(e)
-    navigate_set(rb, sidx, by_set, hold_state, override_speed)
+    navigate_set(rb, sidx, waypoints, pending, hold_state, override_speed)
 
 
 # ── PC sync ──
@@ -613,6 +623,9 @@ def main():
         # State
         current_set = sets_order[0] if sets_order else None
         hold_state = {'held': True, 'placed_at': None, 'last_place_tcp': None}
+        # addset으로 등록만 되고 아직 capture가 없는 set의 place_joints 보관.
+        # capture가 추가되면 이 dict는 더 이상 필요 없지만, 무해하게 남겨둠.
+        pending_place_joints = {}
         new_count = 0
 
         print ''
@@ -626,7 +639,7 @@ def main():
         print '  show / list / status / help'
         print '  p / j / gotop / gotoj / speed / go / gc'
         print '  playall [spd]  playset <S>  gotow <N>  gotoplace <S>'
-        print '  setidx <S>     c            undoc'
+        print '  addset [<S>]   setidx <S>   c          undoc'
         print '  save           q'
         print '=========================================='
         print ''
@@ -651,16 +664,80 @@ def main():
             elif cl == 'show':
                 show_pose()
 
-            elif cl == 'list':
-                print ''
-                print '  pose_idx  set  capture_joints[d1,d2,d3,d4,d5,d6]'
-                for wp in waypoints:
-                    cj = wp.get('capture_joints', [0]*6)
-                    print '  {:>8}  {:>3}  [{:.1f},{:.1f},{:.1f},{:.1f},{:.1f},{:.1f}]'.format(
-                        wp.get('pose_index'), wp.get('set_index'),
-                        cj[0], cj[1], cj[2], cj[3], cj[4], cj[5])
-                print '  total: {} waypoints (sets: {})'.format(len(waypoints), sets_order)
-                print ''
+            elif cl == 'list' or cl.startswith('list '):
+                # list            : 전체 waypoints (요약: pose_index/set/joints/tcp)
+                # list <S>        : set S만 필터 (place_joints + 각 capture 상세)
+                # list sets       : set 요약 (set별 capture 개수, place_joints)
+                parts = cmd.split()
+                filt = parts[1] if len(parts) >= 2 else None
+
+                if filt == 'sets':
+                    print ''
+                    print '  set  n_captures  place_joints[d1..d6]'
+                    for sidx in sets_order:
+                        wps_s = [w for w in waypoints if w.get('set_index') == sidx]
+                        pj = find_place_joints_for_set(waypoints, sidx, pending_place_joints)
+                        pj_str = ('[{:.2f},{:.2f},{:.2f},{:.2f},{:.2f},{:.2f}]'.format(
+                            pj[0], pj[1], pj[2], pj[3], pj[4], pj[5])
+                            if pj is not None else '(none)')
+                        print '  {:>3}  {:>10}  {}'.format(sidx, len(wps_s), pj_str)
+                    for sidx in sorted(pending_place_joints.keys()):
+                        pj = pending_place_joints[sidx]
+                        print '  {:>3}  {:>10}  [{:.2f},{:.2f},{:.2f},{:.2f},{:.2f},{:.2f}] (pending)'.format(
+                            sidx, 0, pj[0], pj[1], pj[2], pj[3], pj[4], pj[5])
+                    print ''
+
+                elif filt is not None:
+                    try:
+                        sidx = int(filt)
+                    except ValueError:
+                        print 'Usage: list | list <set_index> | list sets'
+                        continue
+                    wps_s = [w for w in waypoints if w.get('set_index') == sidx]
+                    pj = find_place_joints_for_set(waypoints, sidx, pending_place_joints)
+                    print ''
+                    print '  ===== SET {} ({} captures) ====='.format(sidx, len(wps_s))
+                    if pj is not None:
+                        print '  place_joints: [{:.2f}, {:.2f}, {:.2f}, {:.2f}, {:.2f}, {:.2f}]'.format(
+                            pj[0], pj[1], pj[2], pj[3], pj[4], pj[5])
+                    if not wps_s:
+                        if sidx in pending_place_joints:
+                            print '  (pending: registered via addset, no captures yet)'
+                        else:
+                            print '  (no captures in this set)'
+                    else:
+                        for wp in wps_s:
+                            cj = wp.get('capture_joints', [0]*6)
+                            tcp = wp.get('capture_tcp', [0]*6)
+                            cube = wp.get('cube_center_6dof', [0]*6)
+                            print '  -- pose_index={} --'.format(wp.get('pose_index'))
+                            print '     joints: [{:.2f}, {:.2f}, {:.2f}, {:.2f}, {:.2f}, {:.2f}]'.format(
+                                cj[0], cj[1], cj[2], cj[3], cj[4], cj[5])
+                            print '     tcp:    ({:.1f}, {:.1f}, {:.1f}) / ({:.1f}, {:.1f}, {:.1f})'.format(
+                                tcp[0], tcp[1], tcp[2], tcp[3], tcp[4], tcp[5])
+                            print '     cube:   ({:.1f}, {:.1f}, {:.1f})'.format(
+                                cube[0], cube[1], cube[2])
+                    print ''
+
+                else:
+                    print ''
+                    print '  pose  set  capture_joints[d1..d6]                              tcp(x,y,z)'
+                    for wp in waypoints:
+                        cj = wp.get('capture_joints', [0]*6)
+                        tcp = wp.get('capture_tcp', [0]*6)
+                        print '  {:>4}  {:>3}  [{:>6.1f},{:>6.1f},{:>6.1f},{:>6.1f},{:>6.1f},{:>6.1f}]  ({:>6.1f},{:>6.1f},{:>6.1f})'.format(
+                            wp.get('pose_index'), wp.get('set_index'),
+                            cj[0], cj[1], cj[2], cj[3], cj[4], cj[5],
+                            tcp[0], tcp[1], tcp[2])
+                    if pending_place_joints:
+                        print '  --- pending sets (addset registered, no captures yet) ---'
+                        for sidx in sorted(pending_place_joints.keys()):
+                            pj = pending_place_joints[sidx]
+                            print '  set={:>3}  place_joints=[{:.2f},{:.2f},{:.2f},{:.2f},{:.2f},{:.2f}]'.format(
+                                sidx, pj[0], pj[1], pj[2], pj[3], pj[4], pj[5])
+                    print '  total: {} waypoints (sets: {})'.format(len(waypoints), sets_order)
+                    print '  (use "list <S>" for one-set detail, "list sets" for set summary)'
+                    print ''
 
             elif cl == 'status':
                 print ''
@@ -668,6 +745,8 @@ def main():
                 print '  hold_state:    held={}, placed_at={}'.format(
                     hold_state['held'], hold_state['placed_at'])
                 print '  existing:      {}  new added: {}'.format(n_existing, new_count)
+                print '  pending sets:  {}'.format(
+                    sorted(pending_place_joints.keys()) if pending_place_joints else 'none')
                 print '  next pose_idx: {}'.format(next_pose_index)
                 print ''
 
@@ -739,7 +818,7 @@ def main():
                         spd = int(parts[1])
                     except ValueError:
                         pass
-                replay_all(rb, conn, data, hold_state, spd)
+                replay_all(rb, conn, data, pending_place_joints, hold_state, spd)
                 # After playall, current_set = last visited set.
                 if hold_state.get('placed_at') is not None:
                     current_set = hold_state['placed_at']
@@ -755,7 +834,7 @@ def main():
                 except ValueError:
                     print 'Usage: playset <set_index>'
                     continue
-                replay_set(rb, conn, data, sidx, hold_state, init_speed)
+                replay_set(rb, conn, data, sidx, pending_place_joints, hold_state, init_speed)
                 if hold_state.get('placed_at') == sidx:
                     current_set = sidx
                     print '[Info] current_set = {}'.format(current_set)
@@ -792,7 +871,7 @@ def main():
                 except ValueError:
                     print 'Usage: gotoplace <set_index>'
                     continue
-                pj = find_place_joints_for_set(waypoints, sidx)
+                pj = find_place_joints_for_set(waypoints, sidx, pending_place_joints)
                 if pj is None:
                     print '[ERROR] set {} place_joints not found'.format(sidx)
                     continue
@@ -809,10 +888,58 @@ def main():
                 except ValueError:
                     print 'Usage: setidx <set_index>'
                     continue
-                if sidx not in by_set:
-                    print '[WARN] set {} not in existing waypoints; allowing anyway.'.format(sidx)
+                if sidx not in by_set and sidx not in pending_place_joints:
+                    print '[WARN] set {} not registered; allowing anyway.'.format(sidx)
                 current_set = sidx
                 print 'current_set = {}'.format(current_set)
+
+            elif cl.startswith('addset'):
+                # 현재 그리퍼가 큐브를 잡은 상태에서 새 set의 place 위치에 와 있다고 가정.
+                # 현재 joints/tcp를 새 set의 place_joints로 등록한 뒤, 큐브를 release하고
+                # +Z 클리어런스로 빠진다. 이후 manual move + 'c'로 그 set 캡처 추가.
+                parts = cmd.split()
+                if len(parts) >= 2:
+                    try:
+                        new_idx = int(parts[1])
+                    except ValueError:
+                        print 'Usage: addset [<set_index>]'
+                        continue
+                    if new_idx in by_set or new_idx in pending_place_joints:
+                        print '[ERROR] set {} already exists'.format(new_idx)
+                        continue
+                else:
+                    existing = list(sets_order) + list(pending_place_joints.keys())
+                    new_idx = (max(existing) + 1) if existing else 0
+                if not hold_state.get('held'):
+                    print '[WARN] gripper appears OPEN. addset assumes cube is currently gripped'
+                    print '       at the desired new place pose. Continue anyway? (y/N)'
+                    ans = raw_input('> ').strip().lower()
+                    if ans != 'y':
+                        print 'addset cancelled.'
+                        continue
+                cur_joints = get_joints()
+                cur_tcp = get_tcp()
+                pending_place_joints[new_idx] = cur_joints
+                current_set = new_idx
+                print ''
+                print '*** addset: set_index={} registered ***'.format(new_idx)
+                print '  place_joints: [{:.2f}, {:.2f}, {:.2f}, {:.2f}, {:.2f}, {:.2f}]'.format(
+                    cur_joints[0], cur_joints[1], cur_joints[2],
+                    cur_joints[3], cur_joints[4], cur_joints[5])
+                print '[Auto] gripper OPEN (release cube at new place)'
+                gripper_open()
+                hold_state['held'] = False
+                hold_state['placed_at'] = new_idx
+                hold_state['last_place_tcp'] = cur_tcp
+                time.sleep(0.3)
+                print '[Auto] -> +Z {:.0f}mm clearance'.format(CAPTURE_CLEARANCE_MM)
+                try:
+                    line_dz(CAPTURE_CLEARANCE_MM)
+                    time.sleep(0.3)
+                except Exception as e:
+                    print '[WARN] +Z clearance failed: {} (continuing)'.format(e)
+                print '  current_set = {}. Now move and use "c" to add captures.'.format(current_set)
+                show_pose()
 
             elif cl == 'c':
                 if current_set is None:
@@ -825,7 +952,7 @@ def main():
                     joints = get_joints()
                     print '*** [local-mode] capture (no PC roundtrip)'
                 else:
-                    pj = find_place_joints_for_set(waypoints, current_set)
+                    pj = find_place_joints_for_set(waypoints, current_set, pending_place_joints)
                     sjoints = data.get('set_joints')
                     stcp = data.get('set_tcp')
                     scube = data.get('set_cube_center')
@@ -850,7 +977,7 @@ def main():
                     "cube_center_6dof": cube_tcp,
                     "set_index": current_set,
                 }
-                pj_for_save = find_place_joints_for_set(waypoints, current_set)
+                pj_for_save = find_place_joints_for_set(waypoints, current_set, pending_place_joints)
                 if pj_for_save is not None:
                     wp["place_joints"] = pj_for_save
                 waypoints.append(wp)

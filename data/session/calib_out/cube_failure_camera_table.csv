@@ -1,5 +1,0 @@
-camera,selected_candidates,accepted_candidates,accept_rate,mean_obj_dt_mm,mean_obj_dr_deg,mean_cam_dt_mm,dominant_selected_markers,dominant_accepted_markers,root_cause
-cam0,13,0,0.000,75.76,46.86,405.30,"id4+id1+id0 x6, id2+id3 x4, id1 x3",,"camera extrinsic is stable, but no selected cube candidate survived the object/camera thresholds. Dominant selected markers: id4+id1+id0 x6, id2+id3 x4."
-cam1,9,0,0.000,93.53,32.84,309.62,"id2+id1 x6, id2+id3 x3",,"camera extrinsic is stable, but no selected cube candidate survived the object/camera thresholds. Dominant selected markers: id2+id1 x6, id2+id3 x3."
-cam2,13,0,0.000,227.97,2.11,,"id0+id3+id2 x3, id0+id2+id3 x2, id0 x1",,"hand-eye is stable, but cube candidates disagree across markers. Selected poses are dominated by id0+id3+id2 x3, id0+id2+id3 x2, while accepted poses are only none."
-cam3,13,0,0.000,287.02,163.99,745.48,"id3+id2 x6, id2 x4, id4+id3+id0 x3",,"camera extrinsic is stable, but no selected cube candidate survived the object/camera thresholds. Dominant selected markers: id3+id2 x6, id2 x4."

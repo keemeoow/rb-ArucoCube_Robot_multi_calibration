@@ -12,17 +12,21 @@
   speed <0-100>     : 속도 설정 (클수록 빠름)
 
   --- 촬영 & 중지 ---
-  c                 : 현재 위치에서 촬영
-  x                 : 촬영 + auto-replay 중지 (soft stop) 
-  X(shift + x)      : 촬영 + auto-replay 중지 (hard abort) 
+  c                 : 수동 모드 캡처. 현재 위치에서 촬영하고, PC 가
+                      <save_dir>/waypoints.json 에 (pose_index/capture_joints/
+                      capture_tcp/station_index/set_joints/set_tcp/place_joints/
+                      place_tcp 등) 누적 저장.
+  auto [spd]        : 자동 모드. PC 의 waypoints.json 을 socket 으로 받아 각
+                      capture_joints 로 이동하면서 촬영. 자동 재현 capture 는
+                      is_replay=True 로 보내 PC 가 waypoints.json 재append 안 함.
+  auto <file> [spd] : 기존: 로컬 JSON 파일 (object_fixed_waypoints_*) 로드 재현.
+  x                 : 촬영 + auto-replay 중지 (soft stop)
+  X(shift + x)      : 촬영 + auto-replay 중지 (hard abort)
 
   --- 설정 ---
-  set               : 현재 TCP + 관절값을 object station 기준점으로 저장
-                      set_index (station #0, #1, ...) 자동 증가
-                      촬영 시 TCP, 관절값, station 정보를 PC로 전송
   mode <auto|placed|held|object_fixed>
-                    : 촬영 모드 지정. object_fixed면 물체는 station에 고정되고
-                      로봇은 gripper camera viewpoint만 바꾼다.
+                    : 촬영 모드 지정 (기본 object_fixed).
+                      물체가 고정된 viewpoint sweep 이라 station 개념 없음.
 
   --- 그리퍼 ---
   go                : 그리퍼 열기
@@ -33,7 +37,6 @@
   undo <N>          : 마지막 N회 되돌리기
   undo all          : 전체 되돌리기
   undo <axis...>    : 특정 축만 되돌리기 (undo x ry rz)
-  undo set          : 어디서든 set 위치로 이동
 
   --- 종료 ---
   q                 : 종료
@@ -49,43 +52,44 @@ Step 1 -- 카메라 내부 파라미터 (intrinsics)
     --out_dir ./intrinsics \
     --gripper_serial <그리퍼_카메라_시리얼>
 
-Step 2 -- 물체 놓으면서 촬영
+Step 2 -- 물체 고정 viewpoint sweep 촬영
 --------------------------------------------------------------
-  수동으로 object station 기준 자세를 "set" 저장.
-  이후 viewpoint를 바꾸며 촬영 -> "undo set" 복귀 반복.
+  물체를 고정시킨 채 viewpoint 만 바꾸며 촬영.
 
   - 그리퍼 카메라: 근접 object view
   - 고정 카메라: 전역 anchor view
 
-  [로봇-서버]
-  python server/robot_calb_object\ .py
+  [로봇-서버] (먼저 실행, "Server on port 12348. Waiting..." 확인)
+  python server/obj_robot_calb.py
 
   [PC]
-  python Object_6Dpose_estimation/Obj_Step1_capture_object.py \
+  python Obj_Step1_capture_rgbd_4cam.py \
     --save_dir ./data/object_capture \
     --intrinsics_dir ./intrinsics \
-    --calib_dir ./data/session/calib_out\(2\) \
-    --object_glb_dir ./Object_6Dpose_estimation/reference_glb \
-    --use_robot --manual_robot \
+    --use_robot \
     --robot_ip 192.168.0.23 --robot_port 12348 \
-    --show --save_depth
+    --show
 
-  플로우 (object station별 멀티뷰 촬영):
-    1. 물체를 놓을 station 기준 위치에서 "set"
-    2. 권장: "mode object_fixed" 지정
-    3. 촬영 자세로 이동
-    4. "c" -> 촬영 (TCP, joints, station, place, capture_mode, gripper_state 전송)
-    5. 반복
-    * PC에 meta.json 동시 저장
+  플로우 (물체 고정, viewpoint sweep):
+    1. (선택) "mode object_fixed" 지정 (기본값)
+    2. 촬영 자세로 이동
+    3. "c" -> 수동 모드 촬영. PC 가 capture_joints/capture_tcp/capture_mode/
+              gripper_state 를 meta.json + waypoints.json 에 누적 저장.
+    4. 반복
+    5. (선택) "auto" -> PC waypoints.json 받아 capture_joints 따라 자동 재현.
+    * 저장 경로:
+        PC <save_dir>/meta.json      : 캡처별 메타 누적
+        PC <save_dir>/waypoints.json : 수동 capture 의 joints/TCP 누적 (auto source)
+      로봇 로컬에는 waypoint 저장하지 않음.
 
 Step 3 -- 물체 6D pose 추정
 --------------------------------------------------------------
   [PC]
-  python Object_6Dpose_estimation/Obj_Step2_pose_per_object.py \
-    --capture_dir ./data/object_capture \
+  python Obj_pose_pipeline.py \
+    --data_dir ./data \
     --intrinsics_dir ./intrinsics \
-    --calib_dir ./data/session/calib_out\(2\) \
-    --object_glb_dir ./Object_6Dpose_estimation/reference_glb
+    --output_dir ./output/pose_pipeline \
+    --capture_subdir object_capture
 
 """
 
@@ -216,23 +220,43 @@ VALID_AXES = set(list(TCP_AXIS_MAP.keys()) + list(JOINT_AXIS_MAP.keys()))
 
 # ── Socket ──
 
+# Newline-delimited JSON framing.
+# 한 메시지가 단일 recv() 청크 크기를 넘거나 여러 메시지가 한 청크에 합쳐져
+# 도착해도 안전하게 한 건씩 잘라서 반환한다.
+_RECV_BUF = {'data': b''}
+
+
 def send_json(conn, obj):
     try:
         msg = json.dumps(obj)
-        conn.sendall(msg.encode('utf-8'))
+        conn.sendall((msg + '\n').encode('utf-8'))
         print "Sent: {}".format(msg)
     except socket.error as e:
         print "Send error: {}".format(e)
 
 
 def recv_json(conn):
+    """Receive one newline-delimited JSON object (handles large/split messages)."""
     try:
-        data = conn.recv(8192).decode('utf-8')
-        if not data:
-            return None
-        return json.loads(data.strip())
-    except Exception as e:
+        while b'\n' not in _RECV_BUF['data']:
+            chunk = conn.recv(65536)
+            if not chunk:
+                if _RECV_BUF['data']:
+                    line = _RECV_BUF['data']
+                    _RECV_BUF['data'] = b''
+                    try:
+                        return json.loads(line.decode('utf-8').strip())
+                    except Exception as e:
+                        print "Recv parse error: {}".format(e)
+                return None
+            _RECV_BUF['data'] += chunk
+        line, _, rest = _RECV_BUF['data'].partition(b'\n')
+        _RECV_BUF['data'] = rest
+        return json.loads(line.decode('utf-8').strip())
+    except socket.error as e:
         print "Recv error: {}".format(e)
+    except Exception as e:
+        print "Recv parse error: {}".format(e)
     return None
 
 
@@ -255,12 +279,10 @@ def show_pose():
     tcp = get_tcp()
     jnt = get_joints()
     print ''
-    print '=== TCP Pose ==='
-    print '  x={:.3f}  y={:.3f}  z={:.3f}'.format(tcp[0], tcp[1], tcp[2])
-    print '  rz={:.3f}  ry={:.3f}  rx={:.3f}'.format(tcp[3], tcp[4], tcp[5])
-    print '=== Joints ==='
-    print '  d1={:.3f}  d2={:.3f}  d3={:.3f}'.format(jnt[0], jnt[1], jnt[2])
-    print '  d4={:.3f}  d5={:.3f}  d6={:.3f}'.format(jnt[3], jnt[4], jnt[5])
+    print '     joints: [{:.2f}, {:.2f}, {:.2f}, {:.2f}, {:.2f}, {:.2f}]'.format(
+        jnt[0], jnt[1], jnt[2], jnt[3], jnt[4], jnt[5])
+    print '     tcp:    ({:.1f}, {:.1f}, {:.1f}) / ({:.1f}, {:.1f}, {:.1f})'.format(
+        tcp[0], tcp[1], tcp[2], tcp[3], tcp[4], tcp[5])
     print ''
     return tcp
 
@@ -601,23 +623,23 @@ def sample_robot_static(window_sec=STATIC_WINDOW_SEC,
 
 # ── Capture ──
 
-def do_capture(conn, pose_index, set_index=None, set_joints=None,
-               set_tcp=None, place_joints=None, place_tcp=None,
-               capture_mode_override='auto', station_index=None,
-               viewpoint_name=None):
-    """Returns (status, tcp) or (None, None) on disconnect."""
+def do_capture(conn, pose_index, capture_mode_override='object_fixed',
+               viewpoint_name=None, is_replay=False):
+    """Returns (status, tcp) or (None, None) on disconnect.
+
+    is_replay=True 이면 메시지에 플래그를 실어 보내 PC 가 waypoints.json
+    누적 append 를 건너뛰도록 한다 (auto 재현 중복 방지).
+    물체 고정 viewpoint sweep 가정 — station/set/place 필드 없음.
+    """
     static_info = sample_robot_static()
     tcp = static_info['last_tcp']
     joints = static_info['last_joints']
     gripper_state = get_gripper_state()
     capture_mode = resolve_capture_mode(gripper_state, capture_mode_override)
-    station_id = station_index if station_index is not None else set_index
     print ''
     print '*** CAPTURE {} ***'.format(pose_index)
     if viewpoint_name:
         print '  viewpoint:    {}'.format(viewpoint_name)
-    if station_id is not None:
-        print '  station:      {}'.format(station_id)
     print '  fingertip:    {}'.format(fmt6(tcp))
     print '  joints:       [{:.2f}, {:.2f}, {:.2f}, {:.2f}, {:.2f}, {:.2f}]'.format(
         joints[0], joints[1], joints[2], joints[3], joints[4], joints[5])
@@ -629,25 +651,14 @@ def do_capture(conn, pose_index, set_index=None, set_joints=None,
         "capture_pose_6dof": tcp,
         "robot_joints_6dof": joints,
         "pose_index": pose_index,
-        "station_index": station_id,
         "capture_mode": capture_mode,
         "session_mode": 'object_fixed_viewpoint_sweep' if capture_mode == 'object_fixed' else 'object_capture',
         "gripper_state": gripper_state,
         "robot_static_ok": bool(static_info['ok']),
         "robot_static_metrics": static_info,
         "robot_moving": bool(not static_info['ok']),
+        "is_replay": bool(is_replay),
     }
-    if station_id is not None:
-        msg["station_id"] = station_id
-        msg["set_index"] = station_id
-    if set_joints is not None:
-        msg["set_joints"] = set_joints
-    if set_tcp is not None:
-        msg["set_tcp"] = set_tcp
-    if place_joints is not None:
-        msg["place_joints"] = place_joints
-    if place_tcp is not None:
-        msg["place_pose_6dof"] = place_tcp
     if viewpoint_name:
         msg["viewpoint_name"] = viewpoint_name
 
@@ -686,6 +697,112 @@ def do_capture(conn, pose_index, set_index=None, set_joints=None,
     else:
         print '*** Capture {} done (status={}) ***'.format(pose_index, status)
     return status, tcp
+
+
+# ── PC sync (waypoints.json on PC) ──
+
+def request_waypoints_from_pc(conn, timeout_sec=10.0):
+    """PC 의 `<save_dir>/waypoints.json` 내용을 socket 으로 요청.
+
+    Returns: dict (top-level with 'waypoints' list) or None on failure.
+    """
+    print 'Requesting waypoints from PC...'
+    send_json(conn, {"command": "request_waypoints"})
+    conn.settimeout(timeout_sec)
+    try:
+        resp = recv_json(conn)
+    except socket.timeout:
+        print '[ERROR] PC did not respond within {}s'.format(timeout_sec)
+        return None
+    finally:
+        try:
+            conn.settimeout(None)
+        except Exception:
+            pass
+    if not isinstance(resp, dict):
+        print '[ERROR] invalid response from PC'
+        return None
+    if resp.get('status') != 'ok':
+        print '[ERROR] PC reported error: {}'.format(resp.get('reason', 'unknown'))
+        return None
+    data = resp.get('waypoints_data')
+    if not isinstance(data, dict):
+        print '[ERROR] PC response missing waypoints_data'
+        return None
+    print '  received {} waypoints from PC'.format(len(data.get('waypoints', [])))
+    return data
+
+
+def replay_from_pc(rb, conn, speed=30):
+    """auto 명령: PC 의 waypoints.json 을 받아 각 capture_joints 로 이동하며 촬영.
+
+    물체 고정 가정 — station/place 처리 없이 capture_joints 순회만 한다.
+    각 capture 는 is_replay=True 로 보내져 PC 가 waypoints.json 에 다시
+    누적하지 않게 한다.
+    """
+    data = request_waypoints_from_pc(conn)
+    if data is None:
+        return 0, True
+    wps = data.get('waypoints', [])
+    if not wps:
+        print '[Auto] PC has no waypoints (empty waypoints.json)'
+        return 0, True
+
+    print ''
+    print '=========================================='
+    print '  Auto Replay (from PC): {} waypoints, speed={}'.format(len(wps), speed)
+    print '=========================================='
+    print '  Type "stop"/"x" or "abort"/"xx" + ENTER to abort.'
+
+    rb.override(speed)
+    success_count = 0
+    aborted = False
+
+    for i, wp in enumerate(wps):
+        if stop_flag.is_set():
+            print '[Auto] stop_flag set -- aborting before waypoint {}/{}'.format(i + 1, len(wps))
+            aborted = True
+            break
+
+        cap_j = wp.get('capture_joints')
+        if cap_j is None:
+            print '[Auto] wp[{}] missing capture_joints, skipping'.format(i)
+            continue
+        pose_index = int(wp.get('pose_index', i))
+        viewpoint_name = wp.get('viewpoint_name') or wp.get('name') \
+            or normalize_waypoint_name(None, pose_index)
+        capture_mode = wp.get('capture_mode') or 'object_fixed'
+
+        print ''
+        print '======== Auto {}/{}: {} ========'.format(i + 1, len(wps), viewpoint_name)
+
+        # capture_joints 로 이동 후 촬영.
+        if not _safe_move(rb, Joint(*cap_j[:6])):
+            aborted = True
+            break
+        time.sleep(0.5)
+
+        status, _ = do_capture(
+            conn, pose_index,
+            capture_mode_override=capture_mode,
+            viewpoint_name=viewpoint_name,
+            is_replay=True,
+        )
+        if status is None:
+            print '[Auto] disconnected'
+            break
+        if status == 'success':
+            success_count += 1
+            print '[Auto] -> OK'
+        else:
+            print '[Auto] -> SKIPPED'
+
+    print ''
+    if aborted:
+        print '  Auto Replay Aborted: {}/{} captured'.format(success_count, len(wps))
+    else:
+        print '  Auto Replay Complete: {}/{} captured'.format(success_count, len(wps))
+    return success_count, aborted
 
 
 # ── Auto capture ──
@@ -943,26 +1060,20 @@ def main():
 
         # State
         capture_count = 0
-        set_index = -1
         move_history = []
-        home_pose = None
-        home_joints = None
         capture_mode_override = 'object_fixed'
-        last_place_joints = None
-        last_place_tcp = None
-        station_records = {}
-        unassigned_waypoints = []
 
         print ''
         print '=========================================='
         print '  p <a>,<v> / j <a>,<v> : move'
         print '  goto x,y,z[,rz,ry,rx] : abs move'
         print '  show / speed <0-100>'
-        print '  c: capture  set: save station TCP/joints'
+        print '  c : capture (manual mode → PC waypoints.json append)'
         print '  mode <auto|placed|held|object_fixed>: capture mode override'
         print '  go: grip open  gc: grip close'
-        print '  undo [N|all|<axes>|set]'
-        print '  auto [file] [speed] : replay current station OR a JSON file'
+        print '  undo [N|all|<axes>]'
+        print '  auto [speed]        : replay from PC waypoints.json (manual 누적분)'
+        print '  auto <file> [speed] : replay from local JSON file (legacy)'
         print '  stop / x   : rb.stop()  (soft, decelerating)'
         print '  abort / xx : rb.abort() (hard, motion interrupted)'
         print '  (during auto-replay, type stop/x/abort/xx + ENTER)'
@@ -990,11 +1101,9 @@ def main():
             # Show
             elif cl == 'show':
                 show_pose()
-                if home_pose is not None:
-                    print '  [Station #{}] TCP:  {}'.format(set_index, fmt6(home_pose))
                 print '  Capture mode: {}'.format(capture_mode_override)
                 if capture_mode_override == 'object_fixed':
-                    print '  Semantics: object fixed on station, gripper viewpoint sweep only'
+                    print '  Semantics: object fixed, viewpoint sweep only'
                 print '  Gripper state: {}'.format(get_gripper_state())
 
             # Speed
@@ -1005,30 +1114,6 @@ def main():
                     print 'Speed: {}'.format(spd)
                 except Exception:
                     print 'Usage: speed <0-100>'
-
-            # Set
-            elif cl == 'set':
-                set_index += 1
-                home_pose = get_tcp()
-                home_joints = get_joints()
-                move_history = []
-                last_place_joints = None
-                last_place_tcp = None
-                station_records[set_index] = {
-                    "set_joints": list(home_joints),
-                    "set_tcp": list(home_pose),
-                    "capture_modes_seen": [],
-                    "waypoints": [],
-                }
-                print ''
-                print '*** Station #{} saved ***'.format(set_index)
-                print '  TCP:    {}'.format(fmt6(home_pose))
-                print '  Joints: [{:.2f}, {:.2f}, {:.2f}, {:.2f}, {:.2f}, {:.2f}]'.format(
-                    home_joints[0], home_joints[1], home_joints[2],
-                    home_joints[3], home_joints[4], home_joints[5])
-                print '  Mode:   {}'.format(capture_mode_override)
-                if capture_mode_override == 'object_fixed':
-                    print '  Object-fixed semantics enabled for this station.'
 
             elif cl.startswith('mode '):
                 new_mode = cl.split(' ', 1)[1].strip()
@@ -1042,8 +1127,6 @@ def main():
             elif cl == 'go':
                 if capture_mode_override == 'object_fixed':
                     print '[WARN] object_fixed mode usually does not require gripper open/close.'
-                last_place_joints = get_joints()
-                last_place_tcp = get_tcp()
                 gripper_open()
 
             elif cl == 'gc':
@@ -1051,63 +1134,22 @@ def main():
                     print '[WARN] object_fixed mode usually does not require gripper open/close.'
                 gripper_close()
 
-            # Capture
+            # Capture (manual mode → PC waypoints.json 에 누적)
             elif cl == 'c':
-                if capture_mode_override == 'object_fixed' and set_index < 0:
-                    print '[WARN] Save the station first with `set` before object_fixed capture.'
-                    continue
-                status, tcp = do_capture(
+                status, _tcp = do_capture(
                     conn, capture_count,
-                    set_index if set_index >= 0 else None,
-                    set_joints=home_joints, set_tcp=home_pose,
-                    place_joints=last_place_joints,
-                    place_tcp=last_place_tcp,
                     capture_mode_override=capture_mode_override,
-                    station_index=set_index if set_index >= 0 else None,
                     viewpoint_name=normalize_waypoint_name(None, capture_count))
                 if status is None:
                     break
-                capture_mode = resolve_capture_mode(get_gripper_state(), capture_mode_override)
-                wp = {
-                    "pose_index": capture_count,
-                    "name": normalize_waypoint_name(None, capture_count),
-                    "capture_joints": get_joints(),
-                    "capture_tcp": tcp,
-                    "station_index": set_index,
-                    "set_index": set_index,
-                    "capture_mode": capture_mode,
-                    "gripper_state": get_gripper_state(),
-                }
-                if last_place_joints is not None:
-                    wp["place_joints"] = last_place_joints
-                if last_place_tcp is not None:
-                    wp["place_tcp"] = last_place_tcp
-                if set_index >= 0 and set_index in station_records:
-                    rec = station_records[set_index]
-                    rec['capture_modes_seen'].append(capture_mode)
-                    rec['waypoints'].append(wp)
-                else:
-                    unassigned_waypoints.append(wp)
-                    print '  [WARN] Capture stored without station metadata.'
                 capture_count += 1
 
             # Undo
             elif cl.startswith('undo'):
                 args = cl.split()[1:]
 
-                if args == ['set']:
-                    if home_pose is None:
-                        print 'No set saved.'
-                    else:
-                        target = Position(home_pose[0], home_pose[1], 0.0,
-                                          home_pose[3], home_pose[4], home_pose[5])
-                        rb.line(target)
-                        move_history = []
-                        show_pose()
-
-                elif not move_history:
+                if not move_history:
                     print 'Nothing to undo.'
-
                 else:
                     if not args:
                         undo_one(move_history.pop())
@@ -1128,7 +1170,7 @@ def main():
                         try:
                             count = min(int(args[0]), len(move_history))
                         except ValueError:
-                            print 'Usage: undo [N|all|<axes>|set]'
+                            print 'Usage: undo [N|all|<axes>]'
                             continue
                         for _ in range(count):
                             undo_one(move_history.pop())
@@ -1218,15 +1260,9 @@ def main():
                     if file_arg:
                         run_auto_capture(rb, conn, file_arg, speed_arg)
                     else:
-                        if set_index < 0 or set_index not in station_records:
-                            print '[auto] No current station. Either `set` first + `c` a few times, or pass a JSON file.'
-                        else:
-                            inline_replay_current_station(
-                                rb, conn,
-                                station_id=set_index,
-                                station_rec=station_records[set_index],
-                                speed=speed_arg,
-                            )
+                        # 파일 미지정 → PC 의 waypoints.json 으로 자동 재현.
+                        # (수동 `c` 캡처 시 PC 가 누적 저장한 파일)
+                        replay_from_pc(rb, conn, speed=speed_arg)
                 finally:
                     # listener 종료 유도: stop_flag 가 set 안돼있으면 set 해서
                     # listener 가 select 다음 회차에 깨어나 빠지게 함.
@@ -1239,17 +1275,8 @@ def main():
             else:
                 print 'Unknown: {}'.format(cmd)
 
-        # Save waypoints
-        saved_waypoint_files = save_station_waypoint_files(station_records)
-        if saved_waypoint_files:
-            print '\nWaypoint files saved:'
-            for path in saved_waypoint_files:
-                print '  {}'.format(path)
-        if unassigned_waypoints:
-            with open('object_capture_waypoints_unassigned.json', 'w') as f:
-                json.dump({"waypoints": unassigned_waypoints}, f, indent=2)
-            print '  object_capture_waypoints_unassigned.json'
-
+        # NOTE: waypoint 저장은 PC 측 <save_dir>/waypoints.json 에서 일원화됨.
+        # 로봇 로컬에는 저장하지 않음 (기존 object_*_waypoints_station##.json 생성 안 함).
         print '\nTotal captures: {}'.format(capture_count)
 
     except KeyboardInterrupt:

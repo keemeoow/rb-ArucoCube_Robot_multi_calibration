@@ -8,10 +8,11 @@
 #   - 그리퍼 캠 폴더에 T_base_ee_<frame>.npy 추가 저장 (pose pipeline 이 사용)
 #
 # 사용 예:
-#   # (A) 로봇 서버 연동 (robot_calb_object.py 와 짝)
+#   # (A) 로봇 서버 연동 (server/obj_robot_calb.py 와 짝)
+#   #     ※ 로봇 서버를 먼저 실행 ("Server on port 12348. Waiting..." 확인) 후 아래 실행.
 #   python Obj_Step1_capture_rgbd_4cam.py \
 #       --save_dir ./data/object_capture --intrinsics_dir ./intrinsics \
-#       --use_robot --robot_ip 192.168.0.10 --robot_port 9999 --show
+#       --use_robot --robot_ip 192.168.0.23 --robot_port 12348 --show
 #
 #   # (B) 수동 SPACE 캡처 (TCP 없이; 그리퍼 캠은 pose pipeline 에서 사용 불가)
 #   python Obj_Step1_capture_rgbd_4cam.py \
@@ -24,7 +25,17 @@
 #     cam2/...   (그리퍼 캠) + T_base_ee_000000.npy
 #     cam3/...
 #     quad/frame_000000.jpg
-#     meta.json
+#     meta.json        : 캡처별 메타데이터 (event_id, TCP, joints, gates ...)
+#     waypoints.json   : 수동 캡처(`c`) 시 누적되는 capture_joints/capture_tcp/
+#                        station 등. 로봇 서버 `auto` 명령이 이 파일을 socket 으로
+#                        받아 자동 재현 (replay).
+#
+# 로봇 연동 protocol (newline-delimited JSON):
+#   - 로봇→PC: {command:capture, ..., is_replay:bool}      → PC 가 do_capture +
+#              (is_replay=false 일 때만) waypoints.json append
+#   - 로봇→PC: {command:request_waypoints}                  → PC 가
+#              {status:ok, waypoints_data:{waypoints:[...]}} 응답
+#   - 로봇→PC: {command:quit}                               → loop 종료
 
 import os
 import sys as _sys_top
@@ -40,10 +51,7 @@ from typing import Dict, List, Optional, Tuple
 import cv2
 import numpy as np
 
-import sys as _sys, os as _os
-_sys.path.insert(0, _os.path.abspath(_os.path.join(_os.path.dirname(__file__), "..")))
-from src._camera import RealSenseCamera
-
+from camera import RealSenseCamera
 from robot_comm import euler_deg_to_matrix
 
 
@@ -654,13 +662,18 @@ def main():
         return
 
     # ── 카메라 시작 ──
+    RealSenseCamera.reset_all_devices()
     cams: Dict[int, RealSenseCamera] = {}
     for ci, serial in idx_serial:
         cam = RealSenseCamera(
-            serial=serial, width=args.width, height=args.height, fps=args.fps,
-            use_color=True, use_depth=True, align_depth_to_color=True,
-            warmup_frames=10, frame_timeout_ms=2000,
-            log_timeouts=True, log_errors=True,
+            serial=serial,
+            width=args.width,
+            height=args.height,
+            fps=args.fps,
+            use_color=True,
+            use_depth=args.save_depth,
+            align_depth_to_color=True,
+            warmup_frames=10,
         )
         cam.start()
         cams[ci] = cam
@@ -804,58 +817,127 @@ def main():
         sock.connect((args.robot_ip, int(args.robot_port)))
         print(f"[ManualRobot] Connected")
 
-        preview_running = bool(args.show)
+        # ── Waypoints accumulator (수동 capture 시 누적, auto replay 의 source) ──
+        waypoints_path = os.path.join(save_dir, "waypoints.json")
+        accumulated_waypoints: List[dict] = []
+        if os.path.exists(waypoints_path):
+            try:
+                with open(waypoints_path, "r") as f:
+                    _wpd = json.load(f)
+                if isinstance(_wpd, dict) and isinstance(_wpd.get("waypoints"), list):
+                    accumulated_waypoints = _wpd["waypoints"]
+                    print(f"[INFO] loaded {len(accumulated_waypoints)} existing waypoints "
+                          f"from {waypoints_path}")
+            except Exception as e:
+                print(f"[WARN] failed to load existing waypoints.json: {e}")
+
+        def persist_waypoints():
+            try:
+                with open(waypoints_path, "w") as f:
+                    json.dump({"waypoints": accumulated_waypoints}, f, indent=2)
+            except Exception as e:
+                print(f"[WARN] waypoints.json 저장 실패: {e}")
+
         last_status_lines: List[str] = [
             "waiting for capture...",
             "preview keys: q quit | x soft stop (rb.stop) | X hard abort (rb.abort)",
         ]
-        sock_lock = threading.Lock()
+
+        # ── Newline-delimited JSON framing (로봇 서버와 통일) ──
+        # cv2 (Qt backend) GUI 는 메인 스레드에서만 허용되므로 preview/소켓 polling
+        # 을 한 루프에서 같이 돌린다. recv 는 select 로 non-blocking 폴링.
+        recv_buf = bytearray()
+
+        def send_one(obj):
+            sock.sendall((json.dumps(obj) + "\n").encode("utf-8"))
+
+        def try_read_message():
+            """Non-blocking poll. Returns (msg_dict_or_None, disconnected_bool)."""
+            # 1) 버퍼에 이미 완성된 메시지가 있으면 바로 반환.
+            if b'\n' in recv_buf:
+                idx = recv_buf.index(b'\n')
+                line = bytes(recv_buf[:idx])
+                del recv_buf[:idx + 1]
+                return json.loads(line.decode("utf-8").strip()), False
+            # 2) 소켓에 읽을 게 있을 때만 recv (select 0-timeout).
+            ready, _, _ = _select.select([sock], [], [], 0)
+            if not ready:
+                return None, False
+            try:
+                chunk = sock.recv(65536)
+            except Exception:
+                return None, False
+            if not chunk:
+                return None, True  # peer closed
+            recv_buf.extend(chunk)
+            if b'\n' in recv_buf:
+                idx = recv_buf.index(b'\n')
+                line = bytes(recv_buf[:idx])
+                del recv_buf[:idx + 1]
+                return json.loads(line.decode("utf-8").strip()), False
+            return None, False  # 아직 메시지 미완성
 
         def send_action(action_name: str):
             try:
-                with sock_lock:
-                    sock.sendall(json.dumps({"action": action_name}).encode("utf-8"))
+                send_one({"action": action_name})
                 print(f"[client] sent action={action_name!r} to server")
             except Exception as e:
                 print(f"[client] {action_name} send 실패: {e}")
 
-        def preview_loop():
-            while preview_running:
-                live = grab_all(cams)
-                if any(fr["color"] is not None for fr in live.values()):
-                    quad = make_quad_image(live, cam_order, gripper_cam_idx, event_id)
-                    quad = append_status_footer(quad, last_status_lines,
-                                                 [(0, 255, 0)] + [(220, 220, 220)] * (len(last_status_lines) - 1))
-                    h2 = int(quad.shape[0] * 0.6); w2 = int(quad.shape[1] * 0.6)
-                    cv2.imshow("Object Capture (4 cams)", cv2.resize(quad, (w2, h2)))
-                key = cv2.waitKey(100) & 0xFF
-                if key == 27 or key == ord('q'):
-                    break
-                if key == ord('x'):
-                    send_action("stop")
-                elif key == ord('X'):
-                    send_action("abort")
-
         if args.show:
-            t = threading.Thread(target=preview_loop, daemon=True)
-            t.start()
-            print("[INFO] Live preview started")
+            print("[INFO] Live preview started (main-thread; q quit / x soft / X hard)")
 
+        win = "Object Capture (4 cams)"
         try:
             while True:
-                data = sock.recv(8192)
-                if not data:
+                # ── (1) Live preview frame (main thread, Qt 호환) ──
+                if args.show:
+                    live = grab_all(cams)
+                    if any(fr["color"] is not None for fr in live.values()):
+                        quad = make_quad_image(live, cam_order, gripper_cam_idx, event_id)
+                        quad = append_status_footer(
+                            quad, last_status_lines,
+                            [(0, 255, 0)] + [(220, 220, 220)] * (len(last_status_lines) - 1))
+                        h2 = int(quad.shape[0] * 0.6); w2 = int(quad.shape[1] * 0.6)
+                        cv2.imshow(win, cv2.resize(quad, (w2, h2)))
+                    key = cv2.waitKey(30) & 0xFF
+                    if key == 27 or key == ord('q'):
+                        print("[client] preview closed by user — disconnecting")
+                        break
+                    if key == ord('x'):
+                        send_action("stop")
+                    elif key == ord('X'):
+                        send_action("abort")
+                else:
+                    time.sleep(0.05)
+
+                # ── (2) 소켓 메시지 polling (non-blocking) ──
+                try:
+                    msg, disconnected = try_read_message()
+                except Exception as e:
+                    print(f"[WARN] recv error: {e}")
+                    break
+                if disconnected:
                     print("[ManualRobot] Server disconnected.")
                     break
-                try:
-                    msg = json.loads(data.decode("utf-8").strip())
-                except Exception as e:
-                    print(f"[WARN] JSON 파싱 실패: {e}")
-                    continue
+                if msg is None:
+                    continue  # 다음 preview frame 으로
+
                 cmd = msg.get("command", "")
                 if cmd == "quit":
                     print("[ManualRobot] Server sent quit.")
                     break
+
+                # ── 자동 모드 요청: 로봇이 waypoints.json 내용을 요구 ──
+                if cmd == "request_waypoints":
+                    send_one({
+                        "status": "ok",
+                        "waypoints_data": {"waypoints": accumulated_waypoints},
+                    })
+                    print(f"[ManualRobot] sent {len(accumulated_waypoints)} waypoints to robot "
+                          f"(auto replay source)")
+                    continue
+
                 if cmd != "capture":
                     print(f"[ManualRobot] (ignored) command={cmd!r}")
                     continue
@@ -863,7 +945,13 @@ def main():
                 capture_tcp = msg.get("capture_pose_6dof")
                 pose_idx = msg.get("pose_index", event_id)
                 r_joints = msg.get("robot_joints_6dof")
-                print(f"\n[ManualRobot] capture (pose_index={pose_idx})")
+                is_replay = bool(msg.get("is_replay", False))
+                viewpoint_name = msg.get("viewpoint_name")
+                capture_mode_msg = msg.get("capture_mode")
+                gripper_state_msg = msg.get("gripper_state")
+
+                mode_label = "AUTO replay" if is_replay else "MANUAL"
+                print(f"\n[ManualRobot:{mode_label}] capture (pose_index={pose_idx})")
                 if capture_tcp:
                     print(f"  TCP: {capture_tcp}")
 
@@ -872,25 +960,41 @@ def main():
                     pose_index=pose_idx,
                     robot_joints_6dof=r_joints,
                 )
+
+                # 수동 모드에서만 waypoints.json 에 append (replay 중복 방지).
+                # 물체 고정 sweep 이므로 station/set/place 필드 없음.
+                if ok and not is_replay and r_joints is not None:
+                    wp = {
+                        "pose_index": int(pose_idx) if pose_idx is not None else None,
+                        "viewpoint_name": viewpoint_name,
+                        "capture_joints": [float(x) for x in r_joints],
+                        "capture_tcp": [float(x) for x in capture_tcp] if capture_tcp else None,
+                        "capture_mode": capture_mode_msg,
+                        "gripper_state": gripper_state_msg,
+                    }
+                    accumulated_waypoints.append(wp)
+                    persist_waypoints()
+                    print(f"  [waypoints] appended → total {len(accumulated_waypoints)} "
+                          f"({waypoints_path})")
+
                 last_status_lines = [
                     f"last event {event_id-1 if ok else event_id}: "
                     f"{'OK' if ok else 'SKIP'} ({reason})"
                 ]
-                resp = json.dumps({
+                send_one({
                     "action": "captured",
                     "status": "success" if ok else "skipped",
                     "reason": None if ok else reason,
                 })
-                with sock_lock:
-                    sock.sendall(resp.encode("utf-8"))
         finally:
-            preview_running = False
             sock.close()
             for cam in cams.values():
                 cam.stop()
             cv2.destroyAllWindows()
             persist_meta()
+            persist_waypoints()
             print(f"\n[INFO] saved {len(meta['captures'])} captures → {os.path.abspath(save_dir)}")
+            print(f"[INFO] saved {len(accumulated_waypoints)} waypoints → {waypoints_path}")
         return
 
     # ── Mode B: 수동 SPACE 캡처 ──

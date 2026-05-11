@@ -162,12 +162,10 @@ def show_pose():
     tcp = get_tcp()
     jnt = get_joints()
     print ''
-    print '=== TCP Pose ==='
-    print '  x={:.3f}  y={:.3f}  z={:.3f}'.format(tcp[0], tcp[1], tcp[2])
-    print '  rz={:.3f}  ry={:.3f}  rx={:.3f}'.format(tcp[3], tcp[4], tcp[5])
-    print '=== Joints ==='
-    print '  d1={:.3f}  d2={:.3f}  d3={:.3f}'.format(jnt[0], jnt[1], jnt[2])
-    print '  d4={:.3f}  d5={:.3f}  d6={:.3f}'.format(jnt[3], jnt[4], jnt[5])
+    print '     joints: [{:.2f}, {:.2f}, {:.2f}, {:.2f}, {:.2f}, {:.2f}]'.format(
+        jnt[0], jnt[1], jnt[2], jnt[3], jnt[4], jnt[5])
+    print '     tcp:    ({:.1f}, {:.1f}, {:.1f}) / ({:.1f}, {:.1f}, {:.1f})'.format(
+        tcp[0], tcp[1], tcp[2], tcp[3], tcp[4], tcp[5])
     print ''
     return tcp
 

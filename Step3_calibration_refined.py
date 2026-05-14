@@ -1,0 +1,2504 @@
+# Step3_calibration.py
+"""
+Step 3: 통합 캘리브레이션.
+
+Step2_capture.py의 meta.json을 입력으로 받아:
+  A) 저장된/재검출 cube pose 후보를 읽는다
+  B) 고정 카메라 상대변환을 cube 기준으로 계산한다
+  C) Hand-eye는 gripper ChArUco 보드로 계산하되 cube 일관성까지 함께 평가한다
+  D) 고정 카메라는 cube-primary, board-refine 방식으로 base 좌표계에 정렬한다
+  E) set_cube_center_6dof가 있으면 cube object frame과의 상수 delta를 학습해 set prior로 재정렬한다
+  F) 기본 경로에서는 depth pose를 직접 최적화 변수로 쓰지 않고, depth 품질과 set prior를
+     candidate selection / refinement에만 반영한다.
+
+출력:
+  T_gripper_cam.npy      - gripper -> camera
+  T_base_O.npy           - base -> object (최종 단일 출력)
+  T_base_C{i}.npy        - base -> fixed camera
+  T_C{ref}_C{i}.npy      - ref fixed camera -> other fixed camera
+  internal_runtime/*     - event/set별 보조 runtime transform
+
+실행:
+  python Step3_calibration.py \
+    --root_folder ./data/session \
+    --intrinsics_dir ./intrinsics
+
+개선 정책:
+  - 불안정한 실험 경로는 기본 파이프라인에서 분리하고, ChArUco hand-eye + cube multi-view consensus를 주 경로로 사용한다.
+  - SE(3) 평균은 weighted rotation mean + MAD outlier rejection으로 계산한다.
+  - 단일 마커/IPPE 후보의 영향은 낮추고, multi-marker/low-reprojection/depth-consistent 후보를 우선한다.
+"""
+
+import os
+import json
+import argparse
+import re
+from collections import Counter, defaultdict
+from typing import Dict, List, Optional, Any, Tuple
+
+import cv2
+import numpy as np
+
+from aruco_cube import ArucoCubeTarget, depth_metrics_to_fields, rodrigues_to_Rt, inv_T
+from calibration_runtime_utils import (
+    copy_depth_fields,
+    cube_selection_profile_kwargs,
+    filter_candidates_for_camera_role,
+    get_capture_set_index,
+    get_capture_set_cube_center_transform_raw,
+    get_object_anchor_key_for_set,
+    load_intrinsics_with_depth_scale,
+    resolve_cube_config_for_run,
+    select_consistent_event_cube_candidates,
+    select_primary_cube_candidate,
+)
+from config import get_default_cube_config
+from cube_config_utils import (
+    cube_config_to_dict,
+    cube_configs_equivalent,
+    load_cube_config_from_meta,
+)
+from robot_comm import euler_deg_to_matrix
+
+
+def ensure_dir(p: str) -> str:
+    os.makedirs(p, exist_ok=True)
+    return p
+
+
+def cleanup_legacy_public_outputs(out_dir: str) -> None:
+    legacy_json = {
+        "T_base_O_by_set.json",
+        "gripper_base_pose_model.json",
+        "T_base_C2_by_event.json",
+    }
+    legacy_patterns = [
+        re.compile(r"^T_base_C\d+_event\d+\.npy$"),
+        re.compile(r"^T_base_O_set\d+\.npy$"),
+    ]
+    for name in os.listdir(out_dir):
+        path = os.path.join(out_dir, name)
+        if not os.path.isfile(path):
+            continue
+        if name in legacy_json or any(pat.match(name) for pat in legacy_patterns):
+            try:
+                os.remove(path)
+            except OSError:
+                pass
+
+
+
+def _orthonormalize_R(R: np.ndarray) -> np.ndarray:
+    """Project a 3x3 matrix onto SO(3)."""
+    U, _, Vt = np.linalg.svd(np.asarray(R, dtype=np.float64))
+    R_out = U @ Vt
+    if np.linalg.det(R_out) < 0:
+        U[:, -1] *= -1.0
+        R_out = U @ Vt
+    return R_out
+
+
+def _weighted_rotation_average(R_list, w: np.ndarray) -> np.ndarray:
+    """Weighted rotation mean with SciPy's quaternion-aware mean, SVD fallback."""
+    Rs = np.asarray(R_list, dtype=np.float64)
+    w = np.asarray(w, dtype=np.float64)
+    try:
+        from scipy.spatial.transform import Rotation as _R
+        return _R.from_matrix(Rs).mean(weights=w).as_matrix()
+    except Exception:
+        R_mean = (w[:, None, None] * Rs).sum(axis=0)
+        return _orthonormalize_R(R_mean)
+
+
+def _interp_se3(T_a: np.ndarray, T_b: np.ndarray, t: float) -> np.ndarray:
+    """Interpolate T_a -> T_b. Translation is linear, rotation uses quaternion slerp."""
+    t = float(np.clip(t, 0.0, 1.0))
+    T_a = np.asarray(T_a, dtype=np.float64)
+    T_b = np.asarray(T_b, dtype=np.float64)
+    out = np.eye(4, dtype=np.float64)
+    out[:3, 3] = (1.0 - t) * T_a[:3, 3] + t * T_b[:3, 3]
+    try:
+        from scipy.spatial.transform import Rotation as _R, Slerp as _Slerp
+        key_rots = _R.from_matrix(np.stack([T_a[:3, :3], T_b[:3, :3]], axis=0))
+        out[:3, :3] = _Slerp([0.0, 1.0], key_rots)([t]).as_matrix()[0]
+    except Exception:
+        out[:3, :3] = _weighted_rotation_average(
+            [T_a[:3, :3], T_b[:3, :3]], np.asarray([1.0 - t, t], dtype=np.float64))
+    return out
+
+
+def rotation_error_deg(Ra: np.ndarray, Rb: np.ndarray) -> float:
+    dR = Ra @ Rb.T
+    c = np.clip((np.trace(dR) - 1.0) / 2.0, -1.0, 1.0)
+    return float(np.degrees(np.arccos(c)))
+
+
+def weighted_se3_average(T_list, w_list=None):
+    """Weighted SE(3) average.
+
+    Translation is averaged linearly. Rotation is averaged on SO(3) using a
+    quaternion-aware mean when SciPy is available, which is more stable than
+    directly averaging rotation matrices for wide camera baselines.
+    """
+    if len(T_list) == 0:
+        raise ValueError("T_list is empty")
+    if w_list is None:
+        w = np.ones((len(T_list),), dtype=np.float64)
+    else:
+        w = np.asarray(w_list, dtype=np.float64)
+        w = np.where(np.isfinite(w), w, 0.0)
+        w = np.maximum(w, 1e-12)
+    w = w / (w.sum() + 1e-12)
+
+    ts = np.asarray([np.asarray(T, dtype=np.float64)[:3, 3] for T in T_list], dtype=np.float64)
+    Rs = np.asarray([np.asarray(T, dtype=np.float64)[:3, :3] for T in T_list], dtype=np.float64)
+
+    T = np.eye(4, dtype=np.float64)
+    T[:3, 3] = (w[:, None] * ts).sum(axis=0)
+    T[:3, :3] = _weighted_rotation_average(Rs, w)
+    return T
+
+
+def _pose_residual_score_mm(T: np.ndarray, T_ref: np.ndarray, rot_mm_per_deg: float = 4.0) -> float:
+    """Combined pose residual used only for robust filtering.
+
+    The scale does not change the final transform directly; it decides which
+    samples are outliers. 4 mm/deg is conservative for camera calibration data.
+    """
+    dt_mm = float(np.linalg.norm(T[:3, 3] - T_ref[:3, 3]) * 1000.0)
+    dr_deg = rotation_error_deg(T[:3, :3], T_ref[:3, :3])
+    return dt_mm + float(rot_mm_per_deg) * dr_deg
+
+
+def robust_weighted_se3_average(T_list, w_list=None, k_mad=2.5, max_iters=4,
+                                 return_stats=False):
+    """MAD-filtered weighted SE(3) average.
+
+    Compared with the previous implementation, outlier rejection uses an
+    explicit translation+rotation residual instead of a black-box distance.
+    This makes the threshold easier to reason about and avoids scale mismatch.
+    """
+    if len(T_list) == 0:
+        raise ValueError("T_list is empty")
+    if w_list is None:
+        w = np.ones((len(T_list),), dtype=np.float64)
+    else:
+        w = np.asarray(w_list, dtype=np.float64)
+        w = np.where(np.isfinite(w), w, 0.0)
+        w = np.maximum(w, 1e-12)
+
+    idx = np.arange(len(T_list), dtype=int)
+    T_curr = weighted_se3_average([T_list[i] for i in idx], [w[i] for i in idx])
+
+    for _ in range(max_iters):
+        res = np.asarray([
+            _pose_residual_score_mm(np.asarray(T_list[i], dtype=np.float64), T_curr)
+            for i in idx
+        ], dtype=np.float64)
+        med = float(np.median(res))
+        mad = float(np.median(np.abs(res - med))) + 1e-12
+        thr = med + float(k_mad) * 1.4826 * mad
+        keep = res <= thr
+        min_keep = max(3, int(np.ceil(0.5 * len(idx))))
+        if int(keep.sum()) < min_keep:
+            break
+        new_idx = idx[keep]
+        if len(new_idx) == len(idx):
+            break
+        idx = new_idx
+        T_curr = weighted_se3_average([T_list[i] for i in idx], [w[i] for i in idx])
+
+    T_final = weighted_se3_average([T_list[i] for i in idx], [w[i] for i in idx])
+
+    if not return_stats:
+        return T_final
+
+    trans_devs, rot_devs = [], []
+    for T in [np.asarray(T_list[i], dtype=np.float64) for i in idx]:
+        trans_devs.append(float(np.linalg.norm(T[:3, 3] - T_final[:3, 3]) * 1000.0))
+        rot_devs.append(rotation_error_deg(T[:3, :3], T_final[:3, :3]))
+
+    stats = {
+        "num_frames": int(len(T_list)),
+        "num_inliers": int(len(idx)),
+        "inlier_ratio": float(len(idx) / max(len(T_list), 1)),
+        "translation_std_mm": float(np.std(trans_devs)) if trans_devs else 0.0,
+        "rotation_std_deg": float(np.std(rot_devs)) if rot_devs else 0.0,
+        "translation_median_mm": float(np.median(trans_devs)) if trans_devs else 0.0,
+        "rotation_median_deg": float(np.median(rot_devs)) if rot_devs else 0.0,
+        "translation_p95_mm": float(np.percentile(trans_devs, 95)) if trans_devs else 0.0,
+        "rotation_p95_deg": float(np.percentile(rot_devs, 95)) if rot_devs else 0.0,
+    }
+    return T_final, stats
+
+
+def try_parse_pose6(obj):
+    if obj is None:
+        return None
+    if isinstance(obj, list) and len(obj) == 6:
+        try:
+            return [float(x) for x in obj]
+        except Exception:
+            return None
+    if isinstance(obj, dict):
+        if all(k in obj for k in ["x", "y", "z", "rz", "ry", "rx"]):
+            try:
+                return [float(obj["x"]), float(obj["y"]), float(obj["z"]),
+                        float(obj["rz"]), float(obj["ry"]), float(obj["rx"])]
+            except Exception:
+                return None
+        for k in ["robot_pose_6dof", "tcp_pose_6dof", "pose_6dof", "pose"]:
+            if k in obj:
+                p = try_parse_pose6(obj[k])
+                if p is not None:
+                    return p
+    return None
+
+
+def try_parse_T44(obj):
+    if obj is None:
+        return None
+    if isinstance(obj, list):
+        arr = np.asarray(obj, dtype=np.float64)
+        if arr.shape == (4, 4):
+            return arr
+        if arr.size == 16:
+            return arr.reshape(4, 4)
+    if isinstance(obj, dict):
+        for k in ["T_B_G", "robot_pose_matrix_4x4", "matrix", "transform"]:
+            if k in obj:
+                T = try_parse_T44(obj[k])
+                if T is not None:
+                    return T
+    return None
+
+
+def load_robot_poses_from_meta(meta):
+    out = {}
+    for cap in meta.get("captures", []):
+        eid = int(cap.get("event_id", -1))
+        if eid < 0:
+            continue
+        T = None
+        if "robot_pose_matrix_4x4" in cap:
+            T = try_parse_T44(cap.get("robot_pose_matrix_4x4"))
+        if T is None and "capture_pose_matrix_4x4" in cap:
+            T = try_parse_T44(cap.get("capture_pose_matrix_4x4"))
+        if T is None:
+            p6 = try_parse_pose6(cap.get("robot_pose_6dof"))
+            if p6 is None:
+                p6 = try_parse_pose6(cap.get("capture_pose_6dof"))
+            if p6 is not None:
+                T = euler_deg_to_matrix(*p6)
+        if T is not None:
+            out[eid] = T.astype(np.float64)
+    return out
+
+
+def build_method_map():
+    methods = {}
+    cand = {
+        "TSAI": "CALIB_HAND_EYE_TSAI",
+        "PARK": "CALIB_HAND_EYE_PARK",
+        "HORAUD": "CALIB_HAND_EYE_HORAUD",
+        "ANDREFF": "CALIB_HAND_EYE_ANDREFF",
+        "DANIILIDIS": "CALIB_HAND_EYE_DANIILIDIS",
+    }
+    for name, cv_attr in cand.items():
+        if hasattr(cv2, cv_attr):
+            methods[name] = int(getattr(cv2, cv_attr))
+    if len(methods) == 0:
+        methods = {"TSAI": 0, "PARK": 1, "HORAUD": 2, "ANDREFF": 3, "DANIILIDIS": 4}
+    return methods
+
+
+def marker_aspect_ratio(img_pts: np.ndarray) -> float:
+    pts = np.asarray(img_pts, dtype=np.float64).reshape(4, 2)
+    edge_w = np.linalg.norm(pts[1] - pts[0])
+    edge_h = np.linalg.norm(pts[3] - pts[0])
+    return float(min(edge_w, edge_h) / (max(edge_w, edge_h) + 1e-6))
+
+
+def refine_fixed_cams_with_set_anchors(
+    meta: dict,
+    pnp_obs: Dict[int, Dict[int, dict]],
+    T_base_Ci: Dict[int, np.ndarray],
+    fixed_cam_ids: List[int],
+    T_B_O_by_set: Dict[int, np.ndarray],
+    min_events_per_cam: int = 3,
+    max_delta_trans_mm: float = 15.0,
+    max_delta_rot_deg: float = 3.0,
+):
+    """Set-consistency refinement (single pass, conservative).
+
+    Strategy:
+      - Use the existing per-set T_base_O[set] as a FIXED anchor (computed
+        already in Step3 from multi-cam consensus).
+      - For each fixed cam, candidate T_base_Ci = T_B_O[set] @ inv(T_C_O[event]).
+        Average across all events in all sets with n_markers² weighting.
+      - Only adopt the refinement if it does not move T_base_Ci by more than
+        max_delta_trans_mm or max_delta_rot_deg from its starting value
+        (guard against degenerate cases like single-marker-dominated cams).
+
+    Returns (refined_T_base_Ci, T_B_O_by_set unchanged, diag).
+    """
+    refined_cams: Dict[int, np.ndarray] = {}
+    diag: Dict[str, Any] = {"per_cam": {}}
+
+    events_by_set: Dict[int, List[int]] = defaultdict(list)
+    for cap in meta.get("captures", []):
+        eid = int(cap.get("event_id", -1))
+        if eid < 0:
+            continue
+        sidx = get_capture_set_index(cap)
+        if sidx is None:
+            continue
+        events_by_set[int(sidx)].append(eid)
+
+    for ci in fixed_cam_ids:
+        ci = int(ci)
+        if ci not in T_base_Ci:
+            continue
+        cands: List[np.ndarray] = []
+        ws: List[float] = []
+        for sidx, eids in events_by_set.items():
+            if int(sidx) not in T_B_O_by_set:
+                continue
+            T_anchor = np.asarray(T_B_O_by_set[int(sidx)], dtype=np.float64)
+            for eid in eids:
+                obs = pnp_obs.get(ci, {}).get(int(eid))
+                if obs is None:
+                    continue
+                T_C_O = np.asarray(obs.get("T_C_O"), dtype=np.float64)
+                if T_C_O.shape != (4, 4) or not np.all(np.isfinite(T_C_O)):
+                    continue
+                T_cand = T_anchor @ inv_T(T_C_O)
+                cands.append(T_cand)
+                ws.append(candidate_weight(obs))
+
+        T_old = np.asarray(T_base_Ci[ci], dtype=np.float64)
+        if len(cands) < int(min_events_per_cam):
+            refined_cams[ci] = T_old
+            diag["per_cam"][f"T_base_C{ci}"] = {"adopted": False, "reason": "insufficient_events",
+                                                 "n_events": int(len(cands))}
+            continue
+
+        T_new, st = robust_weighted_se3_average(cands, ws, return_stats=True)
+        dt_change = float(np.linalg.norm(T_new[:3, 3] - T_old[:3, 3]) * 1000.0)
+        dr_change = rotation_error_deg(T_new[:3, :3], T_old[:3, :3])
+
+        # Trust-region 방식: 큰 변경을 한꺼번에 거부하지 말고 (hard reject),
+        # 보정 크기에 비례한 step 크기로 부분적 채택 (soft adoption).
+        # delta가 guard 안이면 full adopt, 초과해도 0~1 사이 step factor로 보간.
+        adopt_full = (dt_change <= float(max_delta_trans_mm)
+                       and dr_change <= float(max_delta_rot_deg))
+        if adopt_full:
+            T_adopted = T_new
+            step = 1.0
+            reason = "adopted"
+        elif dt_change <= 3.0 * float(max_delta_trans_mm) and dr_change <= 3.0 * float(max_delta_rot_deg):
+            # 가벼운 초과: 1/3 정도만 step 적용 (trust-region 좁게)
+            step = min(float(max_delta_trans_mm) / max(dt_change, 1e-6),
+                       float(max_delta_rot_deg) / max(dr_change, 1e-6))
+            step = max(0.05, min(step, 1.0))
+            # interpolate T_old -> T_new
+            T_adopted = _interp_se3(T_old, T_new, step)
+            reason = f"partial_adopt(step={step:.2f})"
+        else:
+            # 극단적 차이: 신뢰 못 함 → 거부 (기존 동작 유지)
+            T_adopted = T_old
+            step = 0.0
+            reason = "delta_exceeds_guard"
+
+        refined_cams[ci] = T_adopted
+        diag["per_cam"][f"T_base_C{ci}"] = {
+            "adopted": bool(step > 0.0),
+            "step": float(step),
+            "n_events": int(len(cands)),
+            "delta_trans_mm": dt_change,
+            "delta_rot_deg": dr_change,
+            "trans_std_mm": float(st.get("translation_std_mm", 0.0)),
+            "rot_std_deg": float(st.get("rotation_std_deg", 0.0)),
+            "reason": reason,
+        }
+
+    return refined_cams, T_B_O_by_set, diag
+
+
+def candidate_weight(cand: dict, single_face_scale: float = 0.25) -> float:
+    """Quality weight for cube pose candidates.
+
+    Accuracy-oriented policy:
+      - multi-marker cube PnP dominates single-face IPPE candidates,
+      - reprojection error is squared to strongly penalize weak poses,
+      - depth consistency helps only when the depth evidence is sufficiently sampled,
+      - single-face candidates remain usable but act mainly as tie-breakers.
+    """
+    used_ids = [int(x) for x in cand.get("used_ids", [])]
+    face_count = max(len(set(used_ids)), 1)
+    n_points = max(int(cand.get("n_points", 4)), 4)
+    err = float(cand.get("err_mean", 99.0))
+    if not np.isfinite(err):
+        err = 99.0
+    err = float(np.clip(err, 0.05, 20.0))
+
+    source = str(cand.get("source", "unknown")).lower()
+    if source in {"multi", "meta"}:
+        source_scale = 1.25
+    elif source == "depth_svd":
+        source_scale = 0.70
+    elif source.startswith("ippe"):
+        source_scale = 0.55
+    else:
+        source_scale = 1.0
+
+    weight = source_scale * (face_count ** 2) * np.sqrt(n_points / 4.0) / (err ** 2)
+
+    aspect = cand.get("aspect_ratio")
+    if aspect is not None:
+        # Oblique square observations are geometrically ill-conditioned.
+        weight *= float(np.clip((float(aspect) - 0.15) / 0.65, 0.20, 1.0))
+
+    if face_count <= 1:
+        weight *= float(single_face_scale)
+
+    if bool(cand.get("depth_valid")) and cand.get("depth_plane_mean_mm") is not None:
+        depth_err = max(float(cand.get("depth_plane_mean_mm", 0.0)), 0.0)
+        depth_samples = min(max(int(cand.get("depth_num_samples", 0)), 1), 60) / 60.0
+        depth_markers = min(max(int(cand.get("depth_num_markers", 0)), 1), max(face_count, 1)) / max(face_count, 1)
+        depth_quality = depth_samples * depth_markers / (1.0 + depth_err / 2.0)
+        weight *= float(np.clip(depth_quality, 0.15, 1.5))
+    else:
+        # Missing depth should not destroy good RGB PnP, but it should lose ties.
+        weight *= 0.75
+
+    return float(max(weight, 1e-9))
+
+
+def stored_cube_pose_candidates(cinfo: dict,
+                                cam_idx: int,
+                                gripper_cam_idx: Optional[int],
+                                max_err: float,
+                                min_markers: int,
+                                min_aspect: float) -> List[dict]:
+    candidates: List[dict] = []
+    aspect_by_marker: Dict[int, float] = {}
+
+    for item in cinfo.get("markers", []):
+        mid = int(item.get("marker_id", -1))
+        corners = np.asarray(item.get("corners_2d", []), dtype=np.float64)
+        aspect = None
+        if corners.shape == (4, 2):
+            aspect = marker_aspect_ratio(corners)
+            aspect_by_marker[mid] = aspect
+
+        pose_candidates = item.get("pose_candidates") or []
+        if pose_candidates:
+            for cand in pose_candidates:
+                err = float(cand.get("reproj_error_mean_px", 99.0))
+                if err > float(max_err):
+                    continue
+                if aspect is not None and aspect < float(min_aspect):
+                    continue
+                T44 = cand.get("T_cam_cube_4x4")
+                if T44 is None:
+                    continue
+                sol_idx = int(cand.get("solution_index", 0))
+                candidates.append({
+                    "T_C_O": np.asarray(T44, dtype=np.float64),
+                    "err_mean": err,
+                    "n_points": 4,
+                    "used_ids": [mid],
+                    "source": f"ippe{sol_idx}",
+                    "aspect_ratio": float(aspect) if aspect is not None else None,
+                    **copy_depth_fields(cand),
+                })
+            continue
+
+        T44 = item.get("T_cam_cube_4x4")
+        err = float(item.get("reproj_error_mean_px", 99.0))
+        if T44 is None or err > float(max_err):
+            continue
+        if aspect is not None and aspect < float(min_aspect):
+            continue
+        candidates.append({
+            "T_C_O": np.asarray(T44, dtype=np.float64),
+            "err_mean": err,
+            "n_points": 4,
+            "used_ids": [mid],
+            "source": "ippe0",
+            "aspect_ratio": float(aspect) if aspect is not None else None,
+            **copy_depth_fields(item),
+        })
+
+    cpnp = cinfo.get("cube_pnp")
+    if cpnp and cpnp.get("ok"):
+        err = float(cpnp.get("reproj_mean_px", 99.0))
+        used_ids = [int(x) for x in cpnp.get("used_ids", [])]
+        T44 = cpnp.get("T_cam_cube_4x4")
+        enough_ids = len(set(used_ids)) >= max(int(min_markers), 1)
+        if T44 is not None and err <= float(max_err) and enough_ids:
+            used_aspects = [aspect_by_marker[mid] for mid in used_ids if mid in aspect_by_marker]
+            min_used_aspect = min(used_aspects) if used_aspects else None
+            if min_used_aspect is None or min_used_aspect >= float(min_aspect):
+                candidates.append({
+                    "T_C_O": np.asarray(T44, dtype=np.float64),
+                    "err_mean": err,
+                    "n_points": int(cpnp.get("n_points", 4 * max(len(set(used_ids)), 1))),
+                    "used_ids": used_ids,
+                    "source": "meta",
+                    "from_gripper": bool(cam_idx == gripper_cam_idx),
+                    **copy_depth_fields(cpnp),
+                })
+
+    return candidates
+
+
+def estimate_image_cube_pose_candidates(cube: ArucoCubeTarget,
+                                        img: np.ndarray,
+                                        K: np.ndarray,
+                                        D: np.ndarray,
+                                        max_err: float,
+                                        min_markers: int,
+                                        min_aspect: float,
+                                        depth_u16: Optional[np.ndarray] = None,
+                                        depth_scale: Optional[float] = None) -> List[dict]:
+    candidates: List[dict] = []
+
+    ok, rvec, tvec, used, reproj = cube.solve_pnp_cube(
+        img, K, D,
+        use_ransac=True, min_markers=max(int(min_markers), 1),
+        reproj_thr_mean_px=float(max_err), return_reproj=True,
+        min_aspect=float(min_aspect),
+        depth_u16=depth_u16,
+        depth_scale=depth_scale)
+    if ok and reproj and reproj["err_mean"] <= float(max_err):
+        candidates.append({
+            "T_C_O": rodrigues_to_Rt(rvec, tvec),
+            "err_mean": float(reproj["err_mean"]),
+            "n_points": int(reproj["n_points"]),
+            "used_ids": [int(x) for x in used],
+            "source": "multi",
+            **depth_metrics_to_fields(reproj.get("depth_metrics")),
+        })
+
+
+    corners_list, ids = cube.detect(img)
+    if ids is None:
+        return candidates
+
+    for c, mid in zip(corners_list, ids):
+        mid = int(mid)
+        if not cube.model.has_marker(mid):
+            continue
+        img_pts = cube.model.reorder_image_corners(mid, c.reshape(4, 2).astype(np.float64))
+        if marker_aspect_ratio(img_pts) < float(min_aspect):
+            continue
+        ippe_candidates = cube.single_marker_ippe_candidates(
+            mid,
+            c.reshape(4, 2).astype(np.float64),
+            K,
+            D,
+            corners_list=corners_list,
+            ids=ids,
+            depth_u16=depth_u16,
+            depth_scale=depth_scale,
+        )
+        if not ippe_candidates:
+            continue
+        best = min(ippe_candidates, key=lambda cand: cand["rank"])
+        if float(best["err_mean"]) > float(max_err):
+            continue
+        candidates.append({
+            "T_C_O": np.asarray(best["T_C_O"], dtype=np.float64),
+            "err_mean": float(best["err_mean"]),
+            "n_points": 4,
+            "used_ids": [mid],
+            "source": f"ippe{int(best['solution_index'])}",
+            "z_ok": bool(best["z_ok"]),
+            "vis_ok": bool(best["vis_ok"]),
+            "vis_score": float(best["vis_score"]),
+            "visibility_tier": int(best["visibility_tier"]),
+            **depth_metrics_to_fields(best.get("depth_metrics")),
+        })
+
+    return candidates
+
+
+def build_cube_anchor_from_fixed_cams(meta: dict,
+                                      pnp_obs: Dict[int, Dict[int, dict]],
+                                      T_base_Ci: Dict[int, np.ndarray],
+                                      fixed_cam_ids: List[int],
+                                      gripper_cam_idx: Optional[int],
+                                      min_cams: int = 2,
+                                      extra_transforms: Optional[Dict[str, Any]] = None):
+    transforms: Dict[str, Any] = dict(extra_transforms or {})
+    transforms.update({
+        f"T_base_C{int(ci)}": np.asarray(T, dtype=np.float64)
+        for ci, T in T_base_Ci.items()
+        if int(ci) in fixed_cam_ids
+    })
+    profile_kwargs = cube_selection_profile_kwargs("cube_only_specialized")
+    event_pose_map: Dict[int, np.ndarray] = {}
+    event_pose_list: List[np.ndarray] = []
+    event_weights: List[float] = []
+    event_details: List[dict] = []
+    total_keys = 0
+    signature_counter: Counter = Counter()
+
+    for cap in meta.get("captures", []):
+        eid = int(cap.get("event_id", -1))
+        if eid < 0:
+            continue
+        event_candidate_map = {}
+        for ci in fixed_cam_ids:
+            tf_key = f"T_base_C{int(ci)}"
+            if tf_key not in transforms:
+                continue
+            obs = pnp_obs.get(int(ci), {}).get(eid)
+            if obs is None:
+                continue
+            cands = obs.get("_candidates") or [obs]
+            event_candidate_map[int(ci)] = []
+            for cand in cands:
+                T_C_O = np.asarray(cand.get("T_C_O"), dtype=np.float64)
+                if T_C_O.shape != (4, 4) or not np.all(np.isfinite(T_C_O)):
+                    continue
+                event_candidate_map[int(ci)].append({
+                    "T_C_O": T_C_O,
+                    "err_mean": float(cand.get("err_mean", 99.0)),
+                    "n_points": int(cand.get("n_points", 4)),
+                    "used_ids": [int(x) for x in cand.get("used_ids", [])],
+                    "source": str(cand.get("source", "unknown")),
+                })
+            if not event_candidate_map[int(ci)]:
+                event_candidate_map.pop(int(ci), None)
+
+        if len(event_candidate_map) < max(int(min_cams), 1):
+            continue
+
+        total_keys += 1
+        refined = select_consistent_event_cube_candidates(
+            cap, event_candidate_map, transforms, gripper_cam_idx, **profile_kwargs)
+        if len(refined) < max(int(min_cams), 1):
+            continue
+
+        Ts, ws = [], []
+        detail_row = {"event_id": eid, "support": int(len(refined)), "cameras": {}}
+        for ci, cand in refined.items():
+            T_base_O = transforms[f"T_base_C{int(ci)}"] @ np.asarray(cand["T_C_O"], dtype=np.float64)
+            Ts.append(T_base_O)
+            ws.append(candidate_weight(cand))
+            signature = (tuple(int(x) for x in cand.get("used_ids", [])), str(cand.get("source", "unknown")))
+            signature_counter[signature] += 1
+            detail_row["cameras"][str(ci)] = {
+                "used_ids": [int(x) for x in cand.get("used_ids", [])],
+                "source": str(cand.get("source", "unknown")),
+                "err_mean": float(cand.get("err_mean", 99.0)),
+            }
+
+        T_event = robust_weighted_se3_average(Ts, ws)
+        event_pose_map[eid] = T_event
+        event_pose_list.append(T_event)
+        event_weights.append(float(np.sum(ws)))
+        event_details.append(detail_row)
+
+    if not event_pose_list:
+        return None, {}, {
+            "support": 0,
+            "total_keys": int(total_keys),
+            "stability": {},
+            "events": [],
+        }
+
+    T_avg, st_anchor = robust_weighted_se3_average(event_pose_list, event_weights, return_stats=True)
+    diag = {
+        "support": int(len(event_pose_list)),
+        "total_keys": int(total_keys),
+        "stability": st_anchor,
+        "events": event_details,
+    }
+    if signature_counter:
+        (used_ids, source), count = signature_counter.most_common(1)[0]
+        diag["dominant_signature"] = {
+            "used_ids": [int(x) for x in used_ids],
+            "source": str(source),
+            "support": int(count),
+        }
+    return T_avg, event_pose_map, diag
+
+
+def build_gripper_cube_anchor(robot_T: Dict[int, np.ndarray],
+                              pnp_obs: Dict[int, Dict[int, dict]],
+                              gripper_cam_idx: int,
+                              T_gTc: np.ndarray,
+                              gripper_base_by_event: Optional[Dict[int, np.ndarray]] = None):
+    base_keys = set(robot_T.keys())
+    if gripper_base_by_event:
+        base_keys |= set(int(eid) for eid in gripper_base_by_event.keys())
+    common_cube = sorted(base_keys & set(pnp_obs.get(gripper_cam_idx, {}).keys()))
+    event_pose_map: Dict[int, np.ndarray] = {}
+    event_pose_list: List[np.ndarray] = []
+    event_weights: List[float] = []
+
+    for eid in common_cube:
+        obs = pnp_obs[gripper_cam_idx][eid]
+        T_base_cam = None
+        if gripper_base_by_event is not None:
+            T_base_cam = gripper_base_by_event.get(eid)
+        if T_base_cam is None:
+            if eid not in robot_T:
+                continue
+            T_base_cam = robot_T[eid] @ T_gTc
+        T_B_O = np.asarray(T_base_cam, dtype=np.float64) @ np.asarray(obs["T_C_O"], dtype=np.float64)
+        event_pose_map[eid] = T_B_O
+        event_pose_list.append(T_B_O)
+        event_weights.append(candidate_weight(obs))
+
+    if not event_pose_list:
+        return None, {}, {
+            "support": 0,
+            "total_keys": 0,
+            "stability": {},
+            "events": [],
+        }
+
+    T_avg, st_anchor = robust_weighted_se3_average(event_pose_list, event_weights, return_stats=True)
+    return T_avg, event_pose_map, {
+        "support": int(len(event_pose_list)),
+        "total_keys": int(len(common_cube)),
+        "stability": st_anchor,
+        "events": [{"event_id": int(eid)} for eid in common_cube],
+    }
+
+
+def estimate_fixed_cameras_from_cube_anchor(
+    pnp_obs: Dict[int, Dict[int, dict]],
+    fixed_cam_ids: List[int],
+    T_B_O_by_event: Dict[int, np.ndarray],
+):
+    T_base_Ci = {}
+    base_stats = {}
+
+    def _pick_candidate(ci, eid, T_B_O, T_ref=None):
+        candidates = pnp_obs[ci][eid].get("_candidates")
+        if not candidates or len(candidates) <= 1:
+            return pnp_obs[ci][eid]["T_C_O"]
+        best_T, best_score = None, 1e9
+        for cand in candidates:
+            T_sol = np.asarray(cand["T_C_O"], dtype=np.float64)
+            err_sol = float(cand.get("err_mean", 99.0))
+            T_B_Ci_sol = T_B_O @ inv_T(T_sol)
+            if T_ref is not None:
+                score = rotation_error_deg(T_B_Ci_sol[:3, :3], T_ref[:3, :3])
+            else:
+                cam_z = T_B_Ci_sol[:3, 2]
+                score = err_sol + max(cam_z[2], 0.0) * 50.0
+            if score < best_score:
+                best_score = score
+                best_T = T_sol
+        return best_T
+
+    for ci in fixed_cam_ids:
+        common = sorted(set(pnp_obs.get(ci, {}).keys()) & set(T_B_O_by_event.keys()))
+        if not common:
+            continue
+
+        Ts1, ws1 = [], []
+        for eid in common:
+            T_C_O = _pick_candidate(ci, eid, T_B_O_by_event[eid])
+            Ts1.append(T_B_O_by_event[eid] @ inv_T(T_C_O))
+            ws1.append(1.0 / max(float(pnp_obs[ci][eid].get("err_mean", 1.0)), 1e-9))
+        T_rough = robust_weighted_se3_average(Ts1, ws1)
+
+        Ts2, ws2 = [], []
+        for eid in common:
+            T_C_O = _pick_candidate(ci, eid, T_B_O_by_event[eid], T_ref=T_rough)
+            Ts2.append(T_B_O_by_event[eid] @ inv_T(T_C_O))
+            ws2.append(1.0 / max(float(pnp_obs[ci][eid].get("err_mean", 1.0)), 1e-9))
+
+        T_avg, st = robust_weighted_se3_average(Ts2, ws2, return_stats=True)
+        st["method"] = "cube_anchor_primary"
+        st["support"] = int(len(common))
+        st["total_keys"] = int(len(common))
+        T_base_Ci[int(ci)] = T_avg
+        base_stats[f"T_base_C{int(ci)}"] = st
+
+    return T_base_Ci, base_stats
+
+
+def merge_fixed_camera_base_transforms(
+    cube_T_base_Ci: Dict[int, np.ndarray],
+    cube_stats: Dict[str, dict],
+    board_T_base_Ci: Dict[int, np.ndarray],
+    board_stats: Dict[str, dict],
+    mode: str = "cube_primary",
+    board_refine_alpha: float = 0.35,
+    max_refine_dt_mm: float = 25.0,
+    max_refine_dr_deg: float = 5.0,
+    adaptive_alpha: bool = True,
+):
+    merged = {}
+    merged_stats = {}
+    camera_ids = sorted(set(cube_T_base_Ci.keys()) | set(board_T_base_Ci.keys()))
+    for ci in camera_ids:
+        key = f"T_base_C{int(ci)}"
+        T_cube = cube_T_base_Ci.get(int(ci))
+        T_board = board_T_base_Ci.get(int(ci))
+        st_cube = dict(cube_stats.get(key, {}))
+        st_board = dict(board_stats.get(key, {}))
+
+        # Auto-pick primary: 잔차가 더 낮은 source가 더 신뢰. 차이가 충분히 클 때만 swap.
+        # 'auto' 모드면 잔차 기반 자동 선택, 그 외엔 기존 동작.
+        if str(mode) == "auto":
+            cube_resid = float(st_cube.get("translation_std_mm", 1e6))
+            board_resid = float(st_board.get("translation_std_mm", 1e6))
+            if T_board is not None and T_cube is not None:
+                # board가 cube보다 30% 이상 작으면 board를 primary로
+                if board_resid < cube_resid * 0.7:
+                    primary = T_board; primary_stats = st_board; secondary = T_cube
+                    primary_stats["auto_pick"] = "board"
+                elif cube_resid < board_resid * 0.7:
+                    primary = T_cube; primary_stats = st_cube; secondary = T_board
+                    primary_stats["auto_pick"] = "cube"
+                else:
+                    # 비슷한 신뢰도 → 가중 평균 50/50 후 cube를 primary로
+                    primary = T_cube; primary_stats = st_cube; secondary = T_board
+                    primary_stats["auto_pick"] = "cube_tied"
+            elif T_board is not None:
+                primary = T_board; primary_stats = st_board; secondary = None
+                primary_stats["auto_pick"] = "board_only"
+            elif T_cube is not None:
+                primary = T_cube; primary_stats = st_cube; secondary = None
+                primary_stats["auto_pick"] = "cube_only"
+            else:
+                primary = None; primary_stats = {}; secondary = None
+        elif str(mode) == "board_primary":
+            primary = T_board if T_board is not None else T_cube
+            primary_stats = st_board if T_board is not None else st_cube
+            secondary = T_cube if T_board is not None else None
+        else:
+            primary = T_cube if T_cube is not None else T_board
+            primary_stats = st_cube if T_cube is not None else st_board
+            secondary = T_board if T_cube is not None else None
+
+        if primary is None:
+            continue
+
+        T_final = np.asarray(primary, dtype=np.float64)
+        method = str(primary_stats.get("method", "unknown"))
+
+        if secondary is not None and board_refine_alpha > 0.0:
+            secondary = np.asarray(secondary, dtype=np.float64)
+            dt_mm = float(np.linalg.norm(T_final[:3, 3] - secondary[:3, 3]) * 1000.0)
+            dr_deg = rotation_error_deg(T_final[:3, :3], secondary[:3, :3])
+            if dt_mm <= float(max_refine_dt_mm) and dr_deg <= float(max_refine_dr_deg):
+                alpha = float(board_refine_alpha)
+                if bool(adaptive_alpha):
+                    cube_std = float(st_cube.get("translation_std_mm", 99.0))
+                    board_std = float(st_board.get("translation_std_mm", 99.0))
+                    if board_std > 0 and cube_std > 0:
+                        ratio = min(cube_std / max(board_std, 0.1), 2.0)
+                        alpha = float(np.clip(board_refine_alpha * ratio, 0.1, 0.70))
+                T_final = blend_rigid_transforms(T_final, secondary, alpha)
+                method = f"{method}+board_refined(a={alpha:.2f})"
+                primary_stats["board_refine_delta_mm"] = dt_mm
+                primary_stats["board_refine_delta_deg"] = dr_deg
+                primary_stats["board_refine_alpha_used"] = alpha
+
+        primary_stats["method"] = method
+        merged[int(ci)] = T_final
+        merged_stats[key] = primary_stats
+
+    return merged, merged_stats
+
+
+def score_handeye_with_cube_support(
+    meta: dict,
+    robot_T: Dict[int, np.ndarray],
+    pnp_obs: Dict[int, Dict[int, dict]],
+    gripper_cam_idx: int,
+    fixed_cam_ids: List[int],
+    T_gTc: np.ndarray,
+    min_cams: int = 2,
+):
+    _, gripper_anchor_events, _ = build_gripper_cube_anchor(
+        robot_T, pnp_obs, gripper_cam_idx, T_gTc, gripper_base_by_event=None)
+    if not gripper_anchor_events:
+        return {
+            "cube_score": 1e9,
+            "cube_fixed_support": 0,
+            "cube_anchor_support": 0,
+            "cube_base_stability": {},
+            "cube_anchor_stability": {},
+        }
+
+    cube_T_base_Ci, cube_base_stats = estimate_fixed_cameras_from_cube_anchor(
+        pnp_obs, fixed_cam_ids, gripper_anchor_events)
+    if not cube_T_base_Ci:
+        return {
+            "cube_score": 1e9,
+            "cube_fixed_support": 0,
+            "cube_anchor_support": 0,
+            "cube_base_stability": {},
+            "cube_anchor_stability": {},
+        }
+
+    anchor_avg, _, anchor_diag = build_cube_anchor_from_fixed_cams(
+        meta, pnp_obs, cube_T_base_Ci, sorted(cube_T_base_Ci.keys()), gripper_cam_idx,
+        min_cams=min_cams)
+    base_rows = list(cube_base_stats.values())
+    mean_base_trans = float(np.mean([float(r.get("translation_std_mm", 1e9)) for r in base_rows])) if base_rows else 1e9
+    mean_base_rot = float(np.mean([float(r.get("rotation_std_deg", 1e9)) for r in base_rows])) if base_rows else 1e9
+    anchor_st = anchor_diag.get("stability", {}) if anchor_avg is not None else {}
+    anchor_trans = float(anchor_st.get("translation_std_mm", 1e9))
+    anchor_rot = float(anchor_st.get("rotation_std_deg", 1e9))
+    cube_score = mean_base_trans + 10.0 * mean_base_rot + 0.5 * anchor_trans + 5.0 * anchor_rot
+    return {
+        "cube_score": float(cube_score),
+        "cube_fixed_support": int(len(cube_T_base_Ci)),
+        "cube_anchor_support": int(anchor_diag.get("support", 0)),
+        "cube_base_stability": {
+            "mean_translation_std_mm": mean_base_trans,
+            "mean_rotation_std_deg": mean_base_rot,
+        },
+        "cube_anchor_stability": anchor_st,
+    }
+
+
+def build_gripper_event_base_transforms_from_fixed_cams(
+    meta: dict,
+    pnp_obs: Dict[int, Dict[int, dict]],
+    T_base_Ci: Dict[int, np.ndarray],
+    fixed_cam_ids: List[int],
+    gripper_cam_idx: int,
+    robot_T: Dict[int, np.ndarray],
+    T_gTc: np.ndarray,
+    min_cams: int = 2,
+    max_fixed_spread_mm: float = 15.0,
+    max_fixed_spread_deg: float = 2.0,
+    extra_transforms: Optional[Dict[str, Any]] = None,
+):
+    transforms: Dict[str, Any] = dict(extra_transforms or {})
+    transforms.update({
+        f"T_base_C{int(ci)}": np.asarray(T, dtype=np.float64)
+        for ci, T in T_base_Ci.items()
+        if int(ci) in fixed_cam_ids
+    })
+    profile_kwargs = cube_selection_profile_kwargs("default")
+    event_base_map: Dict[int, np.ndarray] = {}
+    diag_events: List[dict] = []
+
+    for cap in meta.get("captures", []):
+        eid = int(cap.get("event_id", -1))
+        if eid < 0:
+            continue
+        if eid not in pnp_obs.get(gripper_cam_idx, {}):
+            continue
+        if eid not in robot_T:
+            continue
+
+        fixed_candidate_map: Dict[int, List[dict]] = {}
+        for ci in fixed_cam_ids:
+            tf_key = f"T_base_C{int(ci)}"
+            if tf_key not in transforms:
+                continue
+            obs = pnp_obs.get(int(ci), {}).get(eid)
+            if obs is None:
+                continue
+            cands = obs.get("_candidates") or [obs]
+            payload = []
+            for cand in cands:
+                T_C_O = np.asarray(cand.get("T_C_O"), dtype=np.float64)
+                if T_C_O.shape != (4, 4) or not np.all(np.isfinite(T_C_O)):
+                    continue
+                payload.append({
+                    "T_C_O": T_C_O,
+                    "err_mean": float(cand.get("err_mean", 99.0)),
+                    "n_points": int(cand.get("n_points", 4)),
+                    "used_ids": [int(x) for x in cand.get("used_ids", [])],
+                    "source": str(cand.get("source", "unknown")),
+                    **copy_depth_fields(cand),
+                })
+            if payload:
+                fixed_candidate_map[int(ci)] = payload
+
+        if len(fixed_candidate_map) < max(int(min_cams), 1):
+            continue
+
+        refined_fixed = select_consistent_event_cube_candidates(
+            cap, fixed_candidate_map, transforms, None, **profile_kwargs)
+        if len(refined_fixed) < max(int(min_cams), 1):
+            continue
+
+        fixed_object_poses = []
+        fixed_weights = []
+        fixed_details = {}
+        for ci, cand in refined_fixed.items():
+            T_base_cam = transforms.get(f"T_base_C{int(ci)}")
+            if T_base_cam is None:
+                continue
+            T_base_O = np.asarray(T_base_cam, dtype=np.float64) @ np.asarray(cand["T_C_O"], dtype=np.float64)
+            fixed_object_poses.append(T_base_O)
+            fixed_weights.append(candidate_weight(cand))
+            fixed_details[str(int(ci))] = {
+                "used_ids": [int(x) for x in cand.get("used_ids", [])],
+                "source": str(cand.get("source", "unknown")),
+                "err_mean": float(cand.get("err_mean", 99.0)),
+            }
+
+        if len(fixed_object_poses) < max(int(min_cams), 1):
+            continue
+
+        T_base_O_fixed = weighted_se3_average(fixed_object_poses, fixed_weights)
+        fixed_spread_mm = [
+            float(np.linalg.norm(T[:3, 3] - T_base_O_fixed[:3, 3]) * 1000.0)
+            for T in fixed_object_poses
+        ]
+        fixed_spread_deg = [
+            rotation_error_deg(T[:3, :3], T_base_O_fixed[:3, :3])
+            for T in fixed_object_poses
+        ]
+        fixed_spread_mean_mm = float(np.mean(fixed_spread_mm)) if fixed_spread_mm else 0.0
+        fixed_spread_mean_deg = float(np.mean(fixed_spread_deg)) if fixed_spread_deg else 0.0
+        if fixed_spread_mean_mm > float(max_fixed_spread_mm):
+            continue
+        if fixed_spread_mean_deg > float(max_fixed_spread_deg):
+            continue
+
+        gripper_obs = pnp_obs[gripper_cam_idx][eid]
+        gripper_candidates = gripper_obs.get("_candidates") or [gripper_obs]
+        gripper_best = select_primary_cube_candidate(gripper_candidates)
+        if gripper_best is None:
+            continue
+
+        T_C_O_gripper = np.asarray(gripper_best["T_C_O"], dtype=np.float64)
+        T_base_cam_corrected = T_base_O_fixed @ inv_T(T_C_O_gripper)
+        T_base_cam_nominal = robot_T[eid] @ T_gTc
+        T_delta = T_base_cam_corrected @ inv_T(T_base_cam_nominal)
+
+        event_base_map[eid] = T_base_cam_corrected
+        diag_events.append({
+            "event_id": int(eid),
+            "set_index": get_capture_set_index(cap),
+            "support": int(len(fixed_object_poses)),
+            "fixed_spread_mean_mm": fixed_spread_mean_mm,
+            "fixed_spread_mean_deg": fixed_spread_mean_deg,
+            "delta_translation_mm": float(np.linalg.norm(T_delta[:3, 3]) * 1000.0),
+            "delta_rotation_deg": rotation_error_deg(T_delta[:3, :3], np.eye(3, dtype=np.float64)),
+            "delta_translation_xyz_mm": (T_delta[:3, 3] * 1000.0).tolist(),
+            "fixed_cameras": fixed_details,
+            "gripper_used_ids": [int(x) for x in gripper_best.get("used_ids", [])],
+            "gripper_source": str(gripper_best.get("source", "unknown")),
+            "gripper_err_mean": float(gripper_best.get("err_mean", 99.0)),
+        })
+
+    diag = {
+        "support": int(len(event_base_map)),
+        "events": diag_events,
+    }
+    return event_base_map, diag
+
+
+def blend_rigid_transforms(T_a: np.ndarray,
+                           T_b: np.ndarray,
+                           alpha: float) -> np.ndarray:
+    alpha = float(np.clip(alpha, 0.0, 1.0))
+    if alpha <= 0.0:
+        return np.asarray(T_a, dtype=np.float64).copy()
+    if alpha >= 1.0:
+        return np.asarray(T_b, dtype=np.float64).copy()
+    T_a = np.asarray(T_a, dtype=np.float64)
+    T_b = np.asarray(T_b, dtype=np.float64)
+    T = np.eye(4, dtype=np.float64)
+    T[:3, 3] = (1.0 - alpha) * T_a[:3, 3] + alpha * T_b[:3, 3]
+    R_mean = (1.0 - alpha) * T_a[:3, :3] + alpha * T_b[:3, :3]
+    U, _, Vt = np.linalg.svd(R_mean)
+    R = U @ Vt
+    if np.linalg.det(R) < 0:
+        U[:, -1] *= -1
+        R = U @ Vt
+    T[:3, :3] = R
+    return T
+
+
+def refine_gripper_event_base_transforms_with_board_anchor(
+    gripper_base_by_event: Dict[int, np.ndarray],
+    charuco_obs: Dict[int, dict],
+    blend_alpha: float = 0.8,
+):
+    blend_alpha = float(np.clip(blend_alpha, 0.0, 1.0))
+    if blend_alpha <= 0.0:
+        return gripper_base_by_event, {
+            "support": 0,
+            "blend_alpha": blend_alpha,
+            "enabled": False,
+            "events": [],
+        }
+
+    overlap = sorted(set(int(eid) for eid in gripper_base_by_event.keys()) & set(int(eid) for eid in charuco_obs.keys()))
+    if len(overlap) < 3:
+        return gripper_base_by_event, {
+            "support": int(len(overlap)),
+            "blend_alpha": blend_alpha,
+            "enabled": False,
+            "events": [],
+        }
+
+    board_list = []
+    board_weights = []
+    for eid in overlap:
+        T_base_cam = np.asarray(gripper_base_by_event[eid], dtype=np.float64)
+        T_cam_board = np.asarray(charuco_obs[eid]["T_cam_board"], dtype=np.float64)
+        board_list.append(T_base_cam @ T_cam_board)
+        board_weights.append(1.0 / max(float(charuco_obs[eid].get("reproj", 1.0)), 1e-9))
+
+    T_base_board_ref, st_board = robust_weighted_se3_average(board_list, board_weights, return_stats=True)
+    refined = {int(eid): np.asarray(T, dtype=np.float64).copy() for eid, T in gripper_base_by_event.items()}
+    event_rows = []
+    for eid in overlap:
+        T_old = np.asarray(gripper_base_by_event[eid], dtype=np.float64)
+        T_cam_board = np.asarray(charuco_obs[eid]["T_cam_board"], dtype=np.float64)
+        T_board_aligned = T_base_board_ref @ inv_T(T_cam_board)
+        T_new = blend_rigid_transforms(T_old, T_board_aligned, blend_alpha)
+        refined[eid] = T_new
+        T_delta = T_new @ inv_T(T_old)
+        event_rows.append({
+            "event_id": int(eid),
+            "delta_translation_mm": float(np.linalg.norm(T_delta[:3, 3]) * 1000.0),
+            "delta_rotation_deg": rotation_error_deg(T_delta[:3, :3], np.eye(3, dtype=np.float64)),
+            "charuco_reproj_px": float(charuco_obs[eid].get("reproj", 1.0)),
+            "charuco_corners": int(charuco_obs[eid].get("n_corners", 0)),
+        })
+
+    return refined, {
+        "support": int(len(overlap)),
+        "blend_alpha": blend_alpha,
+        "enabled": True,
+        "board_anchor_stability": st_board,
+        "events": event_rows,
+    }
+
+
+def load_nominal_set_cube_transforms(meta: dict) -> Dict[int, np.ndarray]:
+    priors: Dict[int, np.ndarray] = {}
+    for cap in meta.get("captures", []):
+        set_index = get_capture_set_index(cap)
+        if set_index is None or int(set_index) in priors:
+            continue
+        T_nominal = get_capture_set_cube_center_transform_raw(cap)
+        if T_nominal is not None:
+            priors[int(set_index)] = np.asarray(T_nominal, dtype=np.float64)
+    return priors
+
+
+def build_event_pose_map_from_set_priors(meta: dict,
+                                         set_priors_by_set: Dict[int, np.ndarray]) -> Dict[int, np.ndarray]:
+    event_pose_map: Dict[int, np.ndarray] = {}
+    for cap in meta.get("captures", []):
+        eid = int(cap.get("event_id", -1))
+        if eid < 0:
+            continue
+        set_index = get_capture_set_index(cap)
+        if set_index is None:
+            continue
+        T_prior = set_priors_by_set.get(int(set_index))
+        if T_prior is None:
+            continue
+        event_pose_map[int(eid)] = np.asarray(T_prior, dtype=np.float64)
+    return event_pose_map
+
+
+def estimate_set_cube_prior_alignment(raw_set_priors: Dict[int, np.ndarray],
+                                      estimated_by_set: Dict[int, np.ndarray],
+                                      set_diag: Optional[dict] = None):
+    delta_list: List[np.ndarray] = []
+    delta_weights: List[float] = []
+    per_set = {}
+
+    for set_index in sorted(set(raw_set_priors.keys()) & set(estimated_by_set.keys())):
+        T_raw = np.asarray(raw_set_priors[int(set_index)], dtype=np.float64)
+        T_est = np.asarray(estimated_by_set[int(set_index)], dtype=np.float64)
+        T_delta = inv_T(T_raw) @ T_est
+        support = 1.0
+        if set_diag is not None:
+            support = float((set_diag.get("per_set", {}) or {}).get(str(int(set_index)), {}).get("support", 1.0))
+        delta_list.append(T_delta)
+        delta_weights.append(max(support, 1.0))
+        per_set[str(int(set_index))] = {
+            "support": int(support),
+            "raw_transform": T_raw.tolist(),
+            "estimated_transform": T_est.tolist(),
+            "delta_transform": T_delta.tolist(),
+        }
+
+    if not delta_list:
+        return None, {}, {
+            "support": 0,
+            "stability": {},
+            "per_set": {},
+        }
+
+    T_delta_avg, st_delta = robust_weighted_se3_average(delta_list, delta_weights, return_stats=True)
+    corrected_by_set: Dict[int, np.ndarray] = {}
+    for set_index, T_raw in raw_set_priors.items():
+        corrected_by_set[int(set_index)] = np.asarray(T_raw, dtype=np.float64) @ np.asarray(T_delta_avg, dtype=np.float64)
+
+    residual_rows = {}
+    for set_index in sorted(set(raw_set_priors.keys()) & set(estimated_by_set.keys())):
+        T_corr = corrected_by_set[int(set_index)]
+        T_est = np.asarray(estimated_by_set[int(set_index)], dtype=np.float64)
+        residual_rows[str(int(set_index))] = {
+            "dt_mm": float(np.linalg.norm(T_corr[:3, 3] - T_est[:3, 3]) * 1000.0),
+            "dr_deg": rotation_error_deg(T_corr[:3, :3], T_est[:3, :3]),
+        }
+        per_set[str(int(set_index))].update(residual_rows[str(int(set_index))])
+
+    diag = {
+        "support": int(len(delta_list)),
+        "stability": st_delta,
+        "T_set_cube_center_to_object": np.asarray(T_delta_avg, dtype=np.float64).tolist(),
+        "per_set": per_set,
+    }
+    return T_delta_avg, corrected_by_set, diag
+
+
+def build_setwise_cube_anchors(meta: dict,
+                               event_pose_map: Dict[int, np.ndarray],
+                               set_prior_by_set: Optional[Dict[int, np.ndarray]] = None,
+                               prior_blend_alpha: float = 0.25,
+                               max_prior_dt_mm: float = 35.0,
+                               max_prior_dr_deg: float = 8.0):
+    poses_by_set: Dict[int, List[Tuple[int, np.ndarray]]] = defaultdict(list)
+    events_without_set_index: List[int] = []
+
+    for cap in meta.get("captures", []):
+        eid = int(cap.get("event_id", -1))
+        if eid < 0 or eid not in event_pose_map:
+            continue
+        set_index = get_capture_set_index(cap)
+        if set_index is None:
+            events_without_set_index.append(int(eid))
+            continue
+        poses_by_set[int(set_index)].append((eid, np.asarray(event_pose_map[eid], dtype=np.float64)))
+
+    transforms_by_set: Dict[int, np.ndarray] = {}
+    diag = {
+        "num_sets": 0,
+        "set_indices": [],
+        "per_set": {},
+        "events_without_set_index": [int(eid) for eid in events_without_set_index],
+        "global_average_is_compatibility_only": False,
+    }
+
+    for set_index in sorted(poses_by_set):
+        items = poses_by_set[set_index]
+        if not items:
+            continue
+        Ts = [T for _, T in items]
+        T_avg, st = robust_weighted_se3_average(Ts, return_stats=True)
+        if set_prior_by_set is not None and int(set_index) in set_prior_by_set:
+            T_prior = np.asarray(set_prior_by_set[int(set_index)], dtype=np.float64)
+            dt_mm = float(np.linalg.norm(T_avg[:3, 3] - T_prior[:3, 3]) * 1000.0)
+            dr_deg = rotation_error_deg(T_avg[:3, :3], T_prior[:3, :3])
+            if dt_mm <= float(max_prior_dt_mm) and dr_deg <= float(max_prior_dr_deg):
+                T_avg = blend_rigid_transforms(T_avg, T_prior, float(prior_blend_alpha))
+                st["prior_blend_dt_mm"] = dt_mm
+                st["prior_blend_dr_deg"] = dr_deg
+                st["prior_blend_alpha"] = float(prior_blend_alpha)
+        transforms_by_set[int(set_index)] = T_avg
+        diag["per_set"][str(int(set_index))] = {
+            "support": int(len(items)),
+            "events": [int(eid) for eid, _ in items],
+            "stability": st,
+        }
+
+    diag["num_sets"] = int(len(transforms_by_set))
+    diag["set_indices"] = [int(x) for x in sorted(transforms_by_set)]
+    diag["global_average_is_compatibility_only"] = bool(len(transforms_by_set) > 1)
+    return transforms_by_set, diag
+
+
+def build_hybrid_setwise_cube_anchors(meta: dict,
+                                      fixed_event_pose_map: Dict[int, np.ndarray],
+                                      gripper_event_pose_map: Dict[int, np.ndarray],
+                                      set_prior_by_set: Optional[Dict[int, np.ndarray]] = None,
+                                      prior_blend_alpha: float = 0.25,
+                                      max_prior_dt_mm: float = 35.0,
+                                      max_prior_dr_deg: float = 8.0):
+    fixed_by_set: Dict[int, Dict[int, np.ndarray]] = defaultdict(dict)
+    gripper_by_set: Dict[int, Dict[int, np.ndarray]] = defaultdict(dict)
+    events_without_set_index: List[int] = []
+
+    for cap in meta.get("captures", []):
+        eid = int(cap.get("event_id", -1))
+        if eid < 0:
+            continue
+        set_index = get_capture_set_index(cap)
+        if set_index is None:
+            if eid in fixed_event_pose_map or eid in gripper_event_pose_map:
+                events_without_set_index.append(int(eid))
+            continue
+        if eid in fixed_event_pose_map:
+            fixed_by_set[int(set_index)][eid] = np.asarray(fixed_event_pose_map[eid], dtype=np.float64)
+        if eid in gripper_event_pose_map:
+            gripper_by_set[int(set_index)][eid] = np.asarray(gripper_event_pose_map[eid], dtype=np.float64)
+
+    transforms_by_set: Dict[int, np.ndarray] = {}
+    diag = {
+        "num_sets": 0,
+        "set_indices": [],
+        "per_set": {},
+        "events_without_set_index": [int(eid) for eid in events_without_set_index],
+        "global_average_is_compatibility_only": False,
+        "strategy": "fixed_translation_gripper_rotation",
+    }
+
+    all_sets = sorted(set(fixed_by_set.keys()) | set(gripper_by_set.keys()))
+    for set_index in all_sets:
+        fixed_items = fixed_by_set.get(set_index, {})
+        gripper_items = gripper_by_set.get(set_index, {})
+        event_ids = sorted(set(fixed_items.keys()) | set(gripper_items.keys()))
+        if not event_ids:
+            continue
+
+        hybrid_events: List[Tuple[int, np.ndarray]] = []
+        for eid in event_ids:
+            T_fixed = fixed_items.get(eid)
+            T_gripper = gripper_items.get(eid)
+            T_evt = np.eye(4, dtype=np.float64)
+            if T_gripper is not None:
+                T_evt[:3, :3] = T_gripper[:3, :3]
+            elif T_fixed is not None:
+                T_evt[:3, :3] = T_fixed[:3, :3]
+            if T_fixed is not None:
+                T_evt[:3, 3] = T_fixed[:3, 3]
+            elif T_gripper is not None:
+                T_evt[:3, 3] = T_gripper[:3, 3]
+            hybrid_events.append((eid, T_evt))
+
+        T_avg, st = robust_weighted_se3_average(
+            [T for _, T in hybrid_events], return_stats=True)
+        if set_prior_by_set is not None and int(set_index) in set_prior_by_set:
+            T_prior = np.asarray(set_prior_by_set[int(set_index)], dtype=np.float64)
+            dt_mm = float(np.linalg.norm(T_avg[:3, 3] - T_prior[:3, 3]) * 1000.0)
+            dr_deg = rotation_error_deg(T_avg[:3, :3], T_prior[:3, :3])
+            if dt_mm <= float(max_prior_dt_mm) and dr_deg <= float(max_prior_dr_deg):
+                T_avg = blend_rigid_transforms(T_avg, T_prior, float(prior_blend_alpha))
+                st["prior_blend_dt_mm"] = dt_mm
+                st["prior_blend_dr_deg"] = dr_deg
+                st["prior_blend_alpha"] = float(prior_blend_alpha)
+        transforms_by_set[int(set_index)] = T_avg
+
+        fixed_st = None
+        if fixed_items:
+            _, fixed_st = robust_weighted_se3_average(
+                [T for T in fixed_items.values()], return_stats=True)
+        gripper_st = None
+        if gripper_items:
+            _, gripper_st = robust_weighted_se3_average(
+                [T for T in gripper_items.values()], return_stats=True)
+
+        diag["per_set"][str(int(set_index))] = {
+            "support": int(len(hybrid_events)),
+            "events": [int(eid) for eid, _ in hybrid_events],
+            "stability": st,
+            "source": "fixed_translation+gripper_rotation",
+            "fixed_support": int(len(fixed_items)),
+            "gripper_support": int(len(gripper_items)),
+            "fixed_stability": fixed_st,
+            "gripper_stability": gripper_st,
+        }
+
+    diag["num_sets"] = int(len(transforms_by_set))
+    diag["set_indices"] = [int(x) for x in sorted(transforms_by_set)]
+    diag["global_average_is_compatibility_only"] = bool(len(transforms_by_set) > 1)
+    return transforms_by_set, diag
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Unified calibration (ChArUco hand-eye + cube multi-cam)")
+    parser.add_argument("--root_folder", required=True)
+    parser.add_argument("--intrinsics_dir", required=True)
+    parser.add_argument("--out_dir", type=str, default=None)
+    parser.add_argument("--gripper_cam_idx", type=int, default=None)
+    parser.add_argument("--ref_fixed_cam_idx", type=int, default=None)
+    parser.add_argument("--handeye_method", type=str, default="AUTO")
+    parser.add_argument("--gripper_cube_min_markers", type=int, default=1)
+    parser.add_argument("--gripper_cube_min_aspect", type=float, default=0.35)
+    parser.add_argument("--fixed_cube_min_aspect", type=float, default=0.0,
+                        help="Reject markers seen at aspect ratio < this from fixed cams. "
+                             "Higher values drop oblique markers but tested 0.5 hurt accuracy by 90% on real data.")
+    parser.add_argument("--event_anchor_min_cams", type=int, default=2,
+                        help="Minimum cameras with cube visible per event for cube-anchor inclusion. "
+                             "Tested 3 — caused -22%% pose_rep_max and 5x HE pos std (too few events for hand-eye).")
+    parser.add_argument("--gripper_board_blend_alpha", type=float, default=0.8)
+    parser.add_argument("--common_object_mode", type=str, default="auto",
+                        choices=["cube_primary", "board_primary", "auto"])
+    parser.add_argument("--fixed_board_refine_alpha", type=float, default=0.35)
+    parser.add_argument("--cube_config_json", type=str, default=None,
+                        help="Optional cube config JSON override. Leave unset to use the project's canonical cube definition.")
+    args = parser.parse_args()
+
+    root = args.root_folder
+    intr_dir = args.intrinsics_dir
+    out_dir = args.out_dir or os.path.join(root, "calib_out")
+    ensure_dir(out_dir)
+    cleanup_legacy_public_outputs(out_dir)
+    internal_runtime_dir = ensure_dir(os.path.join(out_dir, "internal_runtime"))
+
+    with open(os.path.join(root, "meta.json"), "r") as f:
+        meta = json.load(f)
+    cfg, cube_cfg_source = resolve_cube_config_for_run(
+        root_folder=root,
+        calib_dir=out_dir,
+        cube_config_json=args.cube_config_json,
+        default_cfg=get_default_cube_config(),
+    )
+    meta_cfg, meta_cfg_source = load_cube_config_from_meta(root, default_cfg=cfg)
+    reuse_stored_cube_candidates = cube_configs_equivalent(meta_cfg, cfg)
+    print(f"[INFO] cube config source: {cube_cfg_source}")
+    print(f"[INFO] cube id_to_face: {cfg.id_to_face}")
+    if not reuse_stored_cube_candidates:
+        print(
+            "[WARN] Session meta cube_config differs from the resolved cube model; "
+            "stored cube pose candidates will be ignored and image re-detection will be used."
+        )
+    nominal_set_cube_priors = load_nominal_set_cube_transforms(meta)
+    if nominal_set_cube_priors:
+        print(f"[INFO] set_cube_center priors: {sorted(int(x) for x in nominal_set_cube_priors.keys())}")
+    else:
+        print("[INFO] set_cube_center priors: none")
+
+    # ─── Camera discovery ───
+    all_cam_ids = sorted({
+        int(k) for cap in meta.get("captures", [])
+        for k, v in cap.get("cams", {}).items() if v.get("saved")
+    })
+    if not all_cam_ids:
+        raise RuntimeError("No saved camera data in meta.json")
+
+    gripper_cam_idx = args.gripper_cam_idx
+    if gripper_cam_idx is None:
+        gripper_cam_idx = meta.get("gripper_cam_idx")
+    if gripper_cam_idx is None:
+        dm_path = os.path.join(intr_dir, "device_map.json")
+        if os.path.exists(dm_path):
+            with open(dm_path, "r") as f:
+                gripper_cam_idx = json.load(f).get("gripper_cam_idx")
+    if gripper_cam_idx is None:
+        raise RuntimeError("gripper_cam_idx required")
+
+    fixed_cam_ids = [ci for ci in all_cam_ids if ci != gripper_cam_idx]
+    ref_fixed = args.ref_fixed_cam_idx or (fixed_cam_ids[0] if fixed_cam_ids else None)
+
+    print(f"[INFO] all cams: {all_cam_ids}")
+    print(f"[INFO] gripper: cam{gripper_cam_idx}, fixed: {fixed_cam_ids}, ref: cam{ref_fixed}")
+
+    # intrinsics
+    K_map, D_map, depth_scale_map = {}, {}, {}
+    for ci in all_cam_ids:
+        K_map[ci], D_map[ci], depth_scale_map[ci] = load_intrinsics_with_depth_scale(intr_dir, ci)
+
+    # robot poses
+    robot_T = load_robot_poses_from_meta(meta)
+    print(f"[INFO] robot poses: {len(robot_T)}")
+
+    # ══════════════════════════════════════════════════════════
+    # STEP A: Read cube PnP from metadata (all cameras)
+    # ══════════════════════════════════════════════════════════
+    print("\n" + "=" * 60)
+    print("[STEP-A] Cube PnP from metadata")
+    print("=" * 60)
+
+    pnp_obs: Dict[int, Dict[int, dict]] = {ci: {} for ci in all_cam_ids}
+    cube = ArucoCubeTarget(cfg)
+
+    for cap in meta.get("captures", []):
+        eid = int(cap.get("event_id", -1))
+        if eid < 0:
+            continue
+        for ci_str, cinfo in cap.get("cams", {}).items():
+            ci = int(ci_str)
+            if ci not in pnp_obs or not cinfo.get("saved"):
+                continue
+            max_err = 5.0 if ci == gripper_cam_idx else 3.0
+            min_markers = args.gripper_cube_min_markers if ci == gripper_cam_idx else 1
+            min_aspect = args.gripper_cube_min_aspect if ci == gripper_cam_idx else float(args.fixed_cube_min_aspect)
+
+            candidates = []
+            if reuse_stored_cube_candidates:
+                candidates.extend(stored_cube_pose_candidates(
+                    cinfo, ci, gripper_cam_idx,
+                    max_err=max_err,
+                    min_markers=min_markers,
+                    min_aspect=min_aspect,
+                ))
+
+            rgb_path = os.path.join(root, cinfo.get("rgb_path", ""))
+            img = cv2.imread(rgb_path) if rgb_path else None
+            if img is not None:
+                depth = None
+                depth_rel = cinfo.get("depth_path", "")
+                if depth_rel:
+                    depth = cv2.imread(os.path.join(root, depth_rel), cv2.IMREAD_UNCHANGED)
+                candidates = estimate_image_cube_pose_candidates(
+                    cube, img, K_map[ci], D_map[ci],
+                    max_err=max_err,
+                    min_markers=min_markers,
+                    min_aspect=min_aspect,
+                    depth_u16=depth,
+                    depth_scale=depth_scale_map.get(ci),
+                ) + candidates
+
+            candidates = filter_candidates_for_camera_role(candidates, ci, gripper_cam_idx)
+
+            if not candidates:
+                continue
+
+            best = select_primary_cube_candidate(candidates)
+            if best is None:
+                continue
+
+            pnp_obs[ci][eid] = {
+                "T_C_O": np.asarray(best["T_C_O"], dtype=np.float64),
+                "err_mean": float(best["err_mean"]),
+                "n_points": int(best.get("n_points", 4)),
+                "used_ids": [int(x) for x in best.get("used_ids", [])],
+                "source": str(best.get("source", "unknown")),
+                **copy_depth_fields(best),
+                "_candidates": [
+                    {
+                        "T_C_O": np.asarray(cand["T_C_O"], dtype=np.float64),
+                        "err_mean": float(cand.get("err_mean", 99.0)),
+                        "n_points": int(cand.get("n_points", 4)),
+                        "used_ids": [int(x) for x in cand.get("used_ids", [])],
+                        "source": str(cand.get("source", "unknown")),
+                        **copy_depth_fields(cand),
+                    }
+                    for cand in candidates
+                ],
+            }
+
+    for ci in all_cam_ids:
+        errs = [r["err_mean"] for r in pnp_obs[ci].values()]
+        tag = "G" if ci == gripper_cam_idx else "F"
+        print(f"  cam{ci}({tag}): {len(pnp_obs[ci])} frames, "
+              f"reproj={np.mean(errs):.3f}px" if errs else f"  cam{ci}({tag}): 0 frames")
+
+    # ══════════════════════════════════════════════════════════
+    # STEP A-2: Read ChArUco board from gripper camera metadata
+    # ══════════════════════════════════════════════════════════
+    print("\n" + "=" * 60)
+    print("[STEP-A2] ChArUco board from gripper camera")
+    print("=" * 60)
+
+    charuco_obs: Dict[int, dict] = {}
+    for cap in meta.get("captures", []):
+        eid = int(cap.get("event_id", -1))
+        if eid < 0:
+            continue
+        gi_data = cap.get("cams", {}).get(str(gripper_cam_idx), {})
+        ch = gi_data.get("charuco")
+        if ch and ch.get("ok"):
+            T44 = ch.get("T_cam_board_4x4")
+            if T44 is not None:
+                charuco_obs[eid] = {
+                    "T_cam_board": np.asarray(T44, dtype=np.float64),
+                    "reproj": float(ch.get("reproj_error_px", 1.0)),
+                    "n_corners": int(ch.get("n_corners", 0)),
+                }
+
+    # Fallback: detect ChArUco from saved gripper camera images
+    if len(charuco_obs) == 0:
+        print("  No ChArUco in metadata, detecting from saved images...")
+        from charuco_utils import CharucoTarget
+        from config import CharucoBoardConfig
+        charuco_det = CharucoTarget(CharucoBoardConfig())
+        g_K, g_D = K_map[gripper_cam_idx], D_map[gripper_cam_idx]
+
+        for cap in meta.get("captures", []):
+            eid = int(cap.get("event_id", -1))
+            if eid < 0:
+                continue
+            gi_data = cap.get("cams", {}).get(str(gripper_cam_idx), {})
+            rgb_rel = gi_data.get("rgb_path", "")
+            if not rgb_rel:
+                continue
+            img = cv2.imread(os.path.join(root, rgb_rel))
+            if img is None:
+                continue
+            try:
+                ch_ok, ch_rvec, ch_tvec, ch_n, ch_reproj = charuco_det.estimate_pose(
+                    img, g_K, g_D)
+            except Exception as e:
+                print(f"    event={eid}: ERROR {e}")
+                continue
+            if ch_ok and ch_rvec is not None and ch_n >= 4:
+                charuco_obs[eid] = {
+                    "T_cam_board": rodrigues_to_Rt(ch_rvec, ch_tvec),
+                    "reproj": float(ch_reproj) if ch_reproj else 1.0,
+                    "n_corners": int(ch_n),
+                }
+                print(f"    event={eid}: OK {ch_n} corners, reproj={ch_reproj:.3f}px")
+            else:
+                print(f"    event={eid}: no board (corners={ch_n if ch_ok else 0})")
+
+    ch_reprs = [v["reproj"] for v in charuco_obs.values()]
+    if ch_reprs:
+        print(f"  ChArUco total: {len(charuco_obs)} frames, reproj={np.mean(ch_reprs):.3f}px")
+    else:
+        print(f"  ChArUco: 0 frames (will fallback to cube PnP for hand-eye)")
+
+    # ══════════════════════════════════════════════════════════
+    # STEP B: Fixed camera extrinsics (cube PnP)
+    # ══════════════════════════════════════════════════════════
+    print("\n" + "=" * 60)
+    print(f"[STEP-B] Fixed camera extrinsics (ref=cam{ref_fixed})")
+    print("=" * 60)
+
+    T_Cref_Ci = {ref_fixed: np.eye(4, dtype=np.float64)}
+    fixed_stats = {}
+
+    for ci in fixed_cam_ids:
+        if ci == ref_fixed:
+            continue
+        common = sorted(set(pnp_obs[ref_fixed].keys()) & set(pnp_obs[ci].keys()))
+        if not common:
+            print(f"  [WARN] cam{ci}: no common frames with ref")
+            continue
+
+        Ts, ws = [], []
+        for eid in common:
+            T_ref_O = pnp_obs[ref_fixed][eid]["T_C_O"]
+            T_ci_O = pnp_obs[ci][eid]["T_C_O"]
+            T_ref_ci = T_ref_O @ inv_T(T_ci_O)
+            w = 1.0 / max(pnp_obs[ref_fixed][eid]["err_mean"] * pnp_obs[ci][eid]["err_mean"], 1e-9)
+            Ts.append(T_ref_ci)
+            ws.append(w)
+
+        T_avg, st = robust_weighted_se3_average(Ts, ws, return_stats=True)
+        T_Cref_Ci[ci] = T_avg
+        fixed_stats[f"T_C{ref_fixed}_C{ci}"] = st
+        np.save(os.path.join(out_dir, f"T_C{ref_fixed}_C{ci}.npy"), T_avg)
+        print(f"  T_C{ref_fixed}_C{ci}: {len(common)}fr "
+              f"rot={st['rotation_std_deg']:.3f}deg trans={st['translation_std_mm']:.2f}mm")
+
+    # ══════════════════════════════════════════════════════════
+    # STEP C: Hand-eye (ChArUco preferred, cube PnP fallback)
+    # ══════════════════════════════════════════════════════════
+    print("\n" + "=" * 60)
+    print(f"[STEP-C] Hand-eye (gripper=cam{gripper_cam_idx})")
+    print("=" * 60)
+
+    # Choose data source: ChArUco (preferred) or cube PnP (fallback)
+    use_charuco = len(charuco_obs) >= 5
+    if use_charuco:
+        common_he = sorted(set(robot_T.keys()) & set(charuco_obs.keys()))
+        print(f"  Using ChArUco board ({len(common_he)} common events)")
+        R_target2cam = [charuco_obs[eid]["T_cam_board"][:3, :3] for eid in common_he]
+        t_target2cam = [charuco_obs[eid]["T_cam_board"][:3, 3].reshape(3, 1) for eid in common_he]
+    else:
+        common_he = sorted(set(robot_T.keys()) & set(pnp_obs[gripper_cam_idx].keys()))
+        print(f"  Fallback: cube PnP ({len(common_he)} common events)")
+        R_target2cam = [pnp_obs[gripper_cam_idx][eid]["T_C_O"][:3, :3] for eid in common_he]
+        t_target2cam = [pnp_obs[gripper_cam_idx][eid]["T_C_O"][:3, 3].reshape(3, 1) for eid in common_he]
+
+    if len(common_he) < 5:
+        raise RuntimeError(f"Not enough events for hand-eye ({len(common_he)} < 5)")
+
+    R_gripper2base = [robot_T[eid][:3, :3] for eid in common_he]
+    t_gripper2base = [robot_T[eid][:3, 3].reshape(3, 1) for eid in common_he]
+
+    method_map = build_method_map()
+    method_sel = str(args.handeye_method or "AUTO").strip().upper()
+    method_iter = method_map.items() if method_sel == "AUTO" else [(method_sel, method_map.get(method_sel))]
+
+    def _evaluate_handeye(T_gTc_eval, eval_eids, eval_label=""):
+        """Evaluate a hand-eye solution: compute board stability and score."""
+        T_B_tgt_list = []
+        w_eval = []
+        for eid in eval_eids:
+            T_B_G = robot_T[eid]
+            if use_charuco:
+                T_cam_tgt = charuco_obs[eid]["T_cam_board"]
+            else:
+                T_cam_tgt = pnp_obs[gripper_cam_idx][eid]["T_C_O"]
+            T_B_tgt_list.append(T_B_G @ T_gTc_eval @ T_cam_tgt)
+            if use_charuco:
+                w_eval.append(1.0 / max(charuco_obs[eid]["reproj"], 1e-9))
+            else:
+                w_eval.append(1.0 / max(pnp_obs[gripper_cam_idx][eid]["err_mean"], 1e-9))
+        T_B_tgt_avg, st_bo = robust_weighted_se3_average(T_B_tgt_list, w_eval, return_stats=True)
+        trans_mm, rot_deg = [], []
+        for T in T_B_tgt_list:
+            trans_mm.append(float(np.linalg.norm(T[:3, 3] - T_B_tgt_avg[:3, 3]) * 1000.0))
+            rot_deg.append(rotation_error_deg(T[:3, :3], T_B_tgt_avg[:3, :3]))
+        board_score = float(np.mean(trans_mm)) + 10.0 * float(np.mean(rot_deg))
+        return T_B_tgt_list, T_B_tgt_avg, st_bo, trans_mm, rot_deg, board_score
+
+    method_results = {}
+    for mname, mcode in method_iter:
+        if mcode is None:
+            continue
+        try:
+            # --- Initial hand-eye with all frames ---
+            R_gc, t_gc = cv2.calibrateHandEye(
+                R_gripper2base=R_gripper2base,
+                t_gripper2base=t_gripper2base,
+                R_target2cam=R_target2cam,
+                t_target2cam=t_target2cam,
+                method=int(mcode),
+            )
+            T_gTc = np.eye(4, dtype=np.float64)
+            T_gTc[:3, :3] = np.asarray(R_gc, dtype=np.float64).reshape(3, 3)
+            T_gTc[:3, 3] = np.asarray(t_gc, dtype=np.float64).reshape(3)
+
+            T_B_tgt_list, T_B_tgt_avg, st_bo, trans_mm, rot_deg, board_score = \
+                _evaluate_handeye(T_gTc, common_he)
+
+            # --- Iterative refinement: remove worst frames, recompute ---
+            best_T_gTc = T_gTc.copy()
+            best_score = board_score
+            best_trans_mm = list(trans_mm)
+            best_rot_deg = list(rot_deg)
+            best_st_bo = dict(st_bo)
+            best_eids = list(common_he)
+
+            for refine_iter in range(3):
+                residuals = np.asarray(trans_mm, dtype=np.float64) + 10.0 * np.asarray(rot_deg, dtype=np.float64)
+                med = np.median(residuals)
+                mad = np.median(np.abs(residuals - med)) + 1e-12
+                thr = med + 2.5 * 1.4826 * mad
+                keep_mask = residuals <= thr
+                if keep_mask.sum() < max(8, int(0.6 * len(common_he))):
+                    break
+                if keep_mask.all():
+                    break
+                kept_eids = [eid for eid, k in zip(common_he, keep_mask) if k]
+                R_g2b = [robot_T[eid][:3, :3] for eid in kept_eids]
+                t_g2b = [robot_T[eid][:3, 3].reshape(3, 1) for eid in kept_eids]
+                if use_charuco:
+                    R_t2c = [charuco_obs[eid]["T_cam_board"][:3, :3] for eid in kept_eids]
+                    t_t2c = [charuco_obs[eid]["T_cam_board"][:3, 3].reshape(3, 1) for eid in kept_eids]
+                else:
+                    R_t2c = [pnp_obs[gripper_cam_idx][eid]["T_C_O"][:3, :3] for eid in kept_eids]
+                    t_t2c = [pnp_obs[gripper_cam_idx][eid]["T_C_O"][:3, 3].reshape(3, 1) for eid in kept_eids]
+                try:
+                    R_gc2, t_gc2 = cv2.calibrateHandEye(
+                        R_gripper2base=R_g2b, t_gripper2base=t_g2b,
+                        R_target2cam=R_t2c, t_target2cam=t_t2c,
+                        method=int(mcode),
+                    )
+                except Exception:
+                    break
+                T_gTc2 = np.eye(4, dtype=np.float64)
+                T_gTc2[:3, :3] = np.asarray(R_gc2, dtype=np.float64).reshape(3, 3)
+                T_gTc2[:3, 3] = np.asarray(t_gc2, dtype=np.float64).reshape(3)
+                # Evaluate refined solution on ALL frames
+                _, _, st_bo2, trans_mm2, rot_deg2, board_score2 = \
+                    _evaluate_handeye(T_gTc2, common_he)
+                if board_score2 < best_score:
+                    best_T_gTc = T_gTc2.copy()
+                    best_score = board_score2
+                    best_trans_mm = list(trans_mm2)
+                    best_rot_deg = list(rot_deg2)
+                    best_st_bo = dict(st_bo2)
+                    best_eids = list(kept_eids)
+                    trans_mm = list(trans_mm2)
+                else:
+                    break
+
+            T_gTc = best_T_gTc
+            trans_mm = best_trans_mm
+            rot_deg = best_rot_deg
+            st_bo = best_st_bo
+            board_score = best_score
+
+            cube_score_info = score_handeye_with_cube_support(
+                meta, robot_T, pnp_obs, gripper_cam_idx, fixed_cam_ids, T_gTc,
+                min_cams=max(int(args.event_anchor_min_cams), 2),
+            )
+            cube_score_value = float(cube_score_info.get("cube_score", 0.0))
+            no_refinement = (len(best_eids) >= len(common_he))
+            mean_trans = float(np.mean(trans_mm))
+            # Robust scoring:
+            # - board_score (gripper hand-eye stability) is the direct quality signal → weight high
+            # - cube_score (fixed-cam consensus side metric) gets de-weighted; can be artificially
+            #   low for bad hand-eye when gripper anchor events are filtered out
+            # - mean_trans (board-position deviation) directly penalizes large translation errors
+            # - no-refinement penalty: if MAD outlier removal didn't drop a single frame, residuals
+            #   are uniformly bad rather than having outliers — a known ANDREFF failure pattern
+            # Do not penalize a no-refinement case when all frames are already tight.
+            no_refinement_penalty = 0.0
+            if no_refinement and mean_trans > 5.0:
+                no_refinement_penalty = min(50.0, 2.0 * (mean_trans - 5.0))
+            if str(args.common_object_mode) == "cube_primary":
+                score = (board_score * 5.0
+                         + cube_score_value * 0.1
+                         + mean_trans * 5.0
+                         + no_refinement_penalty)
+            else:
+                score = board_score * 5.0 + mean_trans * 5.0 + no_refinement_penalty
+            refine_note = f" (refined {len(common_he)}->{len(best_eids)}fr)" if not no_refinement else " (NO REFINE)"
+            method_results[mname] = {
+                "T_gTc": T_gTc,
+                "score": score,
+                "board_score": board_score,
+                "cube_score": cube_score_value,
+                "mean_trans_mm": mean_trans,
+                "mean_rot_deg": float(np.mean(rot_deg)),
+                "no_refinement_penalty": no_refinement_penalty,
+                "stability": st_bo,
+                "cube_support": cube_score_info,
+            }
+            print(
+                f"  [{mname}] score={score:.3f} "
+                f"(board={board_score:.3f}, cube={cube_score_value:.3f}, trans={mean_trans:.2f}mm"
+                f"{', NO_REFINE+50' if no_refinement else ''}) "
+                f"rot={np.mean(rot_deg):.3f}deg{refine_note}"
+            )
+        except Exception as e:
+            print(f"  [{mname}] FAILED: {e}")
+
+    if not method_results:
+        raise RuntimeError("All hand-eye methods failed")
+
+    best_method = min(method_results, key=lambda k: method_results[k]["score"])
+    T_gTc = method_results[best_method]["T_gTc"]
+
+    # ── Joint refinement: board + cube observations 동시 최소화 ──
+    # OpenCV calibrateHandEye는 한 가지 target만 봄. 추가로 cube observations 도
+    # 함께 잔차에 넣고 scipy로 nonlinear refine. board residual은 보통 작고
+    # cube residual은 큰데 (예: 12mm vs 226mm), 동시 최소화하면 양쪽 모두 줄어듦.
+    try:
+        from scipy.optimize import least_squares as _ls_he
+        from scipy.spatial.transform import Rotation as _Rot_he
+
+        def _T_from_xyzrxryrz(v):
+            T = np.eye(4, dtype=np.float64)
+            T[:3, :3] = _Rot_he.from_rotvec(v[3:6]).as_matrix()
+            T[:3, 3] = v[0:3]
+            return T
+
+        def _xyzrxryrz_from_T(T):
+            v = np.zeros(6)
+            v[0:3] = T[:3, 3]
+            v[3:6] = _Rot_he.from_matrix(T[:3, :3]).as_rotvec()
+            return v
+
+        def _he_residuals(v, w_board=1.0, w_cube=0.3):
+            """board와 cube 양쪽에서 base 좌표계 일관성 잔차."""
+            T_gc = _T_from_xyzrxryrz(v)
+            res = []
+            # board: T_base_board 는 같은 값이어야 함 → 각 frame의 T_B_G·T_gc·T_cam_board
+            # 의 평균에서 거리
+            if use_charuco and len(common_he) >= 3:
+                T_bb_list = []
+                for eid in common_he:
+                    if eid not in charuco_obs:
+                        continue
+                    T_bb_list.append(robot_T[eid] @ T_gc @ charuco_obs[eid]["T_cam_board"])
+                if T_bb_list:
+                    T_avg = np.eye(4)
+                    T_avg[:3, 3] = np.mean([T[:3, 3] for T in T_bb_list], axis=0)
+                    Rs = np.array([T[:3, :3] for T in T_bb_list])
+                    R_mean = Rs.mean(0)
+                    U, _, Vt = np.linalg.svd(R_mean)
+                    T_avg[:3, :3] = U @ Vt
+                    for T in T_bb_list:
+                        dt = (T[:3, 3] - T_avg[:3, 3]) * 1000  # mm
+                        dR = T[:3, :3] @ T_avg[:3, :3].T
+                        ang = np.degrees(np.arccos(
+                            np.clip((np.trace(dR) - 1) / 2, -1, 1)))
+                        res.extend([dt[0] * w_board, dt[1] * w_board, dt[2] * w_board,
+                                    ang * 5 * w_board])  # 1° = 5mm 가중
+            # cube: 각 set 안에서 일관 (per-set 평균 대비 거리)
+            from collections import defaultdict as _dd
+            cube_by_set = _dd(list)
+            for eid in common_he:
+                if eid not in pnp_obs[gripper_cam_idx]:
+                    continue
+                cap = next((c for c in meta.get("captures", [])
+                            if c.get("event_id") == eid), None)
+                if cap is None:
+                    continue
+                sidx = get_capture_set_index(cap)
+                if sidx is None:
+                    continue
+                T_co = pnp_obs[gripper_cam_idx][eid]["T_C_O"]
+                cube_by_set[sidx].append(robot_T[eid] @ T_gc @ T_co)
+            for sidx, Tl in cube_by_set.items():
+                if len(Tl) < 2:
+                    continue
+                t_mean = np.mean([T[:3, 3] for T in Tl], axis=0)
+                for T in Tl:
+                    dt = (T[:3, 3] - t_mean) * 1000
+                    res.extend([dt[0] * w_cube, dt[1] * w_cube, dt[2] * w_cube])
+            if not res:
+                return np.zeros(1)
+            return np.asarray(res, dtype=np.float64)
+
+        v0 = _xyzrxryrz_from_T(T_gTc)
+        r_init = _he_residuals(v0)
+        rms_init_he = float(np.sqrt(np.mean(r_init ** 2)))
+        try:
+            opt_res = _ls_he(_he_residuals, v0, method="trf", loss="huber",
+                              f_scale=3.0, max_nfev=200,
+                              xtol=1e-10, ftol=1e-10, gtol=1e-10)
+            v_opt = opt_res.x
+            T_gTc_refined = _T_from_xyzrxryrz(v_opt)
+            r_final = _he_residuals(v_opt)
+            rms_final_he = float(np.sqrt(np.mean(r_final ** 2)))
+            print(f"  [HE-refine] joint board+cube RMS: {rms_init_he:.2f} -> {rms_final_he:.2f}")
+            if rms_final_he < rms_init_he * 1.01:  # 1% 마진 (가벼운 변화 허용)
+                T_gTc = T_gTc_refined
+                print(f"  [HE-refine] adopted refined T_gripper_cam")
+            else:
+                print(f"  [HE-refine] keeping OpenCV solution (refine worsened or matched)")
+        except Exception as e:
+            print(f"  [HE-refine] WARN: refinement failed ({e})")
+    except ImportError:
+        pass
+
+    np.save(os.path.join(out_dir, "T_gripper_cam.npy"), T_gTc)
+    print(f"  [BEST] {best_method} -> T_gripper_cam.npy")
+
+
+    # ══════════════════════════════════════════════════════════
+    # STEP D: Fixed cameras in robot base frame
+    # D-1: Board-based (T_base_board[eid] @ inv(T_Ci_board)) - precise
+    # D-2: Cube PnP chaining - fallback for cameras that can't see board
+    # ══════════════════════════════════════════════════════════
+    print("\n" + "=" * 60)
+    print("[STEP-D] Fixed cameras in robot base frame")
+    print("=" * 60)
+
+    from charuco_utils import CharucoTarget as _CT
+    from config import CharucoBoardConfig as _CBC
+    charuco_det = _CT(_CBC())
+
+    # Per-event T_base_board from gripper camera (precise!)
+    T_base_board_per_event = {}
+    for eid in common_he:
+        if eid not in charuco_obs or eid not in robot_T:
+            continue
+        T_base_board_per_event[eid] = robot_T[eid] @ T_gTc @ charuco_obs[eid]["T_cam_board"]
+
+    board_T_base_Ci = {}
+    board_base_stats = {}
+
+    # D-1: Board-based calibration
+    print("  --- D-1: Board-based (ChArUco) ---")
+    for ci in fixed_cam_ids:
+        if ci not in K_map:
+            continue
+        Ts, ws = [], []
+        for cap in meta.get("captures", []):
+            eid = int(cap.get("event_id", -1))
+            if eid not in T_base_board_per_event:
+                continue
+            cinfo = cap.get("cams", {}).get(str(ci), {})
+            rgb_path = os.path.join(root, cinfo.get("rgb_path", ""))
+            img = cv2.imread(rgb_path)
+            if img is None:
+                continue
+            try:
+                ok, rv, tv, n_cor, reproj = charuco_det.estimate_pose(img, K_map[ci], D_map[ci])
+            except Exception:
+                ok = False
+            if ok and n_cor >= 6:
+                T_cam_board = rodrigues_to_Rt(rv, tv)
+                T_est = T_base_board_per_event[eid] @ inv_T(T_cam_board)
+                Ts.append(T_est)
+                ws.append(1.0 / max(float(reproj), 1e-9))
+
+        if len(Ts) >= 3:
+            T_avg, st = robust_weighted_se3_average(Ts, ws, return_stats=True)
+            st["method"] = "board_based"
+            st["support"] = int(st.get("num_inliers", len(Ts)))
+            st["total_keys"] = int(len(Ts))
+            board_T_base_Ci[ci] = T_avg
+            board_base_stats[f"T_base_C{ci}"] = st
+            print(f"  T_base_C{ci}: {st['num_inliers']}/{len(Ts)}fr (board) "
+                  f"rot={st['rotation_std_deg']:.3f}deg trans={st['translation_std_mm']:.2f}mm")
+        else:
+            print(f"  cam{ci}: board not visible ({len(Ts)} frames)")
+
+    print("  --- D-1b: Cube-primary fixed camera base transforms ---")
+    gripper_anchor_nominal, gripper_anchor_events_nominal, gripper_anchor_diag_nominal = build_gripper_cube_anchor(
+        robot_T, pnp_obs, gripper_cam_idx, T_gTc, gripper_base_by_event=None)
+    cube_T_base_Ci, cube_base_stats = estimate_fixed_cameras_from_cube_anchor(
+        pnp_obs, fixed_cam_ids, gripper_anchor_events_nominal)
+    for ci in fixed_cam_ids:
+        key = f"T_base_C{ci}"
+        st = cube_base_stats.get(key)
+        if st is None:
+            continue
+        print(f"  {key}: {st.get('support', 0)}fr (cube) "
+              f"rot={st['rotation_std_deg']:.3f}deg trans={st['translation_std_mm']:.2f}mm")
+
+    T_base_Ci, base_stats = merge_fixed_camera_base_transforms(
+        cube_T_base_Ci,
+        cube_base_stats,
+        board_T_base_Ci,
+        board_base_stats,
+        mode=str(args.common_object_mode),
+        board_refine_alpha=float(args.fixed_board_refine_alpha),
+    )
+    for ci in fixed_cam_ids:
+        key = f"T_base_C{ci}"
+        T = T_base_Ci.get(ci)
+        if T is None:
+            continue
+        np.save(os.path.join(out_dir, f"{key}.npy"), np.asarray(T, dtype=np.float64))
+        st = base_stats.get(key, {})
+        print(f"  [FINAL] {key}: method={st.get('method', 'unknown')} "
+              f"rot={st.get('rotation_std_deg', 0.0):.3f}deg trans={st.get('translation_std_mm', 0.0):.2f}mm")
+
+    # Build object anchor from the fixed-camera cube consensus.
+    print("  --- D-1.5: Object anchor from fixed-camera cube consensus ---")
+    T_B_O_avg = None
+    T_B_O_by_event: Dict[int, np.ndarray] = {}
+    cube_anchor_diag = {
+        "support": 0,
+        "total_keys": 0,
+        "stability": {},
+        "events": [],
+    }
+    t_base_o_source = "uninitialized"
+    gripper_anchor = None
+    gripper_anchor_events: Dict[int, np.ndarray] = {}
+    gripper_anchor_diag = {
+        "support": 0,
+        "total_keys": 0,
+        "stability": {},
+        "events": [],
+    }
+    gripper_base_by_event: Dict[int, np.ndarray] = {}
+    gripper_base_diag = {
+        "support": 0,
+        "events": [],
+    }
+    set_cube_center_prior = None
+    set_cube_center_prior_diag = {
+        "support": 0,
+        "stability": {},
+        "per_set": {},
+    }
+
+    gripper_base_by_event, gripper_base_diag = build_gripper_event_base_transforms_from_fixed_cams(
+        meta, pnp_obs, T_base_Ci, sorted(T_base_Ci.keys()), gripper_cam_idx,
+        robot_T, T_gTc, min_cams=max(int(args.event_anchor_min_cams), 2),
+    )
+    gripper_base_by_event, gripper_board_refine_diag = refine_gripper_event_base_transforms_with_board_anchor(
+        gripper_base_by_event,
+        charuco_obs,
+        blend_alpha=float(args.gripper_board_blend_alpha),
+    )
+    gripper_base_diag["board_anchor_refinement"] = gripper_board_refine_diag
+    for eid, T_evt in sorted(gripper_base_by_event.items()):
+        np.save(
+            os.path.join(internal_runtime_dir, f"T_base_C{gripper_cam_idx}_event{int(eid)}.npy"),
+            np.asarray(T_evt, dtype=np.float64),
+        )
+    if gripper_base_diag.get("events"):
+        with open(os.path.join(internal_runtime_dir, f"T_base_C{gripper_cam_idx}_by_event.json"), "w") as f:
+            json.dump(gripper_base_diag, f, indent=2)
+        print(
+            f"  gripper event transforms from fixed consensus: "
+            f"{gripper_base_diag.get('support', 0)} events"
+        )
+
+    gripper_anchor, gripper_anchor_events, gripper_anchor_diag = build_gripper_cube_anchor(
+        robot_T, pnp_obs, gripper_cam_idx, T_gTc, gripper_base_by_event=gripper_base_by_event)
+
+    board_anchor, board_anchor_events, board_anchor_diag = build_cube_anchor_from_fixed_cams(
+        meta, pnp_obs, T_base_Ci, sorted(T_base_Ci.keys()), gripper_cam_idx,
+        min_cams=args.event_anchor_min_cams,
+    )
+    if board_anchor is not None:
+        T_B_O_avg = board_anchor
+        T_B_O_by_event = board_anchor_events
+        cube_anchor_diag = board_anchor_diag
+        t_base_o_source = "cube_consensus_fixed_cams"
+        print(
+            f"  T_base_O from cube consensus: "
+            f"{cube_anchor_diag.get('support', 0)}/{cube_anchor_diag.get('total_keys', 0)} events"
+        )
+    else:
+        if gripper_anchor is not None:
+            T_B_O_avg = gripper_anchor
+            T_B_O_by_event = gripper_anchor_events
+            cube_anchor_diag = gripper_anchor_diag
+            t_base_o_source = "gripper_cube_average_fallback"
+            print(
+                f"  [WARN] Falling back to gripper-only cube anchor: "
+                f"{cube_anchor_diag.get('support', 0)}/{cube_anchor_diag.get('total_keys', 0)} events"
+            )
+        else:
+            T_B_O_avg = np.eye(4, dtype=np.float64)
+            t_base_o_source = "identity_fallback"
+            print("  [WARN] No reliable cube anchor available; using identity fallback")
+
+    set_anchor_source = t_base_o_source
+    if t_base_o_source == "cube_consensus_fixed_cams" and gripper_anchor_events:
+        T_B_O_by_set, cube_anchor_by_set_diag = build_hybrid_setwise_cube_anchors(
+            meta, T_B_O_by_event, gripper_anchor_events)
+        if T_B_O_by_set:
+            set_anchor_source = "hybrid_fixed_translation_gripper_rotation"
+            cube_anchor_diag["setwise_strategy"] = "fixed_translation_gripper_rotation"
+            cube_anchor_diag["gripper_anchor"] = gripper_anchor_diag
+    else:
+        T_B_O_by_set, cube_anchor_by_set_diag = build_setwise_cube_anchors(meta, T_B_O_by_event)
+    if T_B_O_by_set:
+        if len(T_B_O_by_set) > 1:
+            T_B_O_avg = weighted_se3_average([T_B_O_by_set[s] for s in sorted(T_B_O_by_set)])
+        else:
+            T_B_O_avg = next(iter(T_B_O_by_set.values()))
+        cube_anchor_diag["set_indices"] = [int(x) for x in sorted(T_B_O_by_set)]
+        cube_anchor_diag["multi_set_capture"] = bool(len(T_B_O_by_set) > 1)
+        if len(T_B_O_by_set) > 1:
+            cube_anchor_diag["note"] = (
+                "T_base_O mixes multiple set_index groups. "
+                "Set-specific anchors are stored under internal_runtime/."
+            )
+
+    if nominal_set_cube_priors and T_B_O_by_set:
+        T_set_cube_center_to_object, corrected_set_priors, set_cube_center_prior_diag = estimate_set_cube_prior_alignment(
+            nominal_set_cube_priors,
+            T_B_O_by_set,
+            cube_anchor_by_set_diag,
+        )
+        if T_set_cube_center_to_object is not None and corrected_set_priors:
+            set_cube_center_prior = {
+                "source": "set_cube_center_6dof_aligned_to_cube_object",
+                "support": int(set_cube_center_prior_diag.get("support", 0)),
+                "T_set_cube_center_to_object": np.asarray(T_set_cube_center_to_object, dtype=np.float64).tolist(),
+                "per_set": set_cube_center_prior_diag.get("per_set", {}),
+            }
+            with open(os.path.join(internal_runtime_dir, "set_cube_center_prior.json"), "w") as f:
+                json.dump(set_cube_center_prior, f, indent=2)
+            print(
+                "  internal_runtime/set_cube_center_prior.json "
+                f"(support={set_cube_center_prior.get('support', 0)})"
+            )
+
+            print("  --- D-1.6: Set-prior + depth refinement pass ---")
+            prior_event_pose_map = build_event_pose_map_from_set_priors(meta, corrected_set_priors)
+            cube_T_base_Ci_prior, cube_base_stats_prior = estimate_fixed_cameras_from_cube_anchor(
+                pnp_obs, fixed_cam_ids, prior_event_pose_map)
+            if cube_T_base_Ci_prior:
+                T_base_Ci, base_stats = merge_fixed_camera_base_transforms(
+                    cube_T_base_Ci_prior,
+                    cube_base_stats_prior,
+                    board_T_base_Ci,
+                    board_base_stats,
+                    mode=str(args.common_object_mode),
+                    board_refine_alpha=float(args.fixed_board_refine_alpha),
+                )
+                for ci in fixed_cam_ids:
+                    key = f"T_base_C{ci}"
+                    T = T_base_Ci.get(ci)
+                    if T is None:
+                        continue
+                    np.save(os.path.join(out_dir, f"{key}.npy"), np.asarray(T, dtype=np.float64))
+                    st = base_stats.get(key, {})
+                    print(f"  [PRIOR] {key}: method={st.get('method', 'unknown')} "
+                          f"rot={st.get('rotation_std_deg', 0.0):.3f}deg trans={st.get('translation_std_mm', 0.0):.2f}mm")
+
+                extra_runtime_transforms = {
+                    "set_cube_center_prior": set_cube_center_prior,
+                }
+                gripper_base_by_event, gripper_base_diag = build_gripper_event_base_transforms_from_fixed_cams(
+                    meta, pnp_obs, T_base_Ci, sorted(T_base_Ci.keys()), gripper_cam_idx,
+                    robot_T, T_gTc, min_cams=max(int(args.event_anchor_min_cams), 2),
+                    extra_transforms=extra_runtime_transforms,
+                )
+                gripper_base_by_event, gripper_board_refine_diag = refine_gripper_event_base_transforms_with_board_anchor(
+                    gripper_base_by_event,
+                    charuco_obs,
+                    blend_alpha=float(args.gripper_board_blend_alpha),
+                )
+                gripper_base_diag["board_anchor_refinement"] = gripper_board_refine_diag
+                for eid, T_evt in sorted(gripper_base_by_event.items()):
+                    np.save(
+                        os.path.join(internal_runtime_dir, f"T_base_C{gripper_cam_idx}_event{int(eid)}.npy"),
+                        np.asarray(T_evt, dtype=np.float64),
+                    )
+                if gripper_base_diag.get("events"):
+                    with open(os.path.join(internal_runtime_dir, f"T_base_C{gripper_cam_idx}_by_event.json"), "w") as f:
+                        json.dump(gripper_base_diag, f, indent=2)
+
+                gripper_anchor, gripper_anchor_events, gripper_anchor_diag = build_gripper_cube_anchor(
+                    robot_T, pnp_obs, gripper_cam_idx, T_gTc, gripper_base_by_event=gripper_base_by_event)
+
+                board_anchor, board_anchor_events, board_anchor_diag = build_cube_anchor_from_fixed_cams(
+                    meta, pnp_obs, T_base_Ci, sorted(T_base_Ci.keys()), gripper_cam_idx,
+                    min_cams=args.event_anchor_min_cams,
+                    extra_transforms=extra_runtime_transforms,
+                )
+                if board_anchor is not None:
+                    T_B_O_avg = board_anchor
+                    T_B_O_by_event = board_anchor_events
+                    cube_anchor_diag = board_anchor_diag
+                    t_base_o_source = "cube_consensus_fixed_cams+set_prior_refined"
+                elif gripper_anchor is not None:
+                    T_B_O_avg = gripper_anchor
+                    T_B_O_by_event = gripper_anchor_events
+                    cube_anchor_diag = gripper_anchor_diag
+                    t_base_o_source = "gripper_cube_average_fallback+set_prior_refined"
+
+                set_anchor_source = t_base_o_source
+                if t_base_o_source.startswith("cube_consensus_fixed_cams") and gripper_anchor_events:
+                    T_B_O_by_set, cube_anchor_by_set_diag = build_hybrid_setwise_cube_anchors(
+                        meta,
+                        T_B_O_by_event,
+                        gripper_anchor_events,
+                        set_prior_by_set=corrected_set_priors,
+                    )
+                    if T_B_O_by_set:
+                        set_anchor_source = "hybrid_fixed_translation_gripper_rotation+set_prior"
+                        cube_anchor_diag["setwise_strategy"] = "fixed_translation_gripper_rotation"
+                        cube_anchor_diag["gripper_anchor"] = gripper_anchor_diag
+                else:
+                    T_B_O_by_set, cube_anchor_by_set_diag = build_setwise_cube_anchors(
+                        meta,
+                        T_B_O_by_event,
+                        set_prior_by_set=corrected_set_priors,
+                    )
+                if T_B_O_by_set:
+                    # ── Set-consistency refinement (single pass, conservative guard) ──
+                    print()
+                    print("=" * 60)
+                    print("[STEP-D-2] Set-consistency refinement of T_base_C*")
+                    print("=" * 60)
+                    refined_cams, _, refine_diag = refine_fixed_cams_with_set_anchors(
+                        meta, pnp_obs, T_base_Ci, fixed_cam_ids, T_B_O_by_set,
+                        min_events_per_cam=3,
+                        max_delta_trans_mm=15.0, max_delta_rot_deg=3.0,
+                    )
+                    for cam_key, info in refine_diag["per_cam"].items():
+                        if info.get("adopted"):
+                            print(f"  refined {cam_key}: trans_std={info['trans_std_mm']:.2f}mm "
+                                  f"rot_std={info['rot_std_deg']:.3f}° "
+                                  f"(Δ {info['delta_trans_mm']:.2f}mm/{info['delta_rot_deg']:.3f}°)")
+                        else:
+                            print(f"  KEPT    {cam_key}: skipped refinement "
+                                  f"(reason={info.get('reason', 'unknown')}, "
+                                  f"Δ would be {info.get('delta_trans_mm', 0):.1f}mm/"
+                                  f"{info.get('delta_rot_deg', 0):.2f}°)")
+                    T_base_Ci = refined_cams
+                    cube_anchor_diag["set_consistency_refinement"] = refine_diag
+                    # Overwrite saved T_base_C*.npy with refined values (only those adopted)
+                    for ci in fixed_cam_ids:
+                        if int(ci) in T_base_Ci:
+                            np.save(os.path.join(out_dir, f"T_base_C{int(ci)}.npy"),
+                                    np.asarray(T_base_Ci[int(ci)], dtype=np.float64))
+
+                    if len(T_B_O_by_set) > 1:
+                        T_B_O_avg = weighted_se3_average([T_B_O_by_set[s] for s in sorted(T_B_O_by_set)])
+                    else:
+                        T_B_O_avg = next(iter(T_B_O_by_set.values()))
+                    cube_anchor_diag["set_indices"] = [int(x) for x in sorted(T_B_O_by_set)]
+                    cube_anchor_diag["multi_set_capture"] = bool(len(T_B_O_by_set) > 1)
+                    cube_anchor_diag["set_cube_center_prior"] = {
+                        "support": int(set_cube_center_prior_diag.get("support", 0)),
+                    }
+
+    # ── Fallback: nominal set_cube_center priors가 없어도 cube 관측으로 D-2 실행 ──
+    # 위의 D-2 블록은 meta의 set_cube_center_6dof prior가 있을 때만 동작.
+    # 그게 없을 때(예: teach_extend.py로 캡처해서 prior 미설정)에도 T_B_O_by_set은
+    # 관측에서 계산되어 있으므로 그걸 직접 이용해 set-consistency refinement 실행.
+    if (not (nominal_set_cube_priors and set_cube_center_prior is not None)
+            and T_B_O_by_set and len(T_B_O_by_set) >= 2):
+        print()
+        print("=" * 60)
+        print("[STEP-D-2] Set-consistency refinement (cube-observation prior)")
+        print("=" * 60)
+        refined_cams, _, refine_diag = refine_fixed_cams_with_set_anchors(
+            meta, pnp_obs, T_base_Ci, fixed_cam_ids, T_B_O_by_set,
+            min_events_per_cam=3,
+            max_delta_trans_mm=15.0, max_delta_rot_deg=3.0,
+        )
+        for cam_key, info in refine_diag["per_cam"].items():
+            if info.get("adopted"):
+                step = info.get("step", 1.0)
+                print(f"  refined {cam_key}: trans_std={info['trans_std_mm']:.2f}mm "
+                      f"rot_std={info['rot_std_deg']:.3f}° "
+                      f"(Δ {info['delta_trans_mm']:.2f}mm/{info['delta_rot_deg']:.3f}°, "
+                      f"step={step:.2f}, reason={info.get('reason')})")
+            else:
+                print(f"  KEPT    {cam_key}: skipped refinement "
+                      f"(reason={info.get('reason', 'unknown')}, "
+                      f"Δ would be {info.get('delta_trans_mm', 0):.1f}mm/"
+                      f"{info.get('delta_rot_deg', 0):.2f}°)")
+        T_base_Ci = refined_cams
+        for ci in fixed_cam_ids:
+            if int(ci) in T_base_Ci:
+                np.save(os.path.join(out_dir, f"T_base_C{int(ci)}.npy"),
+                        np.asarray(T_base_Ci[int(ci)], dtype=np.float64))
+
+    set_anchor_payload = {}
+    for set_index in sorted(T_B_O_by_set):
+        key = get_object_anchor_key_for_set(set_index)
+        T_set = np.asarray(T_B_O_by_set[set_index], dtype=np.float64)
+        np.save(os.path.join(internal_runtime_dir, f"{key}.npy"), T_set)
+        set_anchor_payload[str(int(set_index))] = {
+            "transform_key": key,
+            "transform": T_set.tolist(),
+            "source": set_anchor_source,
+            **cube_anchor_by_set_diag.get("per_set", {}).get(str(int(set_index)), {}),
+        }
+        print(f"  internal_runtime/{key}.npy ({set_anchor_source}, support={set_anchor_payload[str(int(set_index))].get('support', 0)})")
+
+    if set_anchor_payload:
+        with open(os.path.join(internal_runtime_dir, "T_base_O_by_set.json"), "w") as f:
+            json.dump(set_anchor_payload, f, indent=2)
+
+    np.save(os.path.join(out_dir, "T_base_O.npy"), T_B_O_avg)
+    print(f"  T_base_O.npy ({t_base_o_source})")
+
+    # D-2: Cube PnP chaining for remaining cameras
+    remaining = [ci for ci in fixed_cam_ids if ci not in T_base_Ci]
+
+    def _pick_candidate(ci, eid, T_B_O, T_ref=None):
+        candidates = pnp_obs[ci][eid].get("_candidates")
+        if not candidates or len(candidates) <= 1:
+            return pnp_obs[ci][eid]["T_C_O"]
+        best_T, best_score = None, 1e9
+        for cand in candidates:
+            T_sol = np.asarray(cand["T_C_O"], dtype=np.float64)
+            err_sol = float(cand.get("err_mean", 99.0))
+            T_B_Ci_sol = T_B_O @ inv_T(T_sol)
+            if T_ref is not None:
+                score = rotation_error_deg(T_B_Ci_sol[:3, :3], T_ref[:3, :3])
+            else:
+                cam_z = T_B_Ci_sol[:3, 2]
+                score = err_sol + max(cam_z[2], 0.0) * 50.0
+            if score < best_score:
+                best_score = score
+                best_T = T_sol
+        return best_T
+
+    if remaining:
+        print(f"  --- D-2: Cube PnP chaining for {remaining} ---")
+        for ci in remaining:
+            common = sorted(set(pnp_obs[ci].keys()) & set(T_B_O_by_event.keys()))
+            if not common:
+                print(f"  [WARN] cam{ci}: no overlap")
+                continue
+
+            Ts1, ws1 = [], []
+            for eid in common:
+                T_C_O = _pick_candidate(ci, eid, T_B_O_by_event[eid])
+                Ts1.append(T_B_O_by_event[eid] @ inv_T(T_C_O))
+                ws1.append(1.0 / max(pnp_obs[ci][eid]["err_mean"], 1e-9))
+            T_rough = robust_weighted_se3_average(Ts1, ws1)
+
+            Ts2, ws2 = [], []
+            for eid in common:
+                T_C_O = _pick_candidate(ci, eid, T_B_O_by_event[eid], T_ref=T_rough)
+                Ts2.append(T_B_O_by_event[eid] @ inv_T(T_C_O))
+                ws2.append(1.0 / max(pnp_obs[ci][eid]["err_mean"], 1e-9))
+
+            T_avg, st = robust_weighted_se3_average(Ts2, ws2, return_stats=True)
+            st["method"] = "cube_anchor"
+            st["support"] = int(len(common))
+            st["total_keys"] = int(len(common))
+            T_base_Ci[ci] = T_avg
+            base_stats[f"T_base_C{ci}"] = st
+            np.save(os.path.join(out_dir, f"T_base_C{ci}.npy"), T_avg)
+            print(f"  T_base_C{ci}: {len(Ts2)}fr (cube) "
+                  f"rot={st['rotation_std_deg']:.3f}deg trans={st['translation_std_mm']:.2f}mm")
+
+    # Step E joint optimization remains deferred until the cube anchor path
+    # above is stable enough to avoid reinforcing ambiguous single-face poses.
+
+    # ══════════════════════════════════════════════════════════
+    # Summary
+    # ══════════════════════════════════════════════════════════
+    summary = {
+        "calibration_type": "unified_charuco_cube",
+        "handeye_data_source": "charuco" if use_charuco else "cube_pnp",
+        "gripper_cam_idx": int(gripper_cam_idx),
+        "ref_fixed_cam_idx": int(ref_fixed) if ref_fixed is not None else None,
+        "common_object_mode": str(args.common_object_mode),
+        "fixed_cam_ids": [int(x) for x in fixed_cam_ids],
+        "all_cam_ids": [int(x) for x in all_cam_ids],
+        "selected_handeye_method": best_method,
+        "num_robot_poses": len(robot_T),
+        "num_handeye_events": len(common_he),
+        "num_charuco_frames": len(charuco_obs),
+        "num_cube_pnp_gripper": len(pnp_obs.get(gripper_cam_idx, {})),
+        "num_object_sets": int(len(T_B_O_by_set)),
+        "object_set_indices": [int(x) for x in sorted(T_B_O_by_set)],
+        "cube_config_source": cube_cfg_source,
+        "cube_config_used": cube_config_to_dict(cfg),
+        "cube_config_selection": {
+            "mode": "explicit_json" if args.cube_config_json else "auto",
+            "chosen_source": cube_cfg_source,
+            "meta_source": meta.get("cube_config_source", meta_cfg_source),
+            "stored_meta_candidates_enabled": bool(reuse_stored_cube_candidates),
+        },
+        "t_base_o_source": t_base_o_source,
+        "diagnostics": {
+            "fixed_extrinsics": fixed_stats,
+            "handeye_methods": {
+                k: {"score": v["score"], "mean_trans_mm": v["mean_trans_mm"],
+                     "mean_rot_deg": v["mean_rot_deg"], "stability": v["stability"]}
+                for k, v in method_results.items()
+            },
+            "base_transforms": base_stats,
+            "cube_anchor": cube_anchor_diag,
+            "cube_anchor_by_set": cube_anchor_by_set_diag,
+            "gripper_event_base_transforms": gripper_base_diag,
+            "set_cube_center_prior": {
+                "support": int(set_cube_center_prior_diag.get("support", 0)),
+                "source": None if set_cube_center_prior is None else set_cube_center_prior.get("source"),
+                "stability": set_cube_center_prior_diag.get("stability", {}),
+            },
+            "internal_runtime_dir": "internal_runtime",
+        },
+        "transforms": {},
+    }
+
+    for ci, T in T_Cref_Ci.items():
+        summary["transforms"][f"T_C{ref_fixed}_C{ci}"] = T.reshape(-1).tolist()
+    summary["transforms"]["T_gripper_cam"] = T_gTc.reshape(-1).tolist()
+    summary["transforms"]["T_base_O"] = T_B_O_avg.reshape(-1).tolist()
+    for ci, T in T_base_Ci.items():
+        summary["transforms"][f"T_base_C{ci}"] = T.reshape(-1).tolist()
+
+    final_transforms = {
+        "generated_by": "Step3_calibration.py",
+        "root_folder": root,
+        "calib_dir": out_dir,
+        "transforms": {
+            name: np.asarray(T, dtype=np.float64).tolist()
+            for name, T in {
+                **{f"T_C{ref_fixed}_C{ci}": T for ci, T in T_Cref_Ci.items()},
+                "T_gripper_cam": T_gTc,
+                "T_base_O": T_B_O_avg,
+                **{f"T_base_C{ci}": T for ci, T in T_base_Ci.items()},
+            }.items()
+        },
+    }
+    with open(os.path.join(out_dir, "final_transforms_base_frame.json"), "w") as f:
+        json.dump(final_transforms, f, indent=2)
+
+    summary_path = os.path.join(out_dir, "calibration_summary.json")
+    with open(summary_path, "w") as f:
+        json.dump(summary, f, indent=2)
+
+    print(f"\n{'=' * 60}")
+    print("Calibration COMPLETE")
+    print(f"{'=' * 60}")
+    print(f"  source: {'ChArUco board' if use_charuco else 'cube PnP'} ({best_method})")
+    print(f"  output: {out_dir}")
+    for k in summary["transforms"]:
+        print(f"    {k}")
+
+
+if __name__ == "__main__":
+    main()

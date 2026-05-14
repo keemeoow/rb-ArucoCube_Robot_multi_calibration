@@ -114,8 +114,13 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--root_folder", required=True, help="Path to session/ directory containing meta.json + camN/")
     ap.add_argument("--intrinsics_dir", required=True, help="Path to intrinsics/ with camN.npz files")
-    ap.add_argument("--methods", default=",".join(ALL_METHODS),
-                    help=f"Comma-separated handeye methods (default: {','.join(ALL_METHODS)})")
+    # 동일 환경 (같은 ArucoCube + ChArUco 보드) 반복 실행이라 5 method 비교 불필요.
+    # HE-refine 패치로 모든 method 가 같은 답으로 수렴함을 확인 → TSAI 단독 실행.
+    # 비교가 필요하면 --methods TSAI,PARK,HORAUD,ANDREFF,DANIILIDIS 처럼 명시.
+    ap.add_argument("--methods", default="TSAI",
+                    help=f"Comma-separated handeye methods. "
+                         f"Default: TSAI (단일 — 동일 환경 반복용). "
+                         f"전체 비교: {','.join(ALL_METHODS)}")
     ap.add_argument("--compare_out", default=None,
                     help="Per-method outputs (default: <root>/calib_compare)")
     ap.add_argument("--final_out", default=None,
@@ -162,7 +167,8 @@ def main():
                 f"Step3 ({method})",
                 [sys.executable, "Step3_calibration.py",
                  "--root_folder", str(root), "--intrinsics_dir", str(intr),
-                 "--out_dir", str(out), "--handeye_method", method],
+                 "--out_dir", str(out), "--handeye_method", method,
+                 "--common_object_mode", "auto"],
                 out / "_step3.log",
             )
             timings[method]["step3_s"] = dt

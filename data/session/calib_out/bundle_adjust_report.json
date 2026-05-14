@@ -1,0 +1,55 @@
+{
+  "n_observations": 464,
+  "n_observations_dropped": 33,
+  "n_params": 66,
+  "n_iterations": 8,
+  "rms_initial_px": 9.533693535885732,
+  "rms_stage1_px": 3.042973458172204,
+  "rms_final_px": 3.052863699893278,
+  "stage_rms": {
+    "stage1_cube_only": 6.785756463554653,
+    "after_outlier_filter": 6.58777726306922,
+    "stage2a_fixedcams_he_frozen": 3.1330924945647953,
+    "stage2b_he_cams_frozen": 3.042973458172204
+  },
+  "improvement_pct": 67.97816409346486,
+  "duration_s": 169.17676496505737,
+  "loss": "huber",
+  "f_scale": 1.0,
+  "status": 2,
+  "message": "`ftol` termination condition is satisfied.",
+  "multi_seed": 5,
+  "staged": true,
+  "seed_summary": [
+    {
+      "seed_idx": 0,
+      "rms_px": 3.052863699893278,
+      "nfev": 8,
+      "status": 2
+    },
+    {
+      "seed_idx": 1,
+      "rms_px": 3.052864013479556,
+      "nfev": 28,
+      "status": 2
+    },
+    {
+      "seed_idx": 2,
+      "rms_px": 3.0528638402887602,
+      "nfev": 35,
+      "status": 2
+    },
+    {
+      "seed_idx": 3,
+      "rms_px": 80.9376069877977,
+      "nfev": 200,
+      "status": 0
+    },
+    {
+      "seed_idx": 4,
+      "rms_px": 161.06247101239552,
+      "nfev": 200,
+      "status": 0
+    }
+  ]
+}

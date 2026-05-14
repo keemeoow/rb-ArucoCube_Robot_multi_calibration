@@ -40,7 +40,9 @@ from typing import Dict, List, Optional, Tuple
 import cv2
 import numpy as np
 import matplotlib
-if "--no_show" in sys.argv or not os.environ.get("DISPLAY"):
+# macOS에서 캘브 자동 실행 중 시각화 창 안 띄우도록 항상 Agg 백엔드 사용.
+# 인터랙티브하게 보고 싶을 때만 환경변수 FORCE_GUI=1 로 활성화.
+if not os.environ.get("FORCE_GUI"):
     matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
@@ -386,7 +388,8 @@ def build_base_frame_overview_cv(meta: dict,
 
 
 def show_cv_pages(title: str, pages: List[np.ndarray]) -> None:
-    if not pages:
+    # 자동 캘브 실행에서 인터랙티브 cv2 창 안 띄우게 — FORCE_GUI 있을 때만.
+    if not pages or not os.environ.get("FORCE_GUI"):
         return
     idx = 0
     while True:
@@ -1511,7 +1514,7 @@ def main():
         cv2.imwrite(fig_3d_cv_path, fig_3d_cv)
         print(f"[SAVE] {fig_3d_cv_path}")
 
-        if args.no_show:
+        if args.no_show or not os.environ.get("FORCE_GUI"):
             print("\n[DONE] 3D overview export complete")
             return
 
@@ -1714,7 +1717,7 @@ def main():
     show_cv_pages("Base frame overview", [base_overview_cv])
     show_cv_pages("Base frame overview 3D", [fig_3d_cv])
 
-    if not args.no_show:
+    if not args.no_show and os.environ.get("FORCE_GUI"):
         plt.show()
 
     print("\n[DONE] Verification complete")

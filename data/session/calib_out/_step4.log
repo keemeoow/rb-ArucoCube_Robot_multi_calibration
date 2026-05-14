@@ -1,0 +1,109 @@
+[INFO] Loaded public transforms: ['T_C0_C1', 'T_C0_C3', 'T_base_C0', 'T_base_C1', 'T_base_C3', 'T_base_O', 'T_gripper_cam']
+[INFO] Loaded internal runtime transforms: 47 event-specific entries
+[INFO] Cameras: [0, 1, 2, 3], gripper=cam2
+[INFO] cube config source: config_py:CubeConfig
+[INFO] cube id_to_face: {0: '+Z', 1: '+X', 2: '+Y', 3: '-X', 4: '-Y'}
+[INFO] cube corner_reorder: {0: [0, 1, 2, 3], 1: [0, 1, 2, 3], 2: [0, 1, 2, 3], 3: [0, 1, 2, 3], 4: [0, 1, 2, 3]}
+
+============================================================
+[TEST 1] Cross-camera consistency
+============================================================
+  Events with 2+ cameras: 53
+  Position error (vs mean):
+    mean:   3.31 mm
+    median: 2.51 mm
+    max:    9.95 mm
+    std:    2.44 mm
+  Result: PASS (threshold: 5mm)
+
+============================================================
+[TEST 2] Reprojection verification
+============================================================
+  Total observations: 212
+  Reprojection error (current cube solve):
+    mean:   0.638 px
+    median: 0.616 px
+    max:    1.634 px
+    <1px:   202/212
+  Result: PASS (threshold: 2px)
+
+============================================================
+[TEST 3] Hand-eye consistency (board stability)
+============================================================
+  Frames: 53
+  Board position stability:
+    std: 2.15 mm
+    max: 15.23 mm
+  Board rotation stability:
+    mean: 1.366 deg
+    max:  8.605 deg
+  Result: FAIL (pos<3mm, rot<1deg)
+
+============================================================
+[SUMMARY]
+============================================================
+  Hand-eye method: TSAI
+  Data source: charuco
+  Robot poses: 53
+  Hand-eye events: 53
+  ChArUco frames: 53
+  Board reprojection mean: 0.402px
+  Pose repeatability: 3.32mm / 0.690deg
+  Depth mesh RMSE: 2.67mm | dim err: 2.78mm
+
+  Transforms:
+    T_C0_C1: pos=[425.4, -182.5, 764.7]mm
+    T_C0_C3: pos=[-353.4, -162.6, 742.6]mm
+    T_base_C0: pos=[-430.4, 109.8, 106.3]mm
+    T_base_C1: pos=[355.1, 513.4, 177.6]mm
+    T_base_C3: pos=[-296.1, 930.1, 121.2]mm
+    T_base_O: pos=[-148.6, 467.6, 0.4]mm
+    T_gripper_cam: pos=[34.9, 30.8, -115.0]mm
+[SAVE] /Users/woo/Documents/GitHub/Robot-Lab/rb-ArucoCube_Robot_multi_calibration/data/session/calib_compare/TSAI/verification_metrics.json
+[SAVE] /Users/woo/Documents/GitHub/Robot-Lab/rb-ArucoCube_Robot_multi_calibration/data/session/calib_compare/TSAI/verify/selected_event_images_manifest.json
+[SAVE] /Users/woo/Documents/GitHub/Robot-Lab/rb-ArucoCube_Robot_multi_calibration/data/session/calib_compare/TSAI/verify/selected_event_images_cv_01.jpg
+[SAVE] /Users/woo/Documents/GitHub/Robot-Lab/rb-ArucoCube_Robot_multi_calibration/data/session/calib_compare/TSAI/verify/selected_event_images_cv_02.jpg
+[SAVE] /Users/woo/Documents/GitHub/Robot-Lab/rb-ArucoCube_Robot_multi_calibration/data/session/calib_compare/TSAI/verify/selected_event_images_cv_03.jpg
+[SAVE] /Users/woo/Documents/GitHub/Robot-Lab/rb-ArucoCube_Robot_multi_calibration/data/session/calib_compare/TSAI/verify/selected_event_images_cv_04.jpg
+[SAVE] /Users/woo/Documents/GitHub/Robot-Lab/rb-ArucoCube_Robot_multi_calibration/data/session/calib_compare/TSAI/verify/selected_event_images_cv_05.jpg
+[SAVE] /Users/woo/Documents/GitHub/Robot-Lab/rb-ArucoCube_Robot_multi_calibration/data/session/calib_compare/TSAI/verify/selected_event_images_cv_06.jpg
+[SAVE] /Users/woo/Documents/GitHub/Robot-Lab/rb-ArucoCube_Robot_multi_calibration/data/session/calib_compare/TSAI/verify/selected_event_images_cv_07.jpg
+[SAVE] /Users/woo/Documents/GitHub/Robot-Lab/rb-ArucoCube_Robot_multi_calibration/data/session/calib_compare/TSAI/verify/selected_event_images_cv_08.jpg
+[SAVE] /Users/woo/Documents/GitHub/Robot-Lab/rb-ArucoCube_Robot_multi_calibration/data/session/calib_compare/TSAI/verify/selected_event_images_cv_09.jpg
+[SAVE] /Users/woo/Documents/GitHub/Robot-Lab/rb-ArucoCube_Robot_multi_calibration/data/session/calib_compare/TSAI/verify/selected_event_images_cv_10.jpg
+
+============================================================
+[VIS] 3D Visualization
+============================================================
+[SAVE] /Users/woo/Documents/GitHub/Robot-Lab/rb-ArucoCube_Robot_multi_calibration/data/session/calib_compare/TSAI/verify/3d_overview.png
+[SAVE] /Users/woo/Documents/GitHub/Robot-Lab/rb-ArucoCube_Robot_multi_calibration/data/session/calib_compare/TSAI/verify/base_frame_overview_3d_cv.png
+[SAVE] /Users/woo/Documents/GitHub/Robot-Lab/rb-ArucoCube_Robot_multi_calibration/data/session/calib_compare/TSAI/verify/error_histograms.png
+
+============================================================
+[VIS] Cube Candidate Diagnostics
+============================================================
+  Candidates: 220 total, 212 selected, 212 accepted
+[SAVE] /Users/woo/Documents/GitHub/Robot-Lab/rb-ArucoCube_Robot_multi_calibration/data/session/calib_compare/TSAI/verify/cube_candidate_scatter.png
+[SAVE] /Users/woo/Documents/GitHub/Robot-Lab/rb-ArucoCube_Robot_multi_calibration/data/session/calib_compare/TSAI/verify/cube_marker_health.png
+[SAVE] /Users/woo/Documents/GitHub/Robot-Lab/rb-ArucoCube_Robot_multi_calibration/data/session/calib_compare/TSAI/verify/cam0_candidate_examples.png
+[SAVE] /Users/woo/Documents/GitHub/Robot-Lab/rb-ArucoCube_Robot_multi_calibration/data/session/calib_compare/TSAI/verify/cam1_candidate_examples.png
+[SAVE] /Users/woo/Documents/GitHub/Robot-Lab/rb-ArucoCube_Robot_multi_calibration/data/session/calib_compare/TSAI/verify/cam2_candidate_examples.png
+[SAVE] /Users/woo/Documents/GitHub/Robot-Lab/rb-ArucoCube_Robot_multi_calibration/data/session/calib_compare/TSAI/verify/cam3_candidate_examples.png
+
+============================================================
+[VIS] Marker Override Diagnostics
+============================================================
+[SAVE] /Users/woo/Documents/GitHub/Robot-Lab/rb-ArucoCube_Robot_multi_calibration/data/session/calib_compare/TSAI/verify/cube_override_diagnostic.json
+[SAVE] /Users/woo/Documents/GitHub/Robot-Lab/rb-ArucoCube_Robot_multi_calibration/data/session/calib_compare/TSAI/verify/cube_override_summary.png
+  id0: current=+Z/p0123 rank=2 -> best=+Z/r0 delta=0.0
+[SAVE] /Users/woo/Documents/GitHub/Robot-Lab/rb-ArucoCube_Robot_multi_calibration/data/session/calib_compare/TSAI/verify/marker_id0_gallery.png
+  id1: current=+X/p0123 rank=55 -> best=-Z/r270 delta=96.5
+[SAVE] /Users/woo/Documents/GitHub/Robot-Lab/rb-ArucoCube_Robot_multi_calibration/data/session/calib_compare/TSAI/verify/marker_id1_gallery.png
+  id2: current=+Y/p0123 rank=123 -> best=-Z/r0 delta=-1093.9
+[SAVE] /Users/woo/Documents/GitHub/Robot-Lab/rb-ArucoCube_Robot_multi_calibration/data/session/calib_compare/TSAI/verify/marker_id2_gallery.png
+  id3: current=-X/p0123 rank=103 -> best=+Z/r90 delta=131.1
+[SAVE] /Users/woo/Documents/GitHub/Robot-Lab/rb-ArucoCube_Robot_multi_calibration/data/session/calib_compare/TSAI/verify/marker_id3_gallery.png
+  id4: current=-Y/p0123 rank=173 -> best=+Z/r180 delta=791.4
+[SAVE] /Users/woo/Documents/GitHub/Robot-Lab/rb-ArucoCube_Robot_multi_calibration/data/session/calib_compare/TSAI/verify/marker_id4_gallery.png
+
+[DONE] Verification complete

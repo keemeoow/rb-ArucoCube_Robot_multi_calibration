@@ -1,0 +1,80 @@
+{
+  "cross_camera": {
+    "events_with_2plus_cams": 53,
+    "num_errors": 111,
+    "mean_mm": 3.3098954807637684,
+    "median_mm": 2.5088402874586877,
+    "max_mm": 9.95053451842846,
+    "std_mm": 2.437963366276879,
+    "pass": true
+  },
+  "reprojection": {
+    "total_observations": 212,
+    "mean_px": 0.6381875471440064,
+    "median_px": 0.6158091938261456,
+    "max_px": 1.6341084903163636,
+    "lt_1px_count": 202,
+    "pass": true
+  },
+  "handeye": {
+    "frames": 53,
+    "board_position_std_mm": 2.1524355141959073,
+    "board_position_max_mm": 15.229580429919382,
+    "board_rotation_mean_deg": 1.3655739399492908,
+    "board_rotation_max_deg": 8.605448541614248,
+    "pass": false
+  },
+  "board_reprojection": {
+    "total_frames": 210,
+    "mean_px": 0.4021198661199638,
+    "median_px": 0.3686912804841995,
+    "max_px": 3.9005229473114014,
+    "pass": true,
+    "per_camera": {
+      "cam0": {
+        "frames": 53,
+        "mean_px": 0.668232408896932
+      },
+      "cam1": {
+        "frames": 51,
+        "mean_px": 0.20848219666410894
+      },
+      "cam2": {
+        "frames": 53,
+        "mean_px": 0.3464298501329602
+      },
+      "cam3": {
+        "frames": 53,
+        "mean_px": 0.37802792691959525
+      }
+    }
+  },
+  "pose_repeatability": {
+    "num_events": 53,
+    "mean_dt_mm": 3.315471049504548,
+    "mean_dr_deg": 0.6901887550815735,
+    "max_dt_mm": 12.85218723713152,
+    "max_dr_deg": 3.1456591570653356,
+    "pass": true
+  },
+  "mesh_alignment": {
+    "usable_clouds": 110,
+    "usable_events": 53,
+    "mean_rmse_mm": 2.66765638716623,
+    "median_rmse_mm": 2.6869634053197844,
+    "max_rmse_mm": 4.437231700306659,
+    "pass": true
+  },
+  "dimension_accuracy": {
+    "usable_events": 34,
+    "mean_abs_err_mm": 2.7800273489973724,
+    "median_abs_err_mm": 2.7615958946754833,
+    "max_abs_err_mm": 5.596068695684686,
+    "pass": true
+  },
+  "candidate_summary": {
+    "total": 220,
+    "selected": 212,
+    "accepted": 212
+  }
+}

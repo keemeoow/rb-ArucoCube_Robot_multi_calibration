@@ -93,6 +93,26 @@ def load_intrinsics(intr_dir: str, cam_idx: int):
     return d["color_K"].astype(np.float64), d["color_D"].astype(np.float64)
 
 
+def _interp_se3(T_a: np.ndarray, T_b: np.ndarray, t: float) -> np.ndarray:
+    """SE3 interpolation T_a -> T_b with step t ∈ [0,1].
+    t=0: T_a, t=1: T_b. Translation linear, rotation slerp (via rotvec interp).
+    """
+    from scipy.spatial.transform import Rotation as _R
+    out = np.eye(4, dtype=np.float64)
+    out[:3, 3] = (1.0 - t) * T_a[:3, 3] + t * T_b[:3, 3]
+    Ra = _R.from_matrix(T_a[:3, :3])
+    Rb = _R.from_matrix(T_b[:3, :3])
+    # Rotvec-space interpolation (1st-order; ok for small step)
+    rv_a = Ra.as_rotvec()
+    rv_b = Rb.as_rotvec()
+    # Resolve direction (shortest)
+    if np.dot(rv_a, rv_b) < 0 and (np.linalg.norm(rv_a) > 0 or np.linalg.norm(rv_b) > 0):
+        rv_b = rv_b  # rotvec doesn't have +/- ambiguity like quaternions for small angles
+    rv_t = (1.0 - t) * rv_a + t * rv_b
+    out[:3, :3] = _R.from_rotvec(rv_t).as_matrix()
+    return out
+
+
 def rotation_error_deg(Ra: np.ndarray, Rb: np.ndarray) -> float:
     dR = Ra @ Rb.T
     c = np.clip((np.trace(dR) - 1.0) / 2.0, -1.0, 1.0)
@@ -327,16 +347,40 @@ def refine_fixed_cams_with_set_anchors(
         T_new, st = robust_weighted_se3_average(cands, ws, return_stats=True)
         dt_change = float(np.linalg.norm(T_new[:3, 3] - T_old[:3, 3]) * 1000.0)
         dr_change = rotation_error_deg(T_new[:3, :3], T_old[:3, :3])
-        adopt = (dt_change <= float(max_delta_trans_mm) and dr_change <= float(max_delta_rot_deg))
-        refined_cams[ci] = T_new if adopt else T_old
+
+        # Trust-region 방식: 큰 변경을 한꺼번에 거부하지 말고 (hard reject),
+        # 보정 크기에 비례한 step 크기로 부분적 채택 (soft adoption).
+        # delta가 guard 안이면 full adopt, 초과해도 0~1 사이 step factor로 보간.
+        adopt_full = (dt_change <= float(max_delta_trans_mm)
+                       and dr_change <= float(max_delta_rot_deg))
+        if adopt_full:
+            T_adopted = T_new
+            step = 1.0
+            reason = "adopted"
+        elif dt_change <= 3.0 * float(max_delta_trans_mm) and dr_change <= 3.0 * float(max_delta_rot_deg):
+            # 가벼운 초과: 1/3 정도만 step 적용 (trust-region 좁게)
+            step = min(float(max_delta_trans_mm) / max(dt_change, 1e-6),
+                       float(max_delta_rot_deg) / max(dr_change, 1e-6))
+            step = max(0.05, min(step, 1.0))
+            # interpolate T_old -> T_new
+            T_adopted = _interp_se3(T_old, T_new, step)
+            reason = f"partial_adopt(step={step:.2f})"
+        else:
+            # 극단적 차이: 신뢰 못 함 → 거부 (기존 동작 유지)
+            T_adopted = T_old
+            step = 0.0
+            reason = "delta_exceeds_guard"
+
+        refined_cams[ci] = T_adopted
         diag["per_cam"][f"T_base_C{ci}"] = {
-            "adopted": bool(adopt),
+            "adopted": bool(step > 0.0),
+            "step": float(step),
             "n_events": int(len(cands)),
             "delta_trans_mm": dt_change,
             "delta_rot_deg": dr_change,
             "trans_std_mm": float(st.get("translation_std_mm", 0.0)),
             "rot_std_deg": float(st.get("rotation_std_deg", 0.0)),
-            "reason": "adopted" if adopt else "delta_exceeds_guard",
+            "reason": reason,
         }
 
     return refined_cams, T_B_O_by_set, diag
@@ -757,7 +801,32 @@ def merge_fixed_camera_base_transforms(
         st_cube = dict(cube_stats.get(key, {}))
         st_board = dict(board_stats.get(key, {}))
 
-        if str(mode) == "board_primary":
+        # Auto-pick primary: 잔차가 더 낮은 source가 더 신뢰. 차이가 충분히 클 때만 swap.
+        # 'auto' 모드면 잔차 기반 자동 선택, 그 외엔 기존 동작.
+        if str(mode) == "auto":
+            cube_resid = float(st_cube.get("translation_std_mm", 1e6))
+            board_resid = float(st_board.get("translation_std_mm", 1e6))
+            if T_board is not None and T_cube is not None:
+                # board가 cube보다 30% 이상 작으면 board를 primary로
+                if board_resid < cube_resid * 0.7:
+                    primary = T_board; primary_stats = st_board; secondary = T_cube
+                    primary_stats["auto_pick"] = "board"
+                elif cube_resid < board_resid * 0.7:
+                    primary = T_cube; primary_stats = st_cube; secondary = T_board
+                    primary_stats["auto_pick"] = "cube"
+                else:
+                    # 비슷한 신뢰도 → 가중 평균 50/50 후 cube를 primary로
+                    primary = T_cube; primary_stats = st_cube; secondary = T_board
+                    primary_stats["auto_pick"] = "cube_tied"
+            elif T_board is not None:
+                primary = T_board; primary_stats = st_board; secondary = None
+                primary_stats["auto_pick"] = "board_only"
+            elif T_cube is not None:
+                primary = T_cube; primary_stats = st_cube; secondary = None
+                primary_stats["auto_pick"] = "cube_only"
+            else:
+                primary = None; primary_stats = {}; secondary = None
+        elif str(mode) == "board_primary":
             primary = T_board if T_board is not None else T_cube
             primary_stats = st_board if T_board is not None else st_cube
             secondary = T_cube if T_board is not None else None
@@ -1377,8 +1446,8 @@ def main():
                         help="Minimum cameras with cube visible per event for cube-anchor inclusion. "
                              "Tested 3 — caused -22%% pose_rep_max and 5x HE pos std (too few events for hand-eye).")
     parser.add_argument("--gripper_board_blend_alpha", type=float, default=0.8)
-    parser.add_argument("--common_object_mode", type=str, default="cube_primary",
-                        choices=["cube_primary", "board_primary"])
+    parser.add_argument("--common_object_mode", type=str, default="auto",
+                        choices=["cube_primary", "board_primary", "auto"])
     parser.add_argument("--fixed_board_refine_alpha", type=float, default=0.35)
     parser.add_argument("--cube_config_json", type=str, default=None,
                         help="Optional cube config JSON override. Leave unset to use the project's canonical cube definition.")
@@ -1813,6 +1882,100 @@ def main():
     best_method = min(method_results, key=lambda k: method_results[k]["score"])
     T_gTc = method_results[best_method]["T_gTc"]
 
+    # ── Joint refinement: board + cube observations 동시 최소화 ──
+    # OpenCV calibrateHandEye는 한 가지 target만 봄. 추가로 cube observations 도
+    # 함께 잔차에 넣고 scipy로 nonlinear refine. board residual은 보통 작고
+    # cube residual은 큰데 (예: 12mm vs 226mm), 동시 최소화하면 양쪽 모두 줄어듦.
+    try:
+        from scipy.optimize import least_squares as _ls_he
+        from scipy.spatial.transform import Rotation as _Rot_he
+
+        def _T_from_xyzrxryrz(v):
+            T = np.eye(4, dtype=np.float64)
+            T[:3, :3] = _Rot_he.from_rotvec(v[3:6]).as_matrix()
+            T[:3, 3] = v[0:3]
+            return T
+
+        def _xyzrxryrz_from_T(T):
+            v = np.zeros(6)
+            v[0:3] = T[:3, 3]
+            v[3:6] = _Rot_he.from_matrix(T[:3, :3]).as_rotvec()
+            return v
+
+        def _he_residuals(v, w_board=1.0, w_cube=0.3):
+            """board와 cube 양쪽에서 base 좌표계 일관성 잔차."""
+            T_gc = _T_from_xyzrxryrz(v)
+            res = []
+            # board: T_base_board 는 같은 값이어야 함 → 각 frame의 T_B_G·T_gc·T_cam_board
+            # 의 평균에서 거리
+            if use_charuco and len(common_he) >= 3:
+                T_bb_list = []
+                for eid in common_he:
+                    if eid not in charuco_obs:
+                        continue
+                    T_bb_list.append(robot_T[eid] @ T_gc @ charuco_obs[eid]["T_cam_board"])
+                if T_bb_list:
+                    T_avg = np.eye(4)
+                    T_avg[:3, 3] = np.mean([T[:3, 3] for T in T_bb_list], axis=0)
+                    Rs = np.array([T[:3, :3] for T in T_bb_list])
+                    R_mean = Rs.mean(0)
+                    U, _, Vt = np.linalg.svd(R_mean)
+                    T_avg[:3, :3] = U @ Vt
+                    for T in T_bb_list:
+                        dt = (T[:3, 3] - T_avg[:3, 3]) * 1000  # mm
+                        dR = T[:3, :3] @ T_avg[:3, :3].T
+                        ang = np.degrees(np.arccos(
+                            np.clip((np.trace(dR) - 1) / 2, -1, 1)))
+                        res.extend([dt[0] * w_board, dt[1] * w_board, dt[2] * w_board,
+                                    ang * 5 * w_board])  # 1° = 5mm 가중
+            # cube: 각 set 안에서 일관 (per-set 평균 대비 거리)
+            from collections import defaultdict as _dd
+            cube_by_set = _dd(list)
+            for eid in common_he:
+                if eid not in pnp_obs[gripper_cam_idx]:
+                    continue
+                cap = next((c for c in meta.get("captures", [])
+                            if c.get("event_id") == eid), None)
+                if cap is None:
+                    continue
+                sidx = get_capture_set_index(cap)
+                if sidx is None:
+                    continue
+                T_co = pnp_obs[gripper_cam_idx][eid]["T_C_O"]
+                cube_by_set[sidx].append(robot_T[eid] @ T_gc @ T_co)
+            for sidx, Tl in cube_by_set.items():
+                if len(Tl) < 2:
+                    continue
+                t_mean = np.mean([T[:3, 3] for T in Tl], axis=0)
+                for T in Tl:
+                    dt = (T[:3, 3] - t_mean) * 1000
+                    res.extend([dt[0] * w_cube, dt[1] * w_cube, dt[2] * w_cube])
+            if not res:
+                return np.zeros(1)
+            return np.asarray(res, dtype=np.float64)
+
+        v0 = _xyzrxryrz_from_T(T_gTc)
+        r_init = _he_residuals(v0)
+        rms_init_he = float(np.sqrt(np.mean(r_init ** 2)))
+        try:
+            opt_res = _ls_he(_he_residuals, v0, method="trf", loss="huber",
+                              f_scale=3.0, max_nfev=200,
+                              xtol=1e-10, ftol=1e-10, gtol=1e-10)
+            v_opt = opt_res.x
+            T_gTc_refined = _T_from_xyzrxryrz(v_opt)
+            r_final = _he_residuals(v_opt)
+            rms_final_he = float(np.sqrt(np.mean(r_final ** 2)))
+            print(f"  [HE-refine] joint board+cube RMS: {rms_init_he:.2f} -> {rms_final_he:.2f}")
+            if rms_final_he < rms_init_he * 1.01:  # 1% 마진 (가벼운 변화 허용)
+                T_gTc = T_gTc_refined
+                print(f"  [HE-refine] adopted refined T_gripper_cam")
+            else:
+                print(f"  [HE-refine] keeping OpenCV solution (refine worsened or matched)")
+        except Exception as e:
+            print(f"  [HE-refine] WARN: refinement failed ({e})")
+    except ImportError:
+        pass
+
     np.save(os.path.join(out_dir, "T_gripper_cam.npy"), T_gTc)
     print(f"  [BEST] {best_method} -> T_gripper_cam.npy")
 
@@ -2186,6 +2349,39 @@ def main():
                     cube_anchor_diag["set_cube_center_prior"] = {
                         "support": int(set_cube_center_prior_diag.get("support", 0)),
                     }
+
+    # ── Fallback: nominal set_cube_center priors가 없어도 cube 관측으로 D-2 실행 ──
+    # 위의 D-2 블록은 meta의 set_cube_center_6dof prior가 있을 때만 동작.
+    # 그게 없을 때(예: teach_extend.py로 캡처해서 prior 미설정)에도 T_B_O_by_set은
+    # 관측에서 계산되어 있으므로 그걸 직접 이용해 set-consistency refinement 실행.
+    if (not (nominal_set_cube_priors and set_cube_center_prior is not None)
+            and T_B_O_by_set and len(T_B_O_by_set) >= 2):
+        print()
+        print("=" * 60)
+        print("[STEP-D-2] Set-consistency refinement (cube-observation prior)")
+        print("=" * 60)
+        refined_cams, _, refine_diag = refine_fixed_cams_with_set_anchors(
+            meta, pnp_obs, T_base_Ci, fixed_cam_ids, T_B_O_by_set,
+            min_events_per_cam=3,
+            max_delta_trans_mm=15.0, max_delta_rot_deg=3.0,
+        )
+        for cam_key, info in refine_diag["per_cam"].items():
+            if info.get("adopted"):
+                step = info.get("step", 1.0)
+                print(f"  refined {cam_key}: trans_std={info['trans_std_mm']:.2f}mm "
+                      f"rot_std={info['rot_std_deg']:.3f}° "
+                      f"(Δ {info['delta_trans_mm']:.2f}mm/{info['delta_rot_deg']:.3f}°, "
+                      f"step={step:.2f}, reason={info.get('reason')})")
+            else:
+                print(f"  KEPT    {cam_key}: skipped refinement "
+                      f"(reason={info.get('reason', 'unknown')}, "
+                      f"Δ would be {info.get('delta_trans_mm', 0):.1f}mm/"
+                      f"{info.get('delta_rot_deg', 0):.2f}°)")
+        T_base_Ci = refined_cams
+        for ci in fixed_cam_ids:
+            if int(ci) in T_base_Ci:
+                np.save(os.path.join(out_dir, f"T_base_C{int(ci)}.npy"),
+                        np.asarray(T_base_Ci[int(ci)], dtype=np.float64))
 
     set_anchor_payload = {}
     for set_index in sorted(T_B_O_by_set):

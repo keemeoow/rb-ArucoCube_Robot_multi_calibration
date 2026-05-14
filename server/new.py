@@ -946,15 +946,16 @@ def main():
                     print '*** [local-mode] capture (no PC roundtrip)'
                 else:
                     pj = find_place_joints_for_set(waypoints, current_set, pending_place_joints)
-                    sjoints = data.get('set_joints')
-                    stcp = data.get('set_tcp')
-                    scube = data.get('set_cube_center')
+                    # set_cube_center은 원본 JSON의 top-level이라 모든 set에 동일한 값.
+                    # 이걸 per-capture로 PC에 보내면 Step3의 set-consistency 단계가
+                    # "모든 set 큐브가 동일 위치에 있다"고 잘못 인식하여 cross-cam이 144mm로 발산.
+                    # → None으로 전송, Step3는 카메라 큐브 관측 consensus로 풀게 한다.
                     status, tcp, cube_tcp, joints = do_capture(
                         conn, next_pose_index,
-                        set_cube_center=scube,
+                        set_cube_center=None,
                         set_index=current_set,
-                        set_joints=sjoints,
-                        set_tcp=stcp,
+                        set_joints=data.get('set_joints'),
+                        set_tcp=data.get('set_tcp'),
                         place_joints=pj,
                     )
                     if status is None:

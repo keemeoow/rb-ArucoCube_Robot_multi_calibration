@@ -6,6 +6,10 @@
   gotoj d1,d2,d3,d4,d5,d6  : 관절 절대 이동 (도 단위, joint move)
   gotop x,y,z,rz,ry,rx     : TCP 절대 이동 (line motion)
   gotop x,y,z              : 현재 자세(rz,ry,rx) 유지하며 위치만 이동
+  p <axis>,<delta>         : TCP 단일 축 상대 이동 (예: p z,-30 / p x, 10)
+                             axis = x,y,z,rz,ry,rx
+  j <joint>,<delta>        : 관절 단일 축 상대 이동 (예: j d1,-30 / j 3, 10)
+                             joint = d1~d6 (또는 1~6)
   show                     : 현재 TCP / Joint 표시
   speed <0-100>            : override 속도 설정 (클수록 빠름)
   q                        : 종료
@@ -86,6 +90,8 @@ def main():
         print '  Standalone Goto Server'
         print '  gotoj d1,d2,d3,d4,d5,d6 : joint abs move'
         print '  gotop x,y,z[,rz,ry,rx]  : TCP abs move'
+        print '  p <axis>,<delta>        : TCP single-axis rel move'
+        print '  j <joint>,<delta>       : joint single-axis rel move'
         print '  show / speed <0-100> / q'
         print '=========================================='
         print ''
@@ -127,6 +133,51 @@ def main():
                         print 'Usage: gotoj d1,d2,d3,d4,d5,d6'
                         continue
                     rb.move(Joint(*vals))
+                    show_pose(rb)
+                except Exception as e:
+                    print 'Error: {}'.format(e)
+
+            # TCP single-axis relative move (예: p z,-30 / p x, 10)
+            elif cl.startswith('p '):
+                try:
+                    body = cmd[2:].replace(',', ' ')
+                    parts = body.split()
+                    if len(parts) != 2:
+                        print 'Usage: p <axis>,<delta>  (axis=x,y,z,rz,ry,rx)'
+                        continue
+                    axis = parts[0].strip().lower()
+                    delta = float(parts[1])
+                    idx = {'x': 0, 'y': 1, 'z': 2,
+                           'rz': 3, 'ry': 4, 'rx': 5}.get(axis)
+                    if idx is None:
+                        print 'Usage: p <axis>,<delta>  (axis=x,y,z,rz,ry,rx)'
+                        continue
+                    tcp = get_tcp(rb)
+                    tcp[idx] += delta
+                    rb.line(Position(*tcp))
+                    show_pose(rb)
+                except Exception as e:
+                    print 'Error: {}'.format(e)
+
+            # Joint single-axis relative move (예: j d1,-30 / j 3, 10)
+            elif cl.startswith('j '):
+                try:
+                    body = cmd[2:].replace(',', ' ')
+                    parts = body.split()
+                    if len(parts) != 2:
+                        print 'Usage: j <joint>,<delta>  (joint=d1~d6 or 1~6)'
+                        continue
+                    joint = parts[0].strip().lower()
+                    delta = float(parts[1])
+                    idx = {'d1': 0, 'd2': 1, 'd3': 2, 'd4': 3, 'd5': 4, 'd6': 5,
+                           '1': 0, '2': 1, '3': 2, '4': 3, '5': 4,
+                           '6': 5}.get(joint)
+                    if idx is None:
+                        print 'Usage: j <joint>,<delta>  (joint=d1~d6 or 1~6)'
+                        continue
+                    jnt = get_joints(rb)
+                    jnt[idx] += delta
+                    rb.move(Joint(*jnt))
                     show_pose(rb)
                 except Exception as e:
                     print 'Error: {}'.format(e)

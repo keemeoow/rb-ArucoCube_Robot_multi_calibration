@@ -282,12 +282,14 @@ def load_robot_poses_from_meta(meta):
         T = None
         if "robot_pose_matrix_4x4" in cap:
             T = try_parse_T44(cap.get("robot_pose_matrix_4x4"))
-        if T is None and "capture_pose_matrix_4x4" in cap:
-            T = try_parse_T44(cap.get("capture_pose_matrix_4x4"))
+        if T is None:
+            m44 = cap.get("capture_gripper_pose_matrix_4x4", cap.get("capture_pose_matrix_4x4"))
+            if m44 is not None:
+                T = try_parse_T44(m44)
         if T is None:
             p6 = try_parse_pose6(cap.get("robot_pose_6dof"))
             if p6 is None:
-                p6 = try_parse_pose6(cap.get("capture_pose_6dof"))
+                p6 = try_parse_pose6(cap.get("capture_gripper_pose_6dof", cap.get("capture_pose_6dof")))
             if p6 is not None:
                 T = euler_deg_to_matrix(*p6)
         if T is not None:

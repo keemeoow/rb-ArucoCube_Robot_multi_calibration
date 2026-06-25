@@ -1,6 +1,6 @@
 """
 로봇 캘리브레이션 서버 (Teach-and-Capture):
-  수동 조작으로 로봇을 이동/회전하면서 촬영하는 서버.
+  "수동 조작"으로 로봇을 이동/회전하면서 촬영하는 서버.
 
 명령어:
   --- 이동 ---
@@ -40,7 +40,9 @@
                       플로우: PC로부터 capture_waypoints.json 받음
                               -> +Z 30mm 초기 lift
                               -> set의 place_joints로 이동 -> 그리퍼 오픈
-                              -> +Z 100mm 클리어런스 -> 각 capture_joints 촬영
+                              -> +Z 100mm 클리어런스 -> 각 capture_joints로 이동 후
+                                 좌표 표시 -> 사람이 'c'+Enter 로 확인하면 촬영
+                                 (s=skip, q=quit / --noconfirm 시 확인 없이 전자동)
                                  (save gate 실패 시 해당 위치에서 ±2cm 지터링하며
                                   최대 5회 재시도, 그래도 실패하면 해당 위치 스킵)
                               -> 다음 set로 큐브 이동 (재-그립 시 항상 place 위치
@@ -231,23 +233,23 @@ def gripper_close():
 
 # ── Capture ──
 
-def do_capture(conn, pose_index, set_cube_center=None, set_index=None,
+def do_capture(conn, capture_index, set_cube_center=None, set_index=None,
                set_joints=None, set_tcp=None, place_joints=None):
     """Returns (status, tcp, cube_tcp) or (None, None, None) on disconnect."""
     tcp = get_tcp()
     cube_tcp = get_cube_center()
     joints = get_joints()
     print ''
-    print '*** CAPTURE {} ***'.format(pose_index)
+    print '*** CAPTURE {} ***'.format(capture_index)
     print '  fingertip:    {}'.format(fmt6(tcp))
     print '  cube center:  {}'.format(fmt6(cube_tcp))
 
     msg = {
         "command": "capture",
-        "capture_pose_6dof": tcp,
-        "cube_center_pose_6dof": cube_tcp,
-        "robot_joints_6dof": joints,
-        "pose_index": pose_index,
+        "capture_gripper_pose_6dof": tcp,
+        "capture_cube_center_6dof": cube_tcp,
+        "capture_robot_joints_6dof": joints,
+        "capture_index": capture_index,
     }
     if set_cube_center is not None:
         msg["set_cube_center_6dof"] = set_cube_center
@@ -269,9 +271,9 @@ def do_capture(conn, pose_index, set_cube_center=None, set_index=None,
     status = resp.get('status', 'unknown') if isinstance(resp, dict) else 'unknown'
     reason = resp.get('reason') if isinstance(resp, dict) else None
     if reason:
-        print '*** Capture {} done (status={}, reason={}) ***'.format(pose_index, status, reason)
+        print '*** Capture {} done (status={}, reason={}) ***'.format(capture_index, status, reason)
     else:
-        print '*** Capture {} done (status={}) ***'.format(pose_index, status)
+        print '*** Capture {} done (status={}) ***'.format(capture_index, status)
     return status, tcp, cube_tcp
 
 
@@ -391,7 +393,12 @@ def request_waypoints_from_pc(conn, timeout_sec=10.0):
 
 def run_auto_capture(rb, conn, waypoint_file=None, speed=30):
     """Run auto capture. If waypoint_file is None or empty, request waypoints
-    from PC over the socket. Otherwise, load from local filesystem (legacy)."""
+    from PC over the socket. Otherwise, load from local filesystem (legacy).
+
+    기본(semi-auto): 각 capture pose로 이동 후 좌표를 표시하고, 사람이 'c'+Enter로
+    확인해야 실제 촬영한다. `--noconfirm` 플래그를 주면 확인 없이 전부 자동 촬영한다.
+    """
+    confirm = '--noconfirm' not in sys.argv
     if not waypoint_file:
         data = request_waypoints_from_pc(conn)
         if data is None:
@@ -402,15 +409,14 @@ def run_auto_capture(rb, conn, waypoint_file=None, speed=30):
 
     # Multi-set joint-based: waypoints[] has per-waypoint set_index (5+ sets)
     waypoints = data.get('waypoints', [])
-    if waypoints and any('set_index' in wp for wp in waypoints):
-        _run_auto_multiset(rb, conn, data, speed)
-    elif data.get('format_version') == 2 and 'placements' in data:
-        _run_auto_v2(rb, conn, data, speed)
-    else:
-        _run_auto_v1(rb, conn, data, speed)
+    if not waypoints or not any('set_index' in wp for wp in waypoints):
+        print '[ERROR] waypoints missing set_index (multi-set format required)'
+        send_json(conn, {"command": "quit"})
+        return
+    _run_auto_multiset(rb, conn, data, speed, confirm=confirm)
 
 
-def _run_auto_multiset(rb, conn, data, speed,
+def _run_auto_multiset(rb, conn, data, speed, confirm=True,
                         z_clearance_mm=100.0,
                         z_transit_lift_mm=30.0):
     """Multi-set joint-based auto capture (start-command flow).
@@ -438,11 +444,11 @@ def _run_auto_multiset(rb, conn, data, speed,
     for wp in waypoints:
         sidx = wp.get('set_index')
         if sidx is None:
-            print '[ERROR] waypoint pose_index={} missing set_index'.format(wp.get('pose_index'))
+            print '[ERROR] waypoint capture_index={} missing set_index'.format(wp.get('capture_index', wp.get('pose_index')))
             send_json(conn, {"command": "quit"})
             return
         if 'place_joints' not in wp or 'capture_joints' not in wp:
-            print '[ERROR] waypoint pose_index={} missing place_joints/capture_joints'.format(wp.get('pose_index'))
+            print '[ERROR] waypoint capture_index={} missing place_joints/capture_joints'.format(wp.get('capture_index', wp.get('pose_index')))
             send_json(conn, {"command": "quit"})
             return
         if sidx not in by_set:
@@ -513,12 +519,13 @@ def _run_auto_multiset(rb, conn, data, speed,
             print '[WARN] +Z clearance failed: {} (continuing)'.format(e)
         time.sleep(0.5)
 
-        # Step 4: visit each capture pose. save gate 실패 시 ±2cm 지터링 재시도.
+        # Step 4: 각 capture pose로 이동 -> 좌표 표시 -> 사람이 'c'로 확인하면 촬영.
         for wi, wp in enumerate(wps):
             cap_j = wp['capture_joints']
-            pose_idx = wp.get('pose_index', wi)
-            print '  -- capture {}/{} pose_index={} --'.format(
-                wi + 1, len(wps), pose_idx)
+            pose_idx = wp.get('capture_index', wp.get('pose_index', wi))
+            print ''
+            print '  -- capture {}/{} (set={}, capture_index={}) --'.format(
+                wi + 1, len(wps), sidx, pose_idx)
             try:
                 rb.move(Joint(*cap_j[:6]))
             except Exception as e:
@@ -526,7 +533,30 @@ def _run_auto_multiset(rb, conn, data, speed,
                 skipped += 1
                 continue
             time.sleep(0.5)
-            base_tcp = get_tcp()
+            # 이동된 좌표값(joints + tcp) 표시.
+            base_tcp = show_pose()
+
+            # 사람 확인 대기: 'c'(+Enter)=촬영, s=skip, q=quit.
+            if confirm:
+                action = None
+                while action is None:
+                    ans = raw_input("  Capture? ('c'+Enter=촬영 / s=skip / q=quit): ").strip().lower()
+                    if ans in ('c', ''):
+                        action = 'capture'
+                    elif ans == 's':
+                        action = 'skip'
+                    elif ans == 'q':
+                        action = 'quit'
+                    else:
+                        print "  (c=촬영 / s=skip / q=quit 중 입력)"
+                if action == 'skip':
+                    print '  -> skipped by user'
+                    skipped += 1
+                    continue
+                if action == 'quit':
+                    print '  -> quit by user'
+                    send_json(conn, {"command": "quit"})
+                    return
 
             result = capture_with_retry(
                 rb, conn, pose_idx, base_tcp,
@@ -571,187 +601,6 @@ def _run_auto_multiset(rb, conn, data, speed,
     print '  - success: {}/{}'.format(success, total_caps)
     print '  - skipped: {}'.format(skipped)
     print '=========================================='
-
-
-def _run_auto_v1(rb, conn, data, speed):
-    """Legacy: flat waypoints list, joint-based captures, 1 capture per pick-place cycle."""
-    set_joints = data.get('set_joints')
-    set_cube_center = data.get('set_cube_center')
-    wps = data.get('waypoints', [])
-
-    if set_joints is None:
-        print '[ERROR] set_joints not found!'
-        send_json(conn, {"command": "quit"})
-        return
-
-    missing = [i for i, wp in enumerate(wps)
-               if 'place_joints' not in wp or 'capture_joints' not in wp]
-    if missing:
-        print '[ERROR] Missing joints in waypoints: {}'.format(missing)
-        send_json(conn, {"command": "quit"})
-        return
-
-    print ''
-    print '=========================================='
-    print '  Auto Capture v1: {} waypoints, speed={}'.format(len(wps), speed)
-    print '=========================================='
-
-    rb.override(speed)
-    print '[Auto] Moving to SET...'
-    rb.move(Joint(*set_joints[:6]))
-    print '[Auto] At SET. Ensure cube is gripped!'
-    raw_input('Press ENTER to start...')
-
-    success_count = 0
-    skipped_count = 0
-
-    for i, wp in enumerate(wps):
-        place_j = wp['place_joints']
-        capture_j = wp['capture_joints']
-        print ''
-        print '======== Waypoint {}/{} ========'.format(i + 1, len(wps))
-
-        rb.move(Joint(*place_j[:6]))
-        time.sleep(0.3)
-        place_tcp = get_tcp()
-        gripper_open()
-        time.sleep(0.3)
-
-        rb.move(Joint(*capture_j[:6]))
-        time.sleep(0.5)
-        base_tcp = get_tcp()
-
-        result = capture_with_retry(rb, conn, i, base_tcp,
-                                     set_cube_center=set_cube_center)
-        if result is None:
-            break
-        if result == 'success':
-            success_count += 1
-            print '[Auto] -> OK'
-        else:
-            skipped_count += 1
-            print '[Auto] -> SKIPPED ({} attempts failed)'.format(
-                CAPTURE_RETRY_MAX_ATTEMPTS)
-
-        approach_and_close_gripper(rb, place_j, place_tcp)
-        time.sleep(0.3)
-        rb.move(Joint(*set_joints[:6]))
-
-    send_json(conn, {"command": "quit"})
-    print ''
-    print '  Auto Complete v1: {}/{} captured ({} skipped)'.format(
-        success_count, len(wps), skipped_count)
-
-
-def _run_auto_v2(rb, conn, data, speed):
-    """v2: per-placement multi-capture. Place once, capture N TCP poses, re-grip, next placement."""
-    set_joints = data.get('set_joints')
-    set_tcp = data.get('set_tcp')
-    placements = data.get('placements', [])
-
-    if set_joints is None:
-        print '[ERROR] set_joints not found!'
-        send_json(conn, {"command": "quit"})
-        return
-
-    for i, p in enumerate(placements):
-        if 'place_joints' not in p:
-            print '[ERROR] placement {} missing place_joints'.format(i)
-            send_json(conn, {"command": "quit"})
-            return
-        for j, cap in enumerate(p.get('captures', [])):
-            if 'capture_tcp' not in cap:
-                print '[ERROR] placement {} capture {} missing capture_tcp'.format(i, j)
-                send_json(conn, {"command": "quit"})
-                return
-
-    total_caps = sum(len(p.get('captures', [])) for p in placements)
-    print ''
-    print '=========================================='
-    print '  Auto Capture v2: {} placements, {} captures, speed={}'.format(
-        len(placements), total_caps, speed)
-    print '=========================================='
-
-    rb.override(speed)
-    print '[Auto] Moving to SET...'
-    rb.move(Joint(*set_joints[:6]))
-    print '[Auto] At SET. Ensure cube is gripped!'
-    raw_input('Press ENTER to start...')
-
-    success_count = 0
-    skipped_count = 0
-    disconnected = False
-
-    for pi, placement in enumerate(placements):
-        if disconnected:
-            break
-
-        place_j = placement['place_joints']
-        captures = placement.get('captures', [])
-        set_idx = placement.get('set_index')
-        set_cube = placement.get('set_cube_center')
-
-        print ''
-        print '======== Placement {}/{} (set_index={}, {} captures) ========'.format(
-            pi + 1, len(placements), set_idx, len(captures))
-
-        rb.move(Joint(*place_j[:6]))
-        time.sleep(0.3)
-        place_tcp = get_tcp()
-        gripper_open()
-        time.sleep(0.3)
-
-        for ci, cap in enumerate(captures):
-            tcp = cap['capture_tcp']
-            pose_idx = cap.get('pose_index', ci)
-            print '  -- capture {}/{} pose_index={} --'.format(
-                ci + 1, len(captures), pose_idx)
-
-            try:
-                rb.line(Position(*tcp[:6]))
-            except Exception as e:
-                print '  [WARN] move failed: {}. Skipping.'.format(e)
-                skipped_count += 1
-                continue
-            time.sleep(0.5)
-            base_tcp = get_tcp()
-
-            result = capture_with_retry(
-                rb, conn, pose_idx, base_tcp,
-                set_cube_center=set_cube,
-                set_index=set_idx,
-                set_joints=set_joints,
-                set_tcp=set_tcp,
-                place_joints=place_j,
-            )
-
-            if result is None:
-                print '  [Auto] Disconnected, stopping.'
-                disconnected = True
-                break
-            elif result == 'success':
-                success_count += 1
-                print '  [Auto] -> OK'
-            else:
-                skipped_count += 1
-                print '  [Auto] -> SKIPPED ({} attempts failed)'.format(
-                    CAPTURE_RETRY_MAX_ATTEMPTS)
-
-        if disconnected:
-            break
-
-        # Return to place pose, re-grip cube (+Z approach), return to SET
-        print '  [Auto] Re-gripping cube (+Z {:.0f}mm approach) and returning to SET...'.format(
-            GRIP_APPROACH_Z_MM)
-        approach_and_close_gripper(rb, place_j, place_tcp)
-        time.sleep(0.3)
-        rb.move(Joint(*set_joints[:6]))
-
-    if not disconnected:
-        send_json(conn, {"command": "quit"})
-    print ''
-    print '  Auto Complete v2: {}/{} captured ({} skipped)'.format(
-        success_count, total_caps, skipped_count)
 
 
 # ── Main ──
@@ -829,6 +678,7 @@ def main():
         print '  start                 -> auto capture (PC sends waypoints)'
         print '  start <path> [speed]  -> auto capture (local file)'
         print '    (cube must be gripped before start)'
+        print '    (각 pose 이동 후 c+Enter 확인 시 촬영; --noconfirm 로 전자동)'
         print '=========================================='
         print ''
 
@@ -925,7 +775,7 @@ def main():
                 if status is None:
                     break
                 wp = {
-                    "pose_index": capture_count,
+                    "capture_index": capture_count,
                     "capture_joints": get_joints(),
                     "capture_tcp": tcp,
                     "cube_center_6dof": cube_tcp,

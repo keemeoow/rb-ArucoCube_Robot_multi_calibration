@@ -239,26 +239,30 @@ def load_robot_pose_from_capture(cap: dict) -> Optional[np.ndarray]:
             T_base_gripper = np.asarray(cap["robot_pose_matrix_4x4"], dtype=np.float64)
         except Exception:
             T_base_gripper = None
-    if T_base_gripper is None and "capture_pose_matrix_4x4" in cap:
-        try:
-            T_base_gripper = np.asarray(cap["capture_pose_matrix_4x4"], dtype=np.float64)
-        except Exception:
-            T_base_gripper = None
+    if T_base_gripper is None:
+        m44 = cap.get("capture_gripper_pose_matrix_4x4", cap.get("capture_pose_matrix_4x4"))
+        if m44 is not None:
+            try:
+                T_base_gripper = np.asarray(m44, dtype=np.float64)
+            except Exception:
+                T_base_gripper = None
     if T_base_gripper is None and "robot_pose_6dof" in cap:
         try:
             T_base_gripper = euler_deg_to_matrix(*cap["robot_pose_6dof"])
         except Exception:
             T_base_gripper = None
-    if T_base_gripper is None and "capture_pose_6dof" in cap:
-        try:
-            T_base_gripper = euler_deg_to_matrix(*cap["capture_pose_6dof"])
-        except Exception:
-            T_base_gripper = None
+    if T_base_gripper is None:
+        p6 = cap.get("capture_gripper_pose_6dof", cap.get("capture_pose_6dof"))
+        if p6 is not None:
+            try:
+                T_base_gripper = euler_deg_to_matrix(*p6)
+            except Exception:
+                T_base_gripper = None
     return T_base_gripper
 
 
 def load_robot_pose6_from_capture(cap: dict) -> Optional[np.ndarray]:
-    for key in ("robot_pose_6dof", "capture_pose_6dof"):
+    for key in ("robot_pose_6dof", "capture_gripper_pose_6dof", "capture_pose_6dof"):
         raw = cap.get(key)
         if not isinstance(raw, list) or len(raw) != 6:
             continue

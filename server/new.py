@@ -16,7 +16,7 @@
 명령어:
   --- 조회 ---
   show              : 현재 TCP/관절 표시
-  list              : 전체 waypoints 요약 (pose_index, set, joints, tcp)
+  list              : 전체 waypoints 요약 (capture_index, set, joints, tcp)
   list <S>          : set S 한정 상세 (각 pose의 joints/tcp/cube + place_joints)
   list sets         : set별 요약 (capture 개수, place_joints)
   status            : 현재 set 컨텍스트, 신규 추가 개수, pending sets
@@ -37,7 +37,7 @@
                       재-그립 후 transit lift). 캡처는 PC로 보내지 않음.
   playset <S>       : set S로 진입 (필요 시 재-그립 후 이동, 큐브 release, +Z 클리어런스).
                       이 명령 후 'c'로 set S에 새 포즈를 추가할 수 있음.
-  gotow <N>         : waypoint N(pose_index)의 capture_joints로 이동 (큐브 핸들링 없음).
+  gotow <N>         : waypoint N(capture_index)의 capture_joints로 이동 (큐브 핸들링 없음).
   gotoplace <S>     : set S의 place_joints로 이동 (그리퍼 동작 없음).
 
   --- 신규 set 추가 (큐브를 새 위치로 옮길 때) ---
@@ -267,13 +267,13 @@ def find_place_joints_for_set(waypoints, set_index, pending=None):
 
 # ── Capture (PC와 통신) ──
 
-def do_capture(conn, pose_index, set_cube_center=None, set_index=None,
+def do_capture(conn, capture_index, set_cube_center=None, set_index=None,
                set_joints=None, set_tcp=None, place_joints=None):
     tcp = get_tcp()
     cube_tcp = get_cube_center()
     joints = get_joints()
     print ''
-    print '  -- set = {} / pose_index={} --'.format(set_index, pose_index)
+    print '  -- set = {} / capture_index={} --'.format(set_index, capture_index)
     print '     joints: [{:.2f}, {:.2f}, {:.2f}, {:.2f}, {:.2f}, {:.2f}]'.format(
         joints[0], joints[1], joints[2], joints[3], joints[4], joints[5])
     print '     tcp:    ({:.1f}, {:.1f}, {:.1f}) / ({:.1f}, {:.1f}, {:.1f})'.format(
@@ -283,10 +283,10 @@ def do_capture(conn, pose_index, set_cube_center=None, set_index=None,
 
     msg = {
         "command": "capture",
-        "capture_pose_6dof": tcp,
-        "cube_center_pose_6dof": cube_tcp,
-        "robot_joints_6dof": joints,
-        "pose_index": pose_index,
+        "capture_gripper_pose_6dof": tcp,
+        "capture_cube_center_6dof": cube_tcp,
+        "capture_robot_joints_6dof": joints,
+        "capture_index": capture_index,
     }
     if set_cube_center is not None:
         msg["set_cube_center_6dof"] = set_cube_center
@@ -429,8 +429,8 @@ def replay_all(rb, conn, data, pending, hold_state, override_speed):
             cap_j = wp.get('capture_joints')
             if cap_j is None:
                 continue
-            pose_idx = wp.get('pose_index', wi)
-            print '  -> capture pose {}/{} (pose_index={})'.format(
+            pose_idx = wp.get('capture_index', wp.get('pose_index', wi))
+            print '  -> capture pose {}/{} (capture_index={})'.format(
                 wi + 1, len(wps), pose_idx)
             try:
                 rb.move(Joint(*cap_j[:6]))
@@ -613,7 +613,7 @@ def main():
 
         waypoints = data.get('waypoints', [])
         sets_order, by_set = group_by_set(waypoints)
-        existing_pose_max = max([wp.get('pose_index', -1) for wp in waypoints]) if waypoints else -1
+        existing_pose_max = max([wp.get('capture_index', wp.get('pose_index', -1)) for wp in waypoints]) if waypoints else -1
         next_pose_index = existing_pose_max + 1
         n_existing = len(waypoints)
 
@@ -662,7 +662,7 @@ def main():
                 show_pose()
 
             elif cl == 'list' or cl.startswith('list '):
-                # list            : 전체 waypoints (요약: pose_index/set/joints/tcp)
+                # list            : 전체 waypoints (요약: capture_index/set/joints/tcp)
                 # list <S>        : set S만 필터 (place_joints + 각 capture 상세)
                 # list sets       : set 요약 (set별 capture 개수, place_joints)
                 parts = cmd.split()
@@ -707,7 +707,7 @@ def main():
                             cj = wp.get('capture_joints', [0]*6)
                             tcp = wp.get('capture_tcp', [0]*6)
                             cube = wp.get('cube_center_6dof', [0]*6)
-                            print '  -- pose_index={} --'.format(wp.get('pose_index'))
+                            print '  -- capture_index={} --'.format(wp.get('capture_index', wp.get('pose_index')))
                             print '     joints: [{:.2f}, {:.2f}, {:.2f}, {:.2f}, {:.2f}, {:.2f}]'.format(
                                 cj[0], cj[1], cj[2], cj[3], cj[4], cj[5])
                             print '     tcp:    ({:.1f}, {:.1f}, {:.1f}) / ({:.1f}, {:.1f}, {:.1f})'.format(
@@ -723,7 +723,7 @@ def main():
                         cj = wp.get('capture_joints', [0]*6)
                         tcp = wp.get('capture_tcp', [0]*6)
                         print '  {:>4}  {:>3}  [{:>6.1f},{:>6.1f},{:>6.1f},{:>6.1f},{:>6.1f},{:>6.1f}]  ({:>6.1f},{:>6.1f},{:>6.1f})'.format(
-                            wp.get('pose_index'), wp.get('set_index'),
+                            wp.get('capture_index', wp.get('pose_index')), wp.get('set_index'),
                             cj[0], cj[1], cj[2], cj[3], cj[4], cj[5],
                             tcp[0], tcp[1], tcp[2])
                     if pending_place_joints:
@@ -840,16 +840,16 @@ def main():
             elif cl.startswith('gotow '):
                 parts = cmd.split()
                 if len(parts) < 2:
-                    print 'Usage: gotow <pose_index>'
+                    print 'Usage: gotow <capture_index>'
                     continue
                 try:
                     n = int(parts[1])
                 except ValueError:
-                    print 'Usage: gotow <pose_index>'
+                    print 'Usage: gotow <capture_index>'
                     continue
                 target = None
                 for wp in waypoints:
-                    if wp.get('pose_index') == n:
+                    if wp.get('capture_index', wp.get('pose_index')) == n:
                         target = wp
                         break
                 if target is None or 'capture_joints' not in target:
@@ -965,7 +965,7 @@ def main():
                         print '  -> not appended (gate failed)'
                         continue
                 wp = {
-                    "pose_index": next_pose_index,
+                    "capture_index": next_pose_index,
                     "capture_joints": joints,
                     "capture_tcp": tcp,
                     "cube_center_6dof": cube_tcp,
@@ -981,8 +981,8 @@ def main():
                     sets_order.append(current_set)
                 next_pose_index += 1
                 new_count += 1
-                print '  -> appended pose_index={} (set={}). new total={}'.format(
-                    wp['pose_index'], current_set, new_count)
+                print '  -> appended capture_index={} (set={}). new total={}'.format(
+                    wp['capture_index'], current_set, new_count)
 
             elif cl == 'undoc':
                 if new_count == 0:
@@ -996,8 +996,8 @@ def main():
                     bs.pop()
                 next_pose_index -= 1
                 new_count -= 1
-                print 'Removed last new capture (pose_index={}). new total={}'.format(
-                    last.get('pose_index'), new_count)
+                print 'Removed last new capture (capture_index={}). new total={}'.format(
+                    last.get('capture_index', last.get('pose_index')), new_count)
 
             elif cl == 'save':
                 if new_count == 0:

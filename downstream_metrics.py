@@ -38,7 +38,7 @@ def compute_board_reprojection_metrics(meta: dict,
             if img is None:
                 continue
             ok, _, _, n_corners, reproj = detector.estimate_pose(img, K, D)
-            if ok and n_corners >= 4 and reproj is not None:
+            if ok and n_corners >= 4 and reproj is not None and np.isfinite(reproj):
                 cam_errors.append(float(reproj))
                 errors_all.append(float(reproj))
         per_camera[f"cam{ci}"] = {

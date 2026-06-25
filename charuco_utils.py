@@ -241,7 +241,10 @@ class CharucoTarget:
             obj_pts, img_pts = self.board.matchImagePoints(charuco_corners, charuco_ids)
             if obj_pts is None or len(obj_pts) < 4:
                 return False, None, None, 0, float("inf")
-            ok, rvec, tvec = cv2.solvePnP(obj_pts, img_pts, K, D)
+            # ChArUco corners are coplanar; SOLVEPNP_IPPE handles the planar case
+            # with >=4 points. The default ITERATIVE flag routes <6 points through
+            # DLT, which OpenCV >=4.11 rejects ("needs at least 6 points").
+            ok, rvec, tvec = cv2.solvePnP(obj_pts, img_pts, K, D, flags=cv2.SOLVEPNP_IPPE)
             if not ok:
                 return False, None, None, n_corners, float("inf")
         else:

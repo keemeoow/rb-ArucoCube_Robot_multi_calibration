@@ -1,0 +1,70 @@
+{
+  "cross_camera": {
+    "num_errors": 120,
+    "mean_mm": 2.2169720040925767,
+    "median_mm": 2.1153854655118276,
+    "max_mm": 4.588601852541043,
+    "pass": true
+  },
+  "reprojection": {
+    "total_observations": 226,
+    "mean_px": 0.5675223592057452,
+    "median_px": 0.5296036962395151,
+    "max_px": 2.884096353061803,
+    "pass": true
+  },
+  "handeye": {
+    "frames": 57,
+    "board_position_std_mm": 38.85910306179274,
+    "board_position_max_mm": 191.6230824003667,
+    "pass": false
+  },
+  "board_reprojection": {
+    "total_frames": 193,
+    "mean_px": 0.434069369393618,
+    "median_px": 0.37304455041885376,
+    "max_px": 12.121583938598633,
+    "pass": true,
+    "per_camera": {
+      "cam0": {
+        "frames": 55,
+        "mean_px": 0.41694798185066745
+      },
+      "cam1": {
+        "frames": 26,
+        "mean_px": 0.5233985976530955
+      },
+      "cam2": {
+        "frames": 57,
+        "mean_px": 0.5172277045877356
+      },
+      "cam3": {
+        "frames": 55,
+        "mean_px": 0.3227801198309118
+      }
+    }
+  },
+  "pose_repeatability": {
+    "num_events": 57,
+    "mean_dt_mm": 2.209644147062599,
+    "mean_dr_deg": 0.4679038008916805,
+    "max_dt_mm": 6.145722331857508,
+    "max_dr_deg": 1.2735616218252521,
+    "pass": true
+  },
+  "mesh_alignment": {
+    "usable_clouds": 120,
+    "usable_events": 57,
+    "mean_rmse_mm": 2.781079551091794,
+    "median_rmse_mm": 2.923542491162822,
+    "max_rmse_mm": 4.693277159271611,
+    "pass": true
+  },
+  "dimension_accuracy": {
+    "usable_events": 42,
+    "mean_abs_err_mm": 2.3523006604482193,
+    "median_abs_err_mm": 1.5026239801174146,
+    "max_abs_err_mm": 6.718415979748357,
+    "pass": true
+  }
+}

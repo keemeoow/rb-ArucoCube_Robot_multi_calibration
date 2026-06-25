@@ -428,6 +428,9 @@ def _run_auto_multiset(rb, conn, data, speed, confirm=True,
       2. Open gripper -> cube released on the floor.
       3. Move up by z_clearance_mm in +Z direction (line motion in TCP frame).
       4. For each waypoint in this set: move to capture_joints, capture.
+         set_cube_center는 해당 set의 waypoint에 저장된 set_cube_center_6dof를
+         사용한다 (set마다 큐브 위치가 다르므로 set별 큐브 중점이 meta에 올바르게
+         기록됨). 없으면 파일 최상위 set_cube_center로 폴백한다.
       5. If a next set exists: return to place_joints, close gripper, line-lift
          +z_transit_lift_mm before the next set's joint transit (cube clears
          the floor every time it is moved between sets).
@@ -490,6 +493,8 @@ def _run_auto_multiset(rb, conn, data, speed, confirm=True,
     for si, sidx in enumerate(sets_order):
         wps = by_set[sidx]
         place_j = wps[0]['place_joints']
+        # set별 큐브 중점: waypoint에 저장된 값 우선, 없으면 파일 최상위로 폴백.
+        set_cc = wps[0].get('set_cube_center_6dof') or data.get('set_cube_center')
 
         print ''
         print '======== SET {}/{} (set_index={}, {} captures) ========'.format(
@@ -560,7 +565,7 @@ def _run_auto_multiset(rb, conn, data, speed, confirm=True,
 
             result = capture_with_retry(
                 rb, conn, pose_idx, base_tcp,
-                set_cube_center=data.get('set_cube_center'),
+                set_cube_center=set_cc,
                 set_index=sidx,
                 set_joints=place_j,
                 set_tcp=None,

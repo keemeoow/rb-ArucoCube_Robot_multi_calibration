@@ -9,14 +9,17 @@ Step 2: 멀티카메라 캘리브레이션용 캡처 수집.
   4. ArUco cube / gripper ChArUco를 즉시 검출하고 pose 후보와 품질 지표를 meta.json에 기록한다.
   5. `set_index`, robot pose, set_cube_center_6dof, capture gate 결과를 함께 저장한다.
 
-실행 명령어:
-python Step2_capture.py   \
+명령어:
+python Step2_capture.py \
     --root_folder ./data/session \
     --intrinsics_dir ./intrinsics \
     --use_robot --manual_robot \
     --robot_ip 192.168.0.23 --robot_port 12348 \
     --show --save_depth
 
+"""
+
+"""
 [서버코드 작동법] (큐브 위치별 멀티 캘리브레이션)
 # ── 1. 큐브를 바닥에 놓고 위치 저장 ──
 > set                         # 큐브 위치 #0 저장 (TCP, 관절값, 큐브 중점)
@@ -130,11 +133,13 @@ def annotate_image(bgr, cube, cam_idx, is_gripper, n_markers, ids, corners,
 
 
 def wait_for_start_command_capture(cams, cam_order, gripper_cam_idx,
-                                     extra_lines: Optional[List[str]] = None) -> bool:
+                                     extra_lines: Optional[List[str]] = None,
+                                     frame_builder=None, cube=None) -> bool:
     """캘리브레이션 캡처 시작 전 cv2 프리뷰 + 'start' 입력 대기.
 
-    아르코 큐브 / charuco 오버레이는 표시하지 않고, 단순 4-캠 raw 프리뷰 만
-    띄운다 (사용자가 카메라 시야/노출만 확인). 터미널에서:
+    `frame_builder`가 주어지면 각 카메라에서 인식되는 ArUco 큐브/보드/ChArUco
+    마커를 실시간으로 오버레이해서 보여준다 (마커 인식 상태까지 확인 가능).
+    주어지지 않으면 단순 4-캠 raw 프리뷰만 띄운다. 터미널에서:
       start  -> 캡처 메인 루프 진입 (창은 닫지 않고 후속 모드에서 같은 창 갱신)
       quit   -> 캡처 시작 안 하고 종료 (창 닫음)
     Returns: True 시작 / False 사용자 취소.
@@ -175,40 +180,69 @@ def wait_for_start_command_capture(cams, cam_order, gripper_cam_idx,
 
     win = "Capture Preview"
     while not start_event.is_set() and not quit_event.is_set():
-        tiles = []
-        tile_h = tile_w = None
-        for ci in cam_order:
-            cam = cams.get(ci)
-            color = None
-            if cam is not None:
-                color, _depth, _ts = cam.get_latest()
-            if color is not None:
-                if tile_h is None:
-                    tile_h, tile_w = color.shape[:2]
-                disp = color.copy()
-                tag = "GRIP" if (gripper_cam_idx is not None and ci == gripper_cam_idx) else "FIX"
-                col = (0, 200, 255) if tag == "GRIP" else (0, 255, 0)
-                cv2.putText(disp, f"cam{ci} [{tag}]", (10, 28),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.7, col, 2)
-                tiles.append(disp)
+        # frame_builder가 있으면 마커 검출 오버레이가 포함된 quad를 만든다.
+        if frame_builder is not None:
+            preview_frames = {}
+            for ci in cam_order:
+                cam = cams.get(ci)
+                if cam is None:
+                    continue
+                color, depth, ts_ms = cam.get_latest()
+                if color is None:
+                    continue
+                try:
+                    preview_frames[ci] = frame_builder(
+                        ci, color, depth, ts_ms,
+                        include_marker_poses=False,
+                        include_charuco_pose=False,
+                        log_pose_status=False,
+                    )
+                except Exception:
+                    continue
+            if preview_frames:
+                quad = make_quad_image(preview_frames, cam_order, cube, gripper_cam_idx)
             else:
-                if tile_h is None:
-                    tile_h, tile_w = 480, 640
-                blank = np.zeros((tile_h, tile_w, 3), dtype=np.uint8)
-                cv2.putText(blank, f"cam{ci} N/A", (20, tile_h // 2),
+                quad = np.zeros((480, 640, 3), dtype=np.uint8)
+                cv2.putText(quad, "no frames", (20, 240),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 0, 255), 2)
-                tiles.append(blank)
-        while len(tiles) < 4:
-            tiles.append(np.zeros((tile_h or 480, tile_w or 640, 3), dtype=np.uint8))
-        tiles = tiles[:4]
-        top = cv2.hconcat([tiles[0], tiles[1]])
-        bot = cv2.hconcat([tiles[2], tiles[3]])
-        quad = cv2.vconcat([top, bot])
+        else:
+            tiles = []
+            tile_h = tile_w = None
+            for ci in cam_order:
+                cam = cams.get(ci)
+                color = None
+                if cam is not None:
+                    color, _depth, _ts = cam.get_latest()
+                if color is not None:
+                    if tile_h is None:
+                        tile_h, tile_w = color.shape[:2]
+                    disp = color.copy()
+                    tag = "GRIP" if (gripper_cam_idx is not None and ci == gripper_cam_idx) else "FIX"
+                    col = (0, 200, 255) if tag == "GRIP" else (0, 255, 0)
+                    cv2.putText(disp, f"cam{ci} [{tag}]", (10, 28),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.7, col, 2)
+                    tiles.append(disp)
+                else:
+                    if tile_h is None:
+                        tile_h, tile_w = 480, 640
+                    blank = np.zeros((tile_h, tile_w, 3), dtype=np.uint8)
+                    cv2.putText(blank, f"cam{ci} N/A", (20, tile_h // 2),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 0, 255), 2)
+                    tiles.append(blank)
+            while len(tiles) < 4:
+                tiles.append(np.zeros((tile_h or 480, tile_w or 640, 3), dtype=np.uint8))
+            tiles = tiles[:4]
+            top = cv2.hconcat([tiles[0], tiles[1]])
+            bot = cv2.hconcat([tiles[2], tiles[3]])
+            quad = cv2.vconcat([top, bot])
 
         # footer
         foot_h = 28 + 26 * (1 + (len(extra_lines) if extra_lines else 0))
         foot = np.zeros((foot_h, quad.shape[1], 3), dtype=np.uint8)
-        cv2.putText(foot, "[WAITING] Type 'start' + ENTER in terminal to begin",
+        wait_txt = ("[WAITING] live marker overlay — Type 'start' + ENTER in terminal to begin"
+                    if frame_builder is not None
+                    else "[WAITING] Type 'start' + ENTER in terminal to begin")
+        cv2.putText(foot, wait_txt,
                     (12, 22), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 200, 255), 1)
         if extra_lines:
             y = 48
@@ -1021,7 +1055,8 @@ def main():
         if args.use_robot:
             extra.append(f"robot {args.robot_ip}:{args.robot_port}"
                          + (" (manual)" if args.manual_robot else ""))
-        if not wait_for_start_command_capture(cams, cam_order, gripper_cam_idx, extra):
+        if not wait_for_start_command_capture(cams, cam_order, gripper_cam_idx, extra,
+                                               frame_builder=build_frame_record, cube=cube):
             for cam in cams.values():
                 cam.stop()
             cv2.destroyAllWindows()

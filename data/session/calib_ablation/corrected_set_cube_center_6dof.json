@@ -1,0 +1,265 @@
+{
+  "note": "Vision-derived cube pose in robot base frame. Translation matches the original prior (~8mm); rotation REPLACES the unreliable nominal yaw. Drop these into meta.json set_cube_center_6dof for the next run to enable a full 6-DoF prior.",
+  "sets": {
+    "0": {
+      "corrected_set_cube_center_6dof": [
+        -30.81,
+        349.1025,
+        -17.1509,
+        -109.8394,
+        0.0624,
+        0.6555
+      ],
+      "n_events": 5,
+      "old_set_cube_center_6dof": [
+        -35.604,
+        353.265,
+        -18.003,
+        -19.687746573167296,
+        -0.35236904400545627,
+        179.55465975368764
+      ],
+      "delta_yaw_deg": -90.15165811355865
+    },
+    "1": {
+      "corrected_set_cube_center_6dof": [
+        -30.2481,
+        437.0085,
+        -19.9778,
+        -134.3443,
+        -11.7052,
+        2.5931
+      ],
+      "n_events": 5,
+      "old_set_cube_center_6dof": [
+        -35.5,
+        443.1,
+        -18.0,
+        -24.7,
+        0.4,
+        179.6
+      ],
+      "delta_yaw_deg": -109.64433750145706
+    },
+    "2": {
+      "corrected_set_cube_center_6dof": [
+        -33.6732,
+        527.3754,
+        -17.2669,
+        -83.9197,
+        -0.1559,
+        0.5071
+      ],
+      "n_events": 5,
+      "old_set_cube_center_6dof": [
+        -35.5,
+        523.1,
+        -18.0,
+        5.3,
+        0.4,
+        179.6
+      ],
+      "delta_yaw_deg": -89.21972551324745
+    },
+    "3": {
+      "corrected_set_cube_center_6dof": [
+        -26.1349,
+        613.3467,
+        -20.462,
+        -35.1403,
+        -2.4463,
+        -9.2495
+      ],
+      "n_events": 3,
+      "old_set_cube_center_6dof": [
+        -35.6,
+        608.1,
+        -18.0,
+        75.3,
+        0.4,
+        179.6
+      ],
+      "delta_yaw_deg": -110.4402510927772
+    },
+    "4": {
+      "corrected_set_cube_center_6dof": [
+        -92.0727,
+        650.1745,
+        -19.0919,
+        -83.3099,
+        0.5844,
+        0.5249
+      ],
+      "n_events": 3,
+      "old_set_cube_center_6dof": [
+        -95.5,
+        638.1,
+        -19.0,
+        5.3,
+        0.4,
+        179.6
+      ],
+      "delta_yaw_deg": -88.60994064923173
+    },
+    "5": {
+      "corrected_set_cube_center_6dof": [
+        -164.917,
+        643.2367,
+        -18.6625,
+        -143.8799,
+        1.5502,
+        -0.0102
+      ],
+      "n_events": 4,
+      "old_set_cube_center_6dof": [
+        -165.5,
+        637.9,
+        -19.0,
+        -54.7,
+        0.4,
+        179.6
+      ],
+      "delta_yaw_deg": -89.17993320789797
+    },
+    "6": {
+      "corrected_set_cube_center_6dof": [
+        -228.8245,
+        635.8376,
+        -17.3068,
+        135.8353,
+        0.5341,
+        0.1464
+      ],
+      "n_events": 3,
+      "old_set_cube_center_6dof": [
+        -225.6,
+        637.8,
+        -19.0,
+        -134.7,
+        0.4,
+        179.6
+      ],
+      "delta_yaw_deg": -89.46469548428172
+    },
+    "7": {
+      "corrected_set_cube_center_6dof": [
+        -271.2414,
+        557.0064,
+        -18.2109,
+        -154.4018,
+        0.9646,
+        0.347
+      ],
+      "n_events": 4,
+      "old_set_cube_center_6dof": [
+        -265.5,
+        557.9,
+        -19.0,
+        -64.7,
+        0.4,
+        179.6
+      ],
+      "delta_yaw_deg": -89.70180812822987
+    },
+    "8": {
+      "corrected_set_cube_center_6dof": [
+        -273.5036,
+        487.739,
+        -19.1875,
+        -53.6143,
+        -1.2232,
+        1.4271
+      ],
+      "n_events": 5,
+      "old_set_cube_center_6dof": [
+        -265.5,
+        488.0,
+        -19.0,
+        35.3,
+        0.4,
+        179.6
+      ],
+      "delta_yaw_deg": -88.91427031783371
+    },
+    "9": {
+      "corrected_set_cube_center_6dof": [
+        -274.9633,
+        405.2613,
+        -18.9213,
+        131.678,
+        0.9239,
+        -0.0156
+      ],
+      "n_events": 5,
+      "old_set_cube_center_6dof": [
+        -265.6,
+        407.8,
+        -19.0,
+        -139.7,
+        0.4,
+        179.6
+      ],
+      "delta_yaw_deg": -88.62204464869842
+    },
+    "10": {
+      "corrected_set_cube_center_6dof": [
+        -262.1731,
+        305.3808,
+        -23.2232,
+        11.3157,
+        -18.1223,
+        4.9352
+      ],
+      "n_events": 5,
+      "old_set_cube_center_6dof": [
+        -255.6,
+        302.8,
+        -19.0,
+        130.3,
+        0.4,
+        179.6
+      ],
+      "delta_yaw_deg": -118.98428511698835
+    },
+    "11": {
+      "corrected_set_cube_center_6dof": [
+        -141.748,
+        293.3459,
+        -17.8308,
+        -139.1191,
+        -0.3405,
+        0.3481
+      ],
+      "n_events": 5,
+      "old_set_cube_center_6dof": [
+        -145.4,
+        302.7,
+        -19.0,
+        -49.7,
+        0.4,
+        179.6
+      ],
+      "delta_yaw_deg": -89.41909573639798
+    },
+    "12": {
+      "corrected_set_cube_center_6dof": [
+        -111.5943,
+        298.4499,
+        -15.7105,
+        -18.7282,
+        -0.8498,
+        0.0863
+      ],
+      "n_events": 5,
+      "old_set_cube_center_6dof": [
+        -115.5,
+        302.7,
+        -19.0,
+        70.3,
+        0.4,
+        179.6
+      ],
+      "delta_yaw_deg": -89.02815920202666
+    }
+  }
+}

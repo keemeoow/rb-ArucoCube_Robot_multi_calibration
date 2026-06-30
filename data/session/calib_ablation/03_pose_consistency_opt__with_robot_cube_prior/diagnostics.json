@@ -1,0 +1,32 @@
+{
+  "method": "03_pose_consistency_opt",
+  "prior_mode": "with_robot_cube_prior",
+  "n_pose_obs": 171,
+  "n_corner_obs": 171,
+  "corner_obs_reason_if_zero": "",
+  "reproj_rmse_px": 4.835413328378652,
+  "reproj_median_px": 4.0721366219830495,
+  "pose_trans_rmse_mm": 9.993216148052673,
+  "pose_rot_rmse_deg": 13.53357017392914,
+  "prior_trans_rmse_mm": 0.014153039603116589,
+  "prior_rot_rmse_deg": 178.89742879142383,
+  "prior_stats": {
+    "num_prior_total": 57,
+    "num_prior_used": 57,
+    "num_prior_rejected": 0,
+    "median_prior_trans_error_mm": 7.576694272921795,
+    "median_prior_rot_error_deg": 178.90446051780523,
+    "rotation_prior_used": false,
+    "translation_prior_used": true,
+    "anchor_rms_mm": 8.158406943341038,
+    "reason": "translation-only anchor, rms=8.2mm over 13 sets; rotation prior REJECTED (median 178.9deg > 45deg): orientation in set_cube_center_6dof does not match the observed cube"
+  },
+  "extra": {
+    "optimized": true,
+    "optimizer_success": true,
+    "accepted": true,
+    "cost_initial": 0.002861317160520892,
+    "cost_final": 0.00012859617333157793,
+    "nfev": 44
+  }
+}

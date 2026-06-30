@@ -1,0 +1,2124 @@
+{
+  "prior_stats": {
+    "num_prior_total": 57,
+    "num_prior_used": 57,
+    "num_prior_rejected": 0,
+    "median_prior_trans_error_mm": 7.576694272921795,
+    "median_prior_rot_error_deg": 178.90446051780523,
+    "rotation_prior_used": false,
+    "translation_prior_used": true,
+    "anchor_rms_mm": 8.158406943341038,
+    "reason": "translation-only anchor, rms=8.2mm over 13 sets; rotation prior REJECTED (median 178.9deg > 45deg): orientation in set_cube_center_6dof does not match the observed cube"
+  },
+  "events": [
+    {
+      "event_id": 0,
+      "set_index": 0,
+      "raw_set_cube_center_6dof": [
+        -35.604,
+        353.265,
+        -18.003,
+        -19.687746573167296,
+        -0.35236904400545627,
+        179.55465975368764
+      ],
+      "prior_translation_m": [
+        -0.035604,
+        0.353265,
+        -0.018003
+      ],
+      "prior_rotation_rotvec": [
+        3.0867434307783608,
+        -0.5356456343894268,
+        0.00741022454820315
+      ],
+      "estimated_cube_translation_m": [
+        -0.030817088797951864,
+        0.34917305835843643,
+        -0.017211492995490338
+      ],
+      "estimated_cube_rotation_rotvec": [
+        0.010301073497657062,
+        -0.010170449085114157,
+        -1.916884406622582
+      ],
+      "delta_trans_mm": 6.34704565860712,
+      "delta_rot_deg": 179.35342466815237,
+      "possible_unit_warning": "",
+      "possible_rotation_warning": "rotation prior off by 179deg (>45)",
+      "set_used_for_anchor": true
+    },
+    {
+      "event_id": 1,
+      "set_index": 0,
+      "raw_set_cube_center_6dof": [
+        -35.604,
+        353.265,
+        -18.003,
+        -19.687746573167296,
+        -0.35236904400545627,
+        179.55465975368764
+      ],
+      "prior_translation_m": [
+        -0.035604,
+        0.353265,
+        -0.018003
+      ],
+      "prior_rotation_rotvec": [
+        3.0867434307783608,
+        -0.5356456343894268,
+        0.00741022454820315
+      ],
+      "estimated_cube_translation_m": [
+        -0.03057832862549037,
+        0.3492904719440973,
+        -0.017231153829334378
+      ],
+      "estimated_cube_rotation_rotvec": [
+        0.012040677064812792,
+        -0.011283235846419559,
+        -1.9160657800768808
+      ],
+      "delta_trans_mm": 6.4536805423645065,
+      "delta_rot_deg": 179.25995273959555,
+      "possible_unit_warning": "",
+      "possible_rotation_warning": "rotation prior off by 179deg (>45)",
+      "set_used_for_anchor": true
+    },
+    {
+      "event_id": 2,
+      "set_index": 0,
+      "raw_set_cube_center_6dof": [
+        -35.604,
+        353.265,
+        -18.003,
+        -19.687746573167296,
+        -0.35236904400545627,
+        179.55465975368764
+      ],
+      "prior_translation_m": [
+        -0.035604,
+        0.353265,
+        -0.018003
+      ],
+      "prior_rotation_rotvec": [
+        3.0867434307783608,
+        -0.5356456343894268,
+        0.00741022454820315
+      ],
+      "estimated_cube_translation_m": [
+        -0.030610302936471434,
+        0.34918071346393487,
+        -0.01715579022203262
+      ],
+      "estimated_cube_rotation_rotvec": [
+        0.007733720849587448,
+        -0.010995264407553029,
+        -1.9181256002582545
+      ],
+      "delta_trans_mm": 6.506625183523349,
+      "delta_rot_deg": 179.47071194331917,
+      "possible_unit_warning": "",
+      "possible_rotation_warning": "rotation prior off by 179deg (>45)",
+      "set_used_for_anchor": true
+    },
+    {
+      "event_id": 3,
+      "set_index": 0,
+      "raw_set_cube_center_6dof": [
+        -35.604,
+        353.265,
+        -18.003,
+        -19.687746573167296,
+        -0.35236904400545627,
+        179.55465975368764
+      ],
+      "prior_translation_m": [
+        -0.035604,
+        0.353265,
+        -0.018003
+      ],
+      "prior_rotation_rotvec": [
+        3.0867434307783608,
+        -0.5356456343894268,
+        0.00741022454820315
+      ],
+      "estimated_cube_translation_m": [
+        -0.031162162869239285,
+        0.3489808944978094,
+        -0.016972578795135015
+      ],
+      "estimated_cube_rotation_rotvec": [
+        0.011832155890763873,
+        -0.00977194487416206,
+        -1.915471484562887
+      ],
+      "delta_trans_mm": 6.256616090950419,
+      "delta_rot_deg": 179.2824098157844,
+      "possible_unit_warning": "",
+      "possible_rotation_warning": "rotation prior off by 179deg (>45)",
+      "set_used_for_anchor": true
+    },
+    {
+      "event_id": 4,
+      "set_index": 0,
+      "raw_set_cube_center_6dof": [
+        -35.604,
+        353.265,
+        -18.003,
+        -19.687746573167296,
+        -0.35236904400545627,
+        179.55465975368764
+      ],
+      "prior_translation_m": [
+        -0.035604,
+        0.353265,
+        -0.018003
+      ],
+      "prior_rotation_rotvec": [
+        3.0867434307783608,
+        -0.5356456343894268,
+        0.00741022454820315
+      ],
+      "estimated_cube_translation_m": [
+        -0.03088213525121858,
+        0.3488871713994302,
+        -0.01718360844602196
+      ],
+      "estimated_cube_rotation_rotvec": [
+        0.001813124041649196,
+        -0.008943306304467494,
+        -1.9186497993465763
+      ],
+      "delta_trans_mm": 6.490977775380371,
+      "delta_rot_deg": 179.7733215571368,
+      "possible_unit_warning": "",
+      "possible_rotation_warning": "rotation prior off by 180deg (>45)",
+      "set_used_for_anchor": true
+    },
+    {
+      "event_id": 5,
+      "set_index": 1,
+      "raw_set_cube_center_6dof": [
+        -35.5,
+        443.1,
+        -18.0,
+        -24.7,
+        0.4,
+        179.6
+      ],
+      "prior_translation_m": [
+        -0.0355,
+        0.44310000000000005,
+        -0.018
+      ],
+      "prior_rotation_rotvec": [
+        3.06367242106845,
+        -0.6707506860617989,
+        -0.013035750498106133
+      ],
+      "estimated_cube_translation_m": [
+        -0.030006049876758423,
+        0.4368631647359742,
+        -0.019999330551817546
+      ],
+      "estimated_cube_rotation_rotvec": [
+        -0.20666959648451239,
+        -0.14831432171798778,
+        -2.3194390679899786
+      ],
+      "delta_trans_mm": 8.548621217640493,
+      "delta_rot_deg": 172.8669913482634,
+      "possible_unit_warning": "",
+      "possible_rotation_warning": "rotation prior off by 173deg (>45)",
+      "set_used_for_anchor": true
+    },
+    {
+      "event_id": 6,
+      "set_index": 1,
+      "raw_set_cube_center_6dof": [
+        -35.5,
+        443.1,
+        -18.0,
+        -24.7,
+        0.4,
+        179.6
+      ],
+      "prior_translation_m": [
+        -0.0355,
+        0.44310000000000005,
+        -0.018
+      ],
+      "prior_rotation_rotvec": [
+        3.06367242106845,
+        -0.6707506860617989,
+        -0.013035750498106133
+      ],
+      "estimated_cube_translation_m": [
+        -0.03033883409010446,
+        0.43736273358708766,
+        -0.019835214139446597
+      ],
+      "estimated_cube_rotation_rotvec": [
+        -0.2154914807873567,
+        -0.15490133115537114,
+        -2.3275944697501263
+      ],
+      "delta_trans_mm": 7.93233070287825,
+      "delta_rot_deg": 172.5562600126743,
+      "possible_unit_warning": "",
+      "possible_rotation_warning": "rotation prior off by 173deg (>45)",
+      "set_used_for_anchor": true
+    },
+    {
+      "event_id": 7,
+      "set_index": 1,
+      "raw_set_cube_center_6dof": [
+        -35.5,
+        443.1,
+        -18.0,
+        -24.7,
+        0.4,
+        179.6
+      ],
+      "prior_translation_m": [
+        -0.0355,
+        0.44310000000000005,
+        -0.018
+      ],
+      "prior_rotation_rotvec": [
+        3.06367242106845,
+        -0.6707506860617989,
+        -0.013035750498106133
+      ],
+      "estimated_cube_translation_m": [
+        -0.029953389794248275,
+        0.4368045375537552,
+        -0.01992269002051994
+      ],
+      "estimated_cube_rotation_rotvec": [
+        -0.22221706282935155,
+        -0.15354886613856544,
+        -2.3350900534528556
+      ],
+      "delta_trans_mm": 8.607814420724653,
+      "delta_rot_deg": 172.26036030391802,
+      "possible_unit_warning": "",
+      "possible_rotation_warning": "rotation prior off by 172deg (>45)",
+      "set_used_for_anchor": true
+    },
+    {
+      "event_id": 8,
+      "set_index": 1,
+      "raw_set_cube_center_6dof": [
+        -35.5,
+        443.1,
+        -18.0,
+        -24.7,
+        0.4,
+        179.6
+      ],
+      "prior_translation_m": [
+        -0.0355,
+        0.44310000000000005,
+        -0.018
+      ],
+      "prior_rotation_rotvec": [
+        3.06367242106845,
+        -0.6707506860617989,
+        -0.013035750498106133
+      ],
+      "estimated_cube_translation_m": [
+        -0.030662123244406148,
+        0.4373486790970483,
+        -0.019986733314306573
+      ],
+      "estimated_cube_rotation_rotvec": [
+        -0.21587189548740898,
+        -0.15533352953740437,
+        -2.3274926844902053
+      ],
+      "delta_trans_mm": 7.773664058423211,
+      "delta_rot_deg": 172.5435775134946,
+      "possible_unit_warning": "",
+      "possible_rotation_warning": "rotation prior off by 173deg (>45)",
+      "set_used_for_anchor": true
+    },
+    {
+      "event_id": 9,
+      "set_index": 1,
+      "raw_set_cube_center_6dof": [
+        -35.5,
+        443.1,
+        -18.0,
+        -24.7,
+        0.4,
+        179.6
+      ],
+      "prior_translation_m": [
+        -0.0355,
+        0.44310000000000005,
+        -0.018
+      ],
+      "prior_rotation_rotvec": [
+        3.06367242106845,
+        -0.6707506860617989,
+        -0.013035750498106133
+      ],
+      "estimated_cube_translation_m": [
+        -0.030279963277429767,
+        0.43666356696622666,
+        -0.02014495872000005
+      ],
+      "estimated_cube_rotation_rotvec": [
+        -0.22386814912252279,
+        -0.15488715308685952,
+        -2.3385957349668542
+      ],
+      "delta_trans_mm": 8.560216206015788,
+      "delta_rot_deg": 172.20707897194006,
+      "possible_unit_warning": "",
+      "possible_rotation_warning": "rotation prior off by 172deg (>45)",
+      "set_used_for_anchor": true
+    },
+    {
+      "event_id": 10,
+      "set_index": 2,
+      "raw_set_cube_center_6dof": [
+        -35.5,
+        523.1,
+        -18.0,
+        5.3,
+        0.4,
+        179.6
+      ],
+      "prior_translation_m": [
+        -0.0355,
+        0.5231,
+        -0.018
+      ],
+      "prior_rotation_rotvec": [
+        3.130925179678086,
+        0.14495070275576774,
+        -0.010423198866255833
+      ],
+      "estimated_cube_translation_m": [
+        -0.033530475326329856,
+        0.5276364040193162,
+        -0.017044219285859974
+      ],
+      "estimated_cube_rotation_rotvec": [
+        0.007657021232565216,
+        -0.005059318242466945,
+        -1.4631074057947546
+      ],
+      "delta_trans_mm": 5.037013563629328,
+      "delta_rot_deg": 179.04638838386725,
+      "possible_unit_warning": "",
+      "possible_rotation_warning": "rotation prior off by 179deg (>45)",
+      "set_used_for_anchor": true
+    },
+    {
+      "event_id": 11,
+      "set_index": 2,
+      "raw_set_cube_center_6dof": [
+        -35.5,
+        523.1,
+        -18.0,
+        5.3,
+        0.4,
+        179.6
+      ],
+      "prior_translation_m": [
+        -0.0355,
+        0.5231,
+        -0.018
+      ],
+      "prior_rotation_rotvec": [
+        3.130925179678086,
+        0.14495070275576774,
+        -0.010423198866255833
+      ],
+      "estimated_cube_translation_m": [
+        -0.03330426703209105,
+        0.5272592996536299,
+        -0.017180752720433193
+      ],
+      "estimated_cube_rotation_rotvec": [
+        0.007159723768895466,
+        -0.01354130840633246,
+        -1.4628632369621448
+      ],
+      "delta_trans_mm": 4.774115937021845,
+      "delta_rot_deg": 179.09290459076146,
+      "possible_unit_warning": "",
+      "possible_rotation_warning": "rotation prior off by 179deg (>45)",
+      "set_used_for_anchor": true
+    },
+    {
+      "event_id": 12,
+      "set_index": 2,
+      "raw_set_cube_center_6dof": [
+        -35.5,
+        523.1,
+        -18.0,
+        5.3,
+        0.4,
+        179.6
+      ],
+      "prior_translation_m": [
+        -0.0355,
+        0.5231,
+        -0.018
+      ],
+      "prior_rotation_rotvec": [
+        3.130925179678086,
+        0.14495070275576774,
+        -0.010423198866255833
+      ],
+      "estimated_cube_translation_m": [
+        -0.03342666050184334,
+        0.5270049158983501,
+        -0.017359237535069683
+      ],
+      "estimated_cube_rotation_rotvec": [
+        0.004765907869511462,
+        -0.01083468003326444,
+        -1.4640506518673684
+      ],
+      "delta_trans_mm": 4.467402084463385,
+      "delta_rot_deg": 179.21149543695182,
+      "possible_unit_warning": "",
+      "possible_rotation_warning": "rotation prior off by 179deg (>45)",
+      "set_used_for_anchor": true
+    },
+    {
+      "event_id": 13,
+      "set_index": 2,
+      "raw_set_cube_center_6dof": [
+        -35.5,
+        523.1,
+        -18.0,
+        5.3,
+        0.4,
+        179.6
+      ],
+      "prior_translation_m": [
+        -0.0355,
+        0.5231,
+        -0.018
+      ],
+      "prior_rotation_rotvec": [
+        3.130925179678086,
+        0.14495070275576774,
+        -0.010423198866255833
+      ],
+      "estimated_cube_translation_m": [
+        -0.03391758738445183,
+        0.5275815620363147,
+        -0.017094721854793715
+      ],
+      "estimated_cube_rotation_rotvec": [
+        5.928303011421337e-05,
+        -0.010467279877854173,
+        -1.4702114181785073
+      ],
+      "delta_trans_mm": 4.8381769801622285,
+      "delta_rot_deg": 179.45653657702155,
+      "possible_unit_warning": "",
+      "possible_rotation_warning": "rotation prior off by 179deg (>45)",
+      "set_used_for_anchor": true
+    },
+    {
+      "event_id": 14,
+      "set_index": 2,
+      "raw_set_cube_center_6dof": [
+        -35.5,
+        523.1,
+        -18.0,
+        5.3,
+        0.4,
+        179.6
+      ],
+      "prior_translation_m": [
+        -0.0355,
+        0.5231,
+        -0.018
+      ],
+      "prior_rotation_rotvec": [
+        3.130925179678086,
+        0.14495070275576774,
+        -0.010423198866255833
+      ],
+      "estimated_cube_translation_m": [
+        -0.034186775166646755,
+        0.527395037825379,
+        -0.01765557066622847
+      ],
+      "estimated_cube_rotation_rotvec": [
+        0.0064336582586675475,
+        -0.0035924090524692264,
+        -1.463016408594253
+      ],
+      "delta_trans_mm": 4.504502297738829,
+      "delta_rot_deg": 179.10677245031098,
+      "possible_unit_warning": "",
+      "possible_rotation_warning": "rotation prior off by 179deg (>45)",
+      "set_used_for_anchor": true
+    },
+    {
+      "event_id": 15,
+      "set_index": 3,
+      "raw_set_cube_center_6dof": [
+        -35.6,
+        608.1,
+        -18.0,
+        75.3,
+        0.4,
+        179.6
+      ],
+      "prior_translation_m": [
+        -0.0356,
+        0.6081,
+        -0.018
+      ],
+      "prior_rotation_rotvec": [
+        2.479601013297718,
+        1.913047520619686,
+        -0.001977839632367877
+      ],
+      "estimated_cube_translation_m": [
+        -0.02560114157018778,
+        0.6129171222305476,
+        -0.02070286127238842
+      ],
+      "estimated_cube_rotation_rotvec": [
+        -0.17381121896967952,
+        0.008887357325197033,
+        -0.6244315904270896
+      ],
+      "delta_trans_mm": 11.42310358620803,
+      "delta_rot_deg": 173.1081608796622,
+      "possible_unit_warning": "",
+      "possible_rotation_warning": "rotation prior off by 173deg (>45)",
+      "set_used_for_anchor": true
+    },
+    {
+      "event_id": 16,
+      "set_index": 3,
+      "raw_set_cube_center_6dof": [
+        -35.6,
+        608.1,
+        -18.0,
+        75.3,
+        0.4,
+        179.6
+      ],
+      "prior_translation_m": [
+        -0.0356,
+        0.6081,
+        -0.018
+      ],
+      "prior_rotation_rotvec": [
+        2.479601013297718,
+        1.913047520619686,
+        -0.001977839632367877
+      ],
+      "estimated_cube_translation_m": [
+        -0.027202391587672126,
+        0.6142057294099211,
+        -0.01998019421405338
+      ],
+      "estimated_cube_rotation_rotvec": [
+        -0.16060517171736996,
+        0.006943383625220997,
+        -0.5970813179187318
+      ],
+      "delta_trans_mm": 10.569812098582698,
+      "delta_rot_deg": 173.62148166705705,
+      "possible_unit_warning": "",
+      "possible_rotation_warning": "rotation prior off by 174deg (>45)",
+      "set_used_for_anchor": true
+    },
+    {
+      "event_id": 17,
+      "set_index": 3,
+      "raw_set_cube_center_6dof": [
+        -35.6,
+        608.1,
+        -18.0,
+        75.3,
+        0.4,
+        179.6
+      ],
+      "prior_translation_m": [
+        -0.0356,
+        0.6081,
+        -0.018
+      ],
+      "prior_rotation_rotvec": [
+        2.479601013297718,
+        1.913047520619686,
+        -0.001977839632367877
+      ],
+      "estimated_cube_translation_m": [
+        -0.02560114157018778,
+        0.6129171222305476,
+        -0.02070286127238842
+      ],
+      "estimated_cube_rotation_rotvec": [
+        -0.17381121896967952,
+        0.008887357325197033,
+        -0.6244315904270896
+      ],
+      "delta_trans_mm": 11.42310358620803,
+      "delta_rot_deg": 173.1081608796622,
+      "possible_unit_warning": "",
+      "possible_rotation_warning": "rotation prior off by 173deg (>45)",
+      "set_used_for_anchor": true
+    },
+    {
+      "event_id": 18,
+      "set_index": 4,
+      "raw_set_cube_center_6dof": [
+        -95.5,
+        638.1,
+        -19.0,
+        5.3,
+        0.4,
+        179.6
+      ],
+      "prior_translation_m": [
+        -0.0955,
+        0.6381,
+        -0.019
+      ],
+      "prior_rotation_rotvec": [
+        3.130925179678086,
+        0.14495070275576774,
+        -0.010423198866255833
+      ],
+      "estimated_cube_translation_m": [
+        -0.09203515596586942,
+        0.6501144650021431,
+        -0.0190953327867682
+      ],
+      "estimated_cube_rotation_rotvec": [
+        0.014248086278128095,
+        0.0015610364713335983,
+        -1.4534523197335607
+      ],
+      "delta_trans_mm": 12.50446327551904,
+      "delta_rot_deg": 178.68500666342536,
+      "possible_unit_warning": "",
+      "possible_rotation_warning": "rotation prior off by 179deg (>45)",
+      "set_used_for_anchor": true
+    },
+    {
+      "event_id": 19,
+      "set_index": 4,
+      "raw_set_cube_center_6dof": [
+        -95.5,
+        638.1,
+        -19.0,
+        5.3,
+        0.4,
+        179.6
+      ],
+      "prior_translation_m": [
+        -0.0955,
+        0.6381,
+        -0.019
+      ],
+      "prior_rotation_rotvec": [
+        3.130925179678086,
+        0.14495070275576774,
+        -0.010423198866255833
+      ],
+      "estimated_cube_translation_m": [
+        -0.09208752207688858,
+        0.6502818321737966,
+        -0.01907518364345917
+      ],
+      "estimated_cube_rotation_rotvec": [
+        0.013920550717288916,
+        0.002509148153598071,
+        -1.4532983889141822
+      ],
+      "delta_trans_mm": 12.650995742095331,
+      "delta_rot_deg": 178.69983554709177,
+      "possible_unit_warning": "",
+      "possible_rotation_warning": "rotation prior off by 179deg (>45)",
+      "set_used_for_anchor": true
+    },
+    {
+      "event_id": 20,
+      "set_index": 4,
+      "raw_set_cube_center_6dof": [
+        -95.5,
+        638.1,
+        -19.0,
+        5.3,
+        0.4,
+        179.6
+      ],
+      "prior_translation_m": [
+        -0.0955,
+        0.6381,
+        -0.019
+      ],
+      "prior_rotation_rotvec": [
+        3.130925179678086,
+        0.14495070275576774,
+        -0.010423198866255833
+      ],
+      "estimated_cube_translation_m": [
+        -0.09209553740976717,
+        0.6501270574504555,
+        -0.019105041804404227
+      ],
+      "estimated_cube_rotation_rotvec": [
+        0.016542250638041288,
+        0.0009572807210076114,
+        -1.455413648104484
+      ],
+      "delta_trans_mm": 12.500060408875122,
+      "delta_rot_deg": 178.5666283384943,
+      "possible_unit_warning": "",
+      "possible_rotation_warning": "rotation prior off by 179deg (>45)",
+      "set_used_for_anchor": true
+    },
+    {
+      "event_id": 21,
+      "set_index": 5,
+      "raw_set_cube_center_6dof": [
+        -165.5,
+        637.9,
+        -19.0,
+        -54.7,
+        0.4,
+        179.6
+      ],
+      "prior_translation_m": [
+        -0.1655,
+        0.6379,
+        -0.019
+      ],
+      "prior_rotation_rotvec": [
+        2.7877427339122725,
+        -1.441900502134332,
+        -0.014764357337661902
+      ],
+      "estimated_cube_translation_m": [
+        -0.1653039648408709,
+        0.6433875854667018,
+        -0.01875594332977565
+      ],
+      "estimated_cube_rotation_rotvec": [
+        0.031608316882504435,
+        0.01362578935282395,
+        -2.510680185424254
+      ],
+      "delta_trans_mm": 5.496506863113323,
+      "delta_rot_deg": 178.4878472802704,
+      "possible_unit_warning": "",
+      "possible_rotation_warning": "rotation prior off by 178deg (>45)",
+      "set_used_for_anchor": true
+    },
+    {
+      "event_id": 22,
+      "set_index": 5,
+      "raw_set_cube_center_6dof": [
+        -165.5,
+        637.9,
+        -19.0,
+        -54.7,
+        0.4,
+        179.6
+      ],
+      "prior_translation_m": [
+        -0.1655,
+        0.6379,
+        -0.019
+      ],
+      "prior_rotation_rotvec": [
+        2.7877427339122725,
+        -1.441900502134332,
+        -0.014764357337661902
+      ],
+      "estimated_cube_translation_m": [
+        -0.16427414291171843,
+        0.6428038325221804,
+        -0.018444209159148378
+      ],
+      "estimated_cube_rotation_rotvec": [
+        0.03156851075943499,
+        0.010133740444274364,
+        -2.5123894547698593
+      ],
+      "delta_trans_mm": 5.0851944373109355,
+      "delta_rot_deg": 178.4201672755739,
+      "possible_unit_warning": "",
+      "possible_rotation_warning": "rotation prior off by 178deg (>45)",
+      "set_used_for_anchor": true
+    },
+    {
+      "event_id": 23,
+      "set_index": 5,
+      "raw_set_cube_center_6dof": [
+        -165.5,
+        637.9,
+        -19.0,
+        -54.7,
+        0.4,
+        179.6
+      ],
+      "prior_translation_m": [
+        -0.1655,
+        0.6379,
+        -0.019
+      ],
+      "prior_rotation_rotvec": [
+        2.7877427339122725,
+        -1.441900502134332,
+        -0.014764357337661902
+      ],
+      "estimated_cube_translation_m": [
+        -0.16496065306336472,
+        0.6434296407553465,
+        -0.018746710960411667
+      ],
+      "estimated_cube_rotation_rotvec": [
+        0.037190085338960475,
+        0.010180142324025386,
+        -2.510022734618639
+      ],
+      "delta_trans_mm": 5.56165239284348,
+      "delta_rot_deg": 178.20387462267152,
+      "possible_unit_warning": "",
+      "possible_rotation_warning": "rotation prior off by 178deg (>45)",
+      "set_used_for_anchor": true
+    },
+    {
+      "event_id": 24,
+      "set_index": 5,
+      "raw_set_cube_center_6dof": [
+        -165.5,
+        637.9,
+        -19.0,
+        -54.7,
+        0.4,
+        179.6
+      ],
+      "prior_translation_m": [
+        -0.1655,
+        0.6379,
+        -0.019
+      ],
+      "prior_rotation_rotvec": [
+        2.7877427339122725,
+        -1.441900502134332,
+        -0.014764357337661902
+      ],
+      "estimated_cube_translation_m": [
+        -0.1651292278779185,
+        0.643325781446079,
+        -0.01870319643173532
+      ],
+      "estimated_cube_rotation_rotvec": [
+        0.03522154673932908,
+        0.011266337800840234,
+        -2.5108292371142764
+      ],
+      "delta_trans_mm": 5.44652812581201,
+      "delta_rot_deg": 178.30161339574101,
+      "possible_unit_warning": "",
+      "possible_rotation_warning": "rotation prior off by 178deg (>45)",
+      "set_used_for_anchor": true
+    },
+    {
+      "event_id": 25,
+      "set_index": 6,
+      "raw_set_cube_center_6dof": [
+        -225.6,
+        637.8,
+        -19.0,
+        -134.7,
+        0.4,
+        179.6
+      ],
+      "prior_translation_m": [
+        -0.2256,
+        0.6377999999999999,
+        -0.019
+      ],
+      "prior_rotation_rotvec": [
+        -1.2084068261651826,
+        2.8957860728735096,
+        0.014326322261021705
+      ],
+      "estimated_cube_translation_m": [
+        -0.22841140421129974,
+        0.6367760294278786,
+        -0.017000524884413226
+      ],
+      "estimated_cube_rotation_rotvec": [
+        -0.01280695994935209,
+        0.006600719691775874,
+        2.374325422319651
+      ],
+      "delta_trans_mm": 3.598667824311556,
+      "delta_rot_deg": 178.94097344762238,
+      "possible_unit_warning": "",
+      "possible_rotation_warning": "rotation prior off by 179deg (>45)",
+      "set_used_for_anchor": true
+    },
+    {
+      "event_id": 26,
+      "set_index": 6,
+      "raw_set_cube_center_6dof": [
+        -225.6,
+        637.8,
+        -19.0,
+        -134.7,
+        0.4,
+        179.6
+      ],
+      "prior_translation_m": [
+        -0.2256,
+        0.6377999999999999,
+        -0.019
+      ],
+      "prior_rotation_rotvec": [
+        -1.2084068261651826,
+        2.8957860728735096,
+        0.014326322261021705
+      ],
+      "estimated_cube_translation_m": [
+        -0.2292577685149607,
+        0.6354678618386148,
+        -0.017501661623632314
+      ],
+      "estimated_cube_rotation_rotvec": [
+        -0.0027419979401368533,
+        0.006219310249084314,
+        2.359862073859399
+      ],
+      "delta_trans_mm": 4.589461493783661,
+      "delta_rot_deg": 179.12922059963543,
+      "possible_unit_warning": "",
+      "possible_rotation_warning": "rotation prior off by 179deg (>45)",
+      "set_used_for_anchor": true
+    },
+    {
+      "event_id": 27,
+      "set_index": 6,
+      "raw_set_cube_center_6dof": [
+        -225.6,
+        637.8,
+        -19.0,
+        -134.7,
+        0.4,
+        179.6
+      ],
+      "prior_translation_m": [
+        -0.2256,
+        0.6377999999999999,
+        -0.019
+      ],
+      "prior_rotation_rotvec": [
+        -1.2084068261651826,
+        2.8957860728735096,
+        0.014326322261021705
+      ],
+      "estimated_cube_translation_m": [
+        -0.22880434660946602,
+        0.6352688387950354,
+        -0.017418174946043224
+      ],
+      "estimated_cube_rotation_rotvec": [
+        -0.013941581610090473,
+        0.009723121290753162,
+        2.378015805979051
+      ],
+      "delta_trans_mm": 4.379130591845766,
+      "delta_rot_deg": 178.7929836266976,
+      "possible_unit_warning": "",
+      "possible_rotation_warning": "rotation prior off by 179deg (>45)",
+      "set_used_for_anchor": true
+    },
+    {
+      "event_id": 28,
+      "set_index": 7,
+      "raw_set_cube_center_6dof": [
+        -265.5,
+        557.9,
+        -19.0,
+        -64.7,
+        0.4,
+        179.6
+      ],
+      "prior_translation_m": [
+        -0.2655,
+        0.5579,
+        -0.019
+      ],
+      "prior_rotation_rotvec": [
+        2.6521655391059125,
+        -1.679825370026942,
+        -0.015121603677862815
+      ],
+      "estimated_cube_translation_m": [
+        -0.2708175838394562,
+        0.5570262734794458,
+        -0.018006777584966938
+      ],
+      "estimated_cube_rotation_rotvec": [
+        0.025025665764350502,
+        -0.0007274088108511896,
+        -2.6979886303517633
+      ],
+      "delta_trans_mm": 5.47965205903528,
+      "delta_rot_deg": 178.54226031384852,
+      "possible_unit_warning": "",
+      "possible_rotation_warning": "rotation prior off by 179deg (>45)",
+      "set_used_for_anchor": true
+    },
+    {
+      "event_id": 29,
+      "set_index": 7,
+      "raw_set_cube_center_6dof": [
+        -265.5,
+        557.9,
+        -19.0,
+        -64.7,
+        0.4,
+        179.6
+      ],
+      "prior_translation_m": [
+        -0.2655,
+        0.5579,
+        -0.019
+      ],
+      "prior_rotation_rotvec": [
+        2.6521655391059125,
+        -1.679825370026942,
+        -0.015121603677862815
+      ],
+      "estimated_cube_translation_m": [
+        -0.2708440168766424,
+        0.5569716906875859,
+        -0.01797900732146232
+      ],
+      "estimated_cube_rotation_rotvec": [
+        0.02460339824262449,
+        -0.0008344813430118626,
+        -2.6967533998983995
+      ],
+      "delta_trans_mm": 5.519302547150385,
+      "delta_rot_deg": 178.55438595018916,
+      "possible_unit_warning": "",
+      "possible_rotation_warning": "rotation prior off by 179deg (>45)",
+      "set_used_for_anchor": true
+    },
+    {
+      "event_id": 30,
+      "set_index": 7,
+      "raw_set_cube_center_6dof": [
+        -265.5,
+        557.9,
+        -19.0,
+        -64.7,
+        0.4,
+        179.6
+      ],
+      "prior_translation_m": [
+        -0.2655,
+        0.5579,
+        -0.019
+      ],
+      "prior_rotation_rotvec": [
+        2.6521655391059125,
+        -1.679825370026942,
+        -0.015121603677862815
+      ],
+      "estimated_cube_translation_m": [
+        -0.271056744657511,
+        0.5570151066348681,
+        -0.018151591506978842
+      ],
+      "estimated_cube_rotation_rotvec": [
+        0.024450790739742267,
+        -0.0033574822661470148,
+        -2.6950601073248284
+      ],
+      "delta_trans_mm": 5.69036417353599,
+      "delta_rot_deg": 178.50337042341255,
+      "possible_unit_warning": "",
+      "possible_rotation_warning": "rotation prior off by 179deg (>45)",
+      "set_used_for_anchor": true
+    },
+    {
+      "event_id": 31,
+      "set_index": 7,
+      "raw_set_cube_center_6dof": [
+        -265.5,
+        557.9,
+        -19.0,
+        -64.7,
+        0.4,
+        179.6
+      ],
+      "prior_translation_m": [
+        -0.2655,
+        0.5579,
+        -0.019
+      ],
+      "prior_rotation_rotvec": [
+        2.6521655391059125,
+        -1.679825370026942,
+        -0.015121603677862815
+      ],
+      "estimated_cube_translation_m": [
+        -0.27224708711034873,
+        0.557012428085349,
+        -0.01870631958524102
+      ],
+      "estimated_cube_rotation_rotvec": [
+        0.024075555449965595,
+        -0.0070971458332114695,
+        -2.6892963265899534
+      ],
+      "delta_trans_mm": 6.811550232092852,
+      "delta_rot_deg": 178.43206490383992,
+      "possible_unit_warning": "",
+      "possible_rotation_warning": "rotation prior off by 178deg (>45)",
+      "set_used_for_anchor": true
+    },
+    {
+      "event_id": 32,
+      "set_index": 8,
+      "raw_set_cube_center_6dof": [
+        -265.5,
+        488.0,
+        -19.0,
+        35.3,
+        0.4,
+        179.6
+      ],
+      "prior_translation_m": [
+        -0.2655,
+        0.488,
+        -0.019
+      ],
+      "prior_rotation_rotvec": [
+        2.985330864286698,
+        0.9499109330891344,
+        -0.007105152126518505
+      ],
+      "estimated_cube_translation_m": [
+        -0.2721059232673653,
+        0.48880187753411297,
+        -0.01865110811046622
+      ],
+      "estimated_cube_rotation_rotvec": [
+        0.013752334481013075,
+        -0.026782683929842996,
+        -0.9366094496411036
+      ],
+      "delta_trans_mm": 6.663554257647786,
+      "delta_rot_deg": 179.15916703900874,
+      "possible_unit_warning": "",
+      "possible_rotation_warning": "rotation prior off by 179deg (>45)",
+      "set_used_for_anchor": true
+    },
+    {
+      "event_id": 33,
+      "set_index": 8,
+      "raw_set_cube_center_6dof": [
+        -265.5,
+        488.0,
+        -19.0,
+        35.3,
+        0.4,
+        179.6
+      ],
+      "prior_translation_m": [
+        -0.2655,
+        0.488,
+        -0.019
+      ],
+      "prior_rotation_rotvec": [
+        2.985330864286698,
+        0.9499109330891344,
+        -0.007105152126518505
+      ],
+      "estimated_cube_translation_m": [
+        -0.27177368927872725,
+        0.48675395017872647,
+        -0.018756864459429395
+      ],
+      "estimated_cube_rotation_rotvec": [
+        0.018599422190681936,
+        -0.036522927958388816,
+        -0.9357886608655531
+      ],
+      "delta_trans_mm": 6.400854022253646,
+      "delta_rot_deg": 179.06723204814108,
+      "possible_unit_warning": "",
+      "possible_rotation_warning": "rotation prior off by 179deg (>45)",
+      "set_used_for_anchor": true
+    },
+    {
+      "event_id": 34,
+      "set_index": 8,
+      "raw_set_cube_center_6dof": [
+        -265.5,
+        488.0,
+        -19.0,
+        35.3,
+        0.4,
+        179.6
+      ],
+      "prior_translation_m": [
+        -0.2655,
+        0.488,
+        -0.019
+      ],
+      "prior_rotation_rotvec": [
+        2.985330864286698,
+        0.9499109330891344,
+        -0.007105152126518505
+      ],
+      "estimated_cube_translation_m": [
+        -0.27533558414266096,
+        0.4876810091078359,
+        -0.019948005106146194
+      ],
+      "estimated_cube_rotation_rotvec": [
+        0.012242020603783928,
+        -0.031085166664654766,
+        -0.9333081151096793
+      ],
+      "delta_trans_mm": 9.886312977947123,
+      "delta_rot_deg": 179.31067816513726,
+      "possible_unit_warning": "",
+      "possible_rotation_warning": "rotation prior off by 179deg (>45)",
+      "set_used_for_anchor": true
+    },
+    {
+      "event_id": 35,
+      "set_index": 8,
+      "raw_set_cube_center_6dof": [
+        -265.5,
+        488.0,
+        -19.0,
+        35.3,
+        0.4,
+        179.6
+      ],
+      "prior_translation_m": [
+        -0.2655,
+        0.488,
+        -0.019
+      ],
+      "prior_rotation_rotvec": [
+        2.985330864286698,
+        0.9499109330891344,
+        -0.007105152126518505
+      ],
+      "estimated_cube_translation_m": [
+        -0.2760912657879548,
+        0.4865537232221798,
+        -0.020392454140539168
+      ],
+      "estimated_cube_rotation_rotvec": [
+        0.012328428599482924,
+        -0.032215625273249074,
+        -0.9339059520913691
+      ],
+      "delta_trans_mm": 10.779868090225765,
+      "delta_rot_deg": 179.32507194083493,
+      "possible_unit_warning": "",
+      "possible_rotation_warning": "rotation prior off by 179deg (>45)",
+      "set_used_for_anchor": true
+    },
+    {
+      "event_id": 36,
+      "set_index": 8,
+      "raw_set_cube_center_6dof": [
+        -265.5,
+        488.0,
+        -19.0,
+        35.3,
+        0.4,
+        179.6
+      ],
+      "prior_translation_m": [
+        -0.2655,
+        0.488,
+        -0.019
+      ],
+      "prior_rotation_rotvec": [
+        2.985330864286698,
+        0.9499109330891344,
+        -0.007105152126518505
+      ],
+      "estimated_cube_translation_m": [
+        -0.27221140998684235,
+        0.4889043805480457,
+        -0.018189013581664915
+      ],
+      "estimated_cube_rotation_rotvec": [
+        0.008449271634569447,
+        -0.030486040076373896,
+        -0.9373463531223151
+      ],
+      "delta_trans_mm": 6.820456521223114,
+      "delta_rot_deg": 179.50023916625184,
+      "possible_unit_warning": "",
+      "possible_rotation_warning": "rotation prior off by 180deg (>45)",
+      "set_used_for_anchor": true
+    },
+    {
+      "event_id": 37,
+      "set_index": 9,
+      "raw_set_cube_center_6dof": [
+        -265.6,
+        407.8,
+        -19.0,
+        -139.7,
+        0.4,
+        179.6
+      ],
+      "prior_translation_m": [
+        -0.2656,
+        0.4078,
+        -0.019
+      ],
+      "prior_rotation_rotvec": [
+        -1.0808087183766855,
+        2.9453704756854644,
+        0.014053994416183001
+      ],
+      "estimated_cube_translation_m": [
+        -0.274482784248129,
+        0.405521518579062,
+        -0.018797380194704172
+      ],
+      "estimated_cube_rotation_rotvec": [
+        -0.022697580293718853,
+        0.007992098575731963,
+        2.2972470981489312
+      ],
+      "delta_trans_mm": 9.172588967672414,
+      "delta_rot_deg": 178.7371948289654,
+      "possible_unit_warning": "",
+      "possible_rotation_warning": "rotation prior off by 179deg (>45)",
+      "set_used_for_anchor": true
+    },
+    {
+      "event_id": 38,
+      "set_index": 9,
+      "raw_set_cube_center_6dof": [
+        -265.6,
+        407.8,
+        -19.0,
+        -139.7,
+        0.4,
+        179.6
+      ],
+      "prior_translation_m": [
+        -0.2656,
+        0.4078,
+        -0.019
+      ],
+      "prior_rotation_rotvec": [
+        -1.0808087183766855,
+        2.9453704756854644,
+        0.014053994416183001
+      ],
+      "estimated_cube_translation_m": [
+        -0.274482784248129,
+        0.405521518579062,
+        -0.018797380194704172
+      ],
+      "estimated_cube_rotation_rotvec": [
+        -0.022697580293718853,
+        0.007992098575731963,
+        2.2972470981489312
+      ],
+      "delta_trans_mm": 9.172588967672414,
+      "delta_rot_deg": 178.7371948289654,
+      "possible_unit_warning": "",
+      "possible_rotation_warning": "rotation prior off by 179deg (>45)",
+      "set_used_for_anchor": true
+    },
+    {
+      "event_id": 39,
+      "set_index": 9,
+      "raw_set_cube_center_6dof": [
+        -265.6,
+        407.8,
+        -19.0,
+        -139.7,
+        0.4,
+        179.6
+      ],
+      "prior_translation_m": [
+        -0.2656,
+        0.4078,
+        -0.019
+      ],
+      "prior_rotation_rotvec": [
+        -1.0808087183766855,
+        2.9453704756854644,
+        0.014053994416183001
+      ],
+      "estimated_cube_translation_m": [
+        -0.27443565291944305,
+        0.4053666664557332,
+        -0.018699810325984972
+      ],
+      "estimated_cube_rotation_rotvec": [
+        -0.02324006353243641,
+        0.009491339877395637,
+        2.2975935195227217
+      ],
+      "delta_trans_mm": 9.169514081504074,
+      "delta_rot_deg": 178.66470736295182,
+      "possible_unit_warning": "",
+      "possible_rotation_warning": "rotation prior off by 179deg (>45)",
+      "set_used_for_anchor": true
+    },
+    {
+      "event_id": 40,
+      "set_index": 9,
+      "raw_set_cube_center_6dof": [
+        -265.6,
+        407.8,
+        -19.0,
+        -139.7,
+        0.4,
+        179.6
+      ],
+      "prior_translation_m": [
+        -0.2656,
+        0.4078,
+        -0.019
+      ],
+      "prior_rotation_rotvec": [
+        -1.0808087183766855,
+        2.9453704756854644,
+        0.014053994416183001
+      ],
+      "estimated_cube_translation_m": [
+        -0.2757429996382271,
+        0.404741782161881,
+        -0.01908174603381274
+      ],
+      "estimated_cube_rotation_rotvec": [
+        -0.012959069925690967,
+        0.0064198763618924385,
+        2.298006943705342
+      ],
+      "delta_trans_mm": 10.594329635258147,
+      "delta_rot_deg": 178.95706568370056,
+      "possible_unit_warning": "",
+      "possible_rotation_warning": "rotation prior off by 179deg (>45)",
+      "set_used_for_anchor": true
+    },
+    {
+      "event_id": 41,
+      "set_index": 9,
+      "raw_set_cube_center_6dof": [
+        -265.6,
+        407.8,
+        -19.0,
+        -139.7,
+        0.4,
+        179.6
+      ],
+      "prior_translation_m": [
+        -0.2656,
+        0.4078,
+        -0.019
+      ],
+      "prior_rotation_rotvec": [
+        -1.0808087183766855,
+        2.9453704756854644,
+        0.014053994416183001
+      ],
+      "estimated_cube_translation_m": [
+        -0.2756723712362128,
+        0.4051548557094422,
+        -0.01923042434044267
+      ],
+      "estimated_cube_rotation_rotvec": [
+        -0.011749297475462765,
+        0.00810261148956706,
+        2.300662387796782
+      ],
+      "delta_trans_mm": 10.416455539895791,
+      "delta_rot_deg": 178.90446051780523,
+      "possible_unit_warning": "",
+      "possible_rotation_warning": "rotation prior off by 179deg (>45)",
+      "set_used_for_anchor": true
+    },
+    {
+      "event_id": 42,
+      "set_index": 10,
+      "raw_set_cube_center_6dof": [
+        -255.6,
+        302.8,
+        -19.0,
+        130.3,
+        0.4,
+        179.6
+      ],
+      "prior_translation_m": [
+        -0.2556,
+        0.3028,
+        -0.019
+      ],
+      "prior_rotation_rotvec": [
+        1.3163041326384057,
+        2.842317392337852,
+        0.0053266359173904125
+      ],
+      "estimated_cube_translation_m": [
+        -0.2615875690000337,
+        0.305444012715256,
+        -0.022816347774604118
+      ],
+      "estimated_cube_rotation_rotvec": [
+        0.11237413588477767,
+        -0.2973663814367419,
+        0.20888178779088257
+      ],
+      "delta_trans_mm": 7.576694272921795,
+      "delta_rot_deg": 167.8411038913597,
+      "possible_unit_warning": "",
+      "possible_rotation_warning": "rotation prior off by 168deg (>45)",
+      "set_used_for_anchor": true
+    },
+    {
+      "event_id": 43,
+      "set_index": 10,
+      "raw_set_cube_center_6dof": [
+        -255.6,
+        302.8,
+        -19.0,
+        130.3,
+        0.4,
+        179.6
+      ],
+      "prior_translation_m": [
+        -0.2556,
+        0.3028,
+        -0.019
+      ],
+      "prior_rotation_rotvec": [
+        1.3163041326384057,
+        2.842317392337852,
+        0.0053266359173904125
+      ],
+      "estimated_cube_translation_m": [
+        -0.26154413772093676,
+        0.3055585918454756,
+        -0.022900331000223262
+      ],
+      "estimated_cube_rotation_rotvec": [
+        0.11286591969256148,
+        -0.29816236347778374,
+        0.20590435284833838
+      ],
+      "delta_trans_mm": 7.625954637072709,
+      "delta_rot_deg": 167.81097915265823,
+      "possible_unit_warning": "",
+      "possible_rotation_warning": "rotation prior off by 168deg (>45)",
+      "set_used_for_anchor": true
+    },
+    {
+      "event_id": 44,
+      "set_index": 10,
+      "raw_set_cube_center_6dof": [
+        -255.6,
+        302.8,
+        -19.0,
+        130.3,
+        0.4,
+        179.6
+      ],
+      "prior_translation_m": [
+        -0.2556,
+        0.3028,
+        -0.019
+      ],
+      "prior_rotation_rotvec": [
+        1.3163041326384057,
+        2.842317392337852,
+        0.0053266359173904125
+      ],
+      "estimated_cube_translation_m": [
+        -0.2615023093133639,
+        0.30578182734732784,
+        -0.023095433299619994
+      ],
+      "estimated_cube_rotation_rotvec": [
+        0.11492102154813773,
+        -0.3048913004224808,
+        0.19303817798692743
+      ],
+      "delta_trans_mm": 7.778246812202015,
+      "delta_rot_deg": 167.5091353502014,
+      "possible_unit_warning": "",
+      "possible_rotation_warning": "rotation prior off by 168deg (>45)",
+      "set_used_for_anchor": true
+    },
+    {
+      "event_id": 45,
+      "set_index": 10,
+      "raw_set_cube_center_6dof": [
+        -255.6,
+        302.8,
+        -19.0,
+        130.3,
+        0.4,
+        179.6
+      ],
+      "prior_translation_m": [
+        -0.2556,
+        0.3028,
+        -0.019
+      ],
+      "prior_rotation_rotvec": [
+        1.3163041326384057,
+        2.842317392337852,
+        0.0053266359173904125
+      ],
+      "estimated_cube_translation_m": [
+        -0.26468732940509654,
+        0.3045607666635126,
+        -0.0244035552355181
+      ],
+      "estimated_cube_rotation_rotvec": [
+        0.12886162093733655,
+        -0.33491866545815646,
+        0.23301830104645274
+      ],
+      "delta_trans_mm": 10.718127828280677,
+      "delta_rot_deg": 166.30788664578768,
+      "possible_unit_warning": "",
+      "possible_rotation_warning": "rotation prior off by 166deg (>45)",
+      "set_used_for_anchor": true
+    },
+    {
+      "event_id": 46,
+      "set_index": 10,
+      "raw_set_cube_center_6dof": [
+        -255.6,
+        302.8,
+        -19.0,
+        130.3,
+        0.4,
+        179.6
+      ],
+      "prior_translation_m": [
+        -0.2556,
+        0.3028,
+        -0.019
+      ],
+      "prior_rotation_rotvec": [
+        1.3163041326384057,
+        2.842317392337852,
+        0.0053266359173904125
+      ],
+      "estimated_cube_translation_m": [
+        -0.26154413772093676,
+        0.3055585918454756,
+        -0.022900331000223262
+      ],
+      "estimated_cube_rotation_rotvec": [
+        0.11286591969256148,
+        -0.29816236347778374,
+        0.20590435284833838
+      ],
+      "delta_trans_mm": 7.625954637072709,
+      "delta_rot_deg": 167.81097915265823,
+      "possible_unit_warning": "",
+      "possible_rotation_warning": "rotation prior off by 168deg (>45)",
+      "set_used_for_anchor": true
+    },
+    {
+      "event_id": 47,
+      "set_index": 11,
+      "raw_set_cube_center_6dof": [
+        -145.4,
+        302.7,
+        -19.0,
+        -49.7,
+        0.4,
+        179.6
+      ],
+      "prior_translation_m": [
+        -0.1454,
+        0.30269999999999997,
+        -0.019
+      ],
+      "prior_rotation_rotvec": [
+        2.847615366864083,
+        -1.3187576748720389,
+        -0.01454350958307684
+      ],
+      "estimated_cube_translation_m": [
+        -0.1415993964038561,
+        0.2935254689849341,
+        -0.01790413834859758
+      ],
+      "estimated_cube_rotation_rotvec": [
+        0.001963126481732347,
+        -0.008922096407329865,
+        -2.4274875082510237
+      ],
+      "delta_trans_mm": 9.99087182384212,
+      "delta_rot_deg": 179.1897113980004,
+      "possible_unit_warning": "",
+      "possible_rotation_warning": "rotation prior off by 179deg (>45)",
+      "set_used_for_anchor": true
+    },
+    {
+      "event_id": 48,
+      "set_index": 11,
+      "raw_set_cube_center_6dof": [
+        -145.4,
+        302.7,
+        -19.0,
+        -49.7,
+        0.4,
+        179.6
+      ],
+      "prior_translation_m": [
+        -0.1454,
+        0.30269999999999997,
+        -0.019
+      ],
+      "prior_rotation_rotvec": [
+        2.847615366864083,
+        -1.3187576748720389,
+        -0.01454350958307684
+      ],
+      "estimated_cube_translation_m": [
+        -0.14158604978910677,
+        0.29305297914422423,
+        -0.017636876427834403
+      ],
+      "estimated_cube_rotation_rotvec": [
+        -0.0006762471077017586,
+        -0.013116891126868998,
+        -2.4269321536630026
+      ],
+      "delta_trans_mm": 10.46275936242148,
+      "delta_rot_deg": 179.21765216100258,
+      "possible_unit_warning": "",
+      "possible_rotation_warning": "rotation prior off by 179deg (>45)",
+      "set_used_for_anchor": true
+    },
+    {
+      "event_id": 49,
+      "set_index": 11,
+      "raw_set_cube_center_6dof": [
+        -145.4,
+        302.7,
+        -19.0,
+        -49.7,
+        0.4,
+        179.6
+      ],
+      "prior_translation_m": [
+        -0.1454,
+        0.30269999999999997,
+        -0.019
+      ],
+      "prior_rotation_rotvec": [
+        2.847615366864083,
+        -1.3187576748720389,
+        -0.01454350958307684
+      ],
+      "estimated_cube_translation_m": [
+        -0.141851485743342,
+        0.2933836821245286,
+        -0.01787094295350708
+      ],
+      "estimated_cube_rotation_rotvec": [
+        -0.007873670309902834,
+        -0.0094301571098246,
+        -2.4286049363556366
+      ],
+      "delta_trans_mm": 10.03297074653207,
+      "delta_rot_deg": 179.57502092381148,
+      "possible_unit_warning": "",
+      "possible_rotation_warning": "rotation prior off by 180deg (>45)",
+      "set_used_for_anchor": true
+    },
+    {
+      "event_id": 50,
+      "set_index": 11,
+      "raw_set_cube_center_6dof": [
+        -145.4,
+        302.7,
+        -19.0,
+        -49.7,
+        0.4,
+        179.6
+      ],
+      "prior_translation_m": [
+        -0.1454,
+        0.30269999999999997,
+        -0.019
+      ],
+      "prior_rotation_rotvec": [
+        2.847615366864083,
+        -1.3187576748720389,
+        -0.01454350958307684
+      ],
+      "estimated_cube_translation_m": [
+        -0.141851485743342,
+        0.2933836821245286,
+        -0.01787094295350708
+      ],
+      "estimated_cube_rotation_rotvec": [
+        -0.007873670309902834,
+        -0.0094301571098246,
+        -2.4286049363556366
+      ],
+      "delta_trans_mm": 10.03297074653207,
+      "delta_rot_deg": 179.57502092381148,
+      "possible_unit_warning": "",
+      "possible_rotation_warning": "rotation prior off by 180deg (>45)",
+      "set_used_for_anchor": true
+    },
+    {
+      "event_id": 51,
+      "set_index": 11,
+      "raw_set_cube_center_6dof": [
+        -145.4,
+        302.7,
+        -19.0,
+        -49.7,
+        0.4,
+        179.6
+      ],
+      "prior_translation_m": [
+        -0.1454,
+        0.30269999999999997,
+        -0.019
+      ],
+      "prior_rotation_rotvec": [
+        2.847615366864083,
+        -1.3187576748720389,
+        -0.01454350958307684
+      ],
+      "estimated_cube_translation_m": [
+        -0.141851485743342,
+        0.2933836821245286,
+        -0.01787094295350708
+      ],
+      "estimated_cube_rotation_rotvec": [
+        -0.007873670309902834,
+        -0.0094301571098246,
+        -2.4286049363556366
+      ],
+      "delta_trans_mm": 10.03297074653207,
+      "delta_rot_deg": 179.57502092381148,
+      "possible_unit_warning": "",
+      "possible_rotation_warning": "rotation prior off by 180deg (>45)",
+      "set_used_for_anchor": true
+    },
+    {
+      "event_id": 52,
+      "set_index": 12,
+      "raw_set_cube_center_6dof": [
+        -115.5,
+        302.7,
+        -19.0,
+        70.3,
+        0.4,
+        179.6
+      ],
+      "prior_translation_m": [
+        -0.1155,
+        0.30269999999999997,
+        -0.019
+      ],
+      "prior_rotation_rotvec": [
+        2.5607392085076666,
+        1.8031048478195653,
+        -0.002644839173062603
+      ],
+      "estimated_cube_translation_m": [
+        -0.11218669474707643,
+        0.2982989030740283,
+        -0.016045914049374943
+      ],
+      "estimated_cube_rotation_rotvec": [
+        0.000351136362959155,
+        -0.016167467690968457,
+        -0.32283574232057527
+      ],
+      "delta_trans_mm": 6.250941501448301,
+      "delta_rot_deg": 179.94897899228388,
+      "possible_unit_warning": "",
+      "possible_rotation_warning": "rotation prior off by 180deg (>45)",
+      "set_used_for_anchor": true
+    },
+    {
+      "event_id": 53,
+      "set_index": 12,
+      "raw_set_cube_center_6dof": [
+        -115.5,
+        302.7,
+        -19.0,
+        70.3,
+        0.4,
+        179.6
+      ],
+      "prior_translation_m": [
+        -0.1155,
+        0.30269999999999997,
+        -0.019
+      ],
+      "prior_rotation_rotvec": [
+        2.5607392085076666,
+        1.8031048478195653,
+        -0.002644839173062603
+      ],
+      "estimated_cube_translation_m": [
+        -0.11182114618805761,
+        0.2985257077122566,
+        -0.016125255651682463
+      ],
+      "estimated_cube_rotation_rotvec": [
+        -0.0006803053640027457,
+        -0.018149013931018136,
+        -0.3245893286600803
+      ],
+      "delta_trans_mm": 6.262813787854496,
+      "delta_rot_deg": 179.93786314505516,
+      "possible_unit_warning": "",
+      "possible_rotation_warning": "rotation prior off by 180deg (>45)",
+      "set_used_for_anchor": true
+    },
+    {
+      "event_id": 54,
+      "set_index": 12,
+      "raw_set_cube_center_6dof": [
+        -115.5,
+        302.7,
+        -19.0,
+        70.3,
+        0.4,
+        179.6
+      ],
+      "prior_translation_m": [
+        -0.1155,
+        0.30269999999999997,
+        -0.019
+      ],
+      "prior_rotation_rotvec": [
+        2.5607392085076666,
+        1.8031048478195653,
+        -0.002644839173062603
+      ],
+      "estimated_cube_translation_m": [
+        -0.11160325653625947,
+        0.29831771516780076,
+        -0.015565651946412684
+      ],
+      "estimated_cube_rotation_rotvec": [
+        -0.00012524074092130384,
+        -0.015375721336671422,
+        -0.3291410622960969
+      ],
+      "delta_trans_mm": 6.795864663595583,
+      "delta_rot_deg": 179.94509058092177,
+      "possible_unit_warning": "",
+      "possible_rotation_warning": "rotation prior off by 180deg (>45)",
+      "set_used_for_anchor": true
+    },
+    {
+      "event_id": 55,
+      "set_index": 12,
+      "raw_set_cube_center_6dof": [
+        -115.5,
+        302.7,
+        -19.0,
+        70.3,
+        0.4,
+        179.6
+      ],
+      "prior_translation_m": [
+        -0.1155,
+        0.30269999999999997,
+        -0.019
+      ],
+      "prior_rotation_rotvec": [
+        2.5607392085076666,
+        1.8031048478195653,
+        -0.002644839173062603
+      ],
+      "estimated_cube_translation_m": [
+        -0.11017375327859852,
+        0.2988081381610188,
+        -0.014769927179168835
+      ],
+      "estimated_cube_rotation_rotvec": [
+        -0.0045576032648386635,
+        -0.008864381390893888,
+        -0.3348503478639359
+      ],
+      "delta_trans_mm": 7.836390034990136,
+      "delta_rot_deg": 179.93788291454305,
+      "possible_unit_warning": "",
+      "possible_rotation_warning": "rotation prior off by 180deg (>45)",
+      "set_used_for_anchor": true
+    },
+    {
+      "event_id": 56,
+      "set_index": 12,
+      "raw_set_cube_center_6dof": [
+        -115.5,
+        302.7,
+        -19.0,
+        70.3,
+        0.4,
+        179.6
+      ],
+      "prior_translation_m": [
+        -0.1155,
+        0.30269999999999997,
+        -0.019
+      ],
+      "prior_rotation_rotvec": [
+        2.5607392085076666,
+        1.8031048478195653,
+        -0.002644839173062603
+      ],
+      "estimated_cube_translation_m": [
+        -0.11218669474707643,
+        0.2982989030740283,
+        -0.016045914049374943
+      ],
+      "estimated_cube_rotation_rotvec": [
+        0.000351136362959155,
+        -0.016167467690968457,
+        -0.32283574232057527
+      ],
+      "delta_trans_mm": 6.250941501448301,
+      "delta_rot_deg": 179.94897899228388,
+      "possible_unit_warning": "",
+      "possible_rotation_warning": "rotation prior off by 180deg (>45)",
+      "set_used_for_anchor": true
+    }
+  ]
+}

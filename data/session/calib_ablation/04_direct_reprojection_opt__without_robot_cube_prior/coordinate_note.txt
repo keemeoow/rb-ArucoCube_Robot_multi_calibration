@@ -1,0 +1,2 @@
+Transforms are in robot BASE frame.
+Vision-only solve; robot cube-center positions used ONLY for final base registration (gauge).

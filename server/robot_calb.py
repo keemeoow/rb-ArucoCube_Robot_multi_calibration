@@ -510,6 +510,18 @@ def _run_auto_multiset(rb, conn, data, speed, confirm=True,
         # 재-그립 시 +Z 위에서 line 접근하기 위한 기준 TCP를 기록.
         place_tcp = get_tcp()
 
+        # Record the TRUE cube-center pose at placement using tool 4 (the cube-center
+        # TCP), while the gripper still holds the cube. This captures the actual
+        # per-set yaw. The nominal set_cube_center had a reliable translation but its
+        # rotation did not match the physical cube (off by a ~constant frame-convention
+        # offset plus per-set error), which broke the with-prior calibration.
+        try:
+            measured_cc = get_cube_center()
+            print '[Auto] measured cube center (tool4): ' + fmt6(measured_cc)
+            set_cc = measured_cc
+        except Exception as e:
+            print '[WARN] get_cube_center() failed ({}); keeping nominal set_cube_center'.format(e)
+
         # Step 2: open gripper -> cube released.
         print '[Auto] gripper OPEN (release cube on floor)'
         gripper_open()

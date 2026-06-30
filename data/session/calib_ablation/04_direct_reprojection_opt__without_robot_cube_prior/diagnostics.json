@@ -1,0 +1,22 @@
+{
+  "method": "04_direct_reprojection_opt",
+  "prior_mode": "without_robot_cube_prior",
+  "n_pose_obs": 171,
+  "n_corner_obs": 171,
+  "corner_obs_reason_if_zero": "",
+  "reproj_rmse_px": 0.8686243941110132,
+  "reproj_median_px": 0.6504926881577098,
+  "pose_trans_rmse_mm": 10.17696936322012,
+  "pose_rot_rmse_deg": 14.317547200515993,
+  "prior_trans_rmse_mm": 6.084627953803573,
+  "prior_rot_rmse_deg": 179.24224470747365,
+  "prior_stats": {},
+  "extra": {
+    "optimized": true,
+    "optimizer_success": true,
+    "accepted": true,
+    "cost_initial": 30.59331868219268,
+    "cost_final": 0.27759287188096887,
+    "nfev": 36
+  }
+}

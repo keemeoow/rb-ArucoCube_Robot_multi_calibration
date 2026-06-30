@@ -1,0 +1,23 @@
+{
+  "method": "03_pose_consistency_opt",
+  "prior_mode": "without_robot_cube_prior",
+  "n_pose_obs": 171,
+  "n_corner_obs": 171,
+  "corner_obs_reason_if_zero": "",
+  "reproj_rmse_px": 9.119619396521122,
+  "reproj_median_px": 5.313968539459394,
+  "pose_trans_rmse_mm": 8.268099090516252,
+  "pose_rot_rmse_deg": 12.881246380577386,
+  "prior_trans_rmse_mm": 8.078467475844691,
+  "prior_rot_rmse_deg": 177.23417915175406,
+  "prior_stats": {},
+  "extra": {
+    "optimized": true,
+    "optimizer_success": true,
+    "accepted": false,
+    "cost_initial": 7.512151602683536e-05,
+    "cost_final": 0.00011963131961929786,
+    "nfev": 30,
+    "fallback_reason": "final cost was not lower than initial cost"
+  }
+}

@@ -1073,6 +1073,9 @@ def main():
         capture_robot_joints_6dof: Optional[List[float]] = None,
         set_cube_center_6dof: Optional[List[float]] = None,
         set_index: Optional[int] = None,
+        cube_gripped: Optional[bool] = None,
+        capture_block: Optional[str] = None,
+        grasp_id: Optional[int] = None,
     ) -> Tuple[bool, dict]:
         """모든 카메라에서 마커별 포즈 추정과 함께 촬영."""
         nonlocal event_id
@@ -1159,6 +1162,14 @@ def main():
 
         if set_index is not None:
             cap_rec["set_index"] = set_index
+
+        # capture-block tags so Step3 can separate (a) placement vs (b) eye-to-hand frames
+        if cube_gripped is not None:
+            cap_rec["cube_gripped"] = bool(cube_gripped)
+        if capture_block is not None:
+            cap_rec["capture_block"] = str(capture_block)
+        if grasp_id is not None:
+            cap_rec["grasp_id"] = int(grasp_id)
 
         if place_pose_6dof is not None and place_pose_6dof != robot_tcp:
             cap_rec["place_pose_6dof"] = [float(x) for x in place_pose_6dof]
@@ -1370,6 +1381,9 @@ def main():
                             m_set_joints = msg.get("set_joints")
                             m_set_tcp = msg.get("set_tcp")
                             m_place_joints = msg.get("place_joints")
+                            m_gripped = msg.get("cube_gripped")
+                            m_block = msg.get("capture_block")
+                            m_grasp = msg.get("grasp_id")
 
                             print(f"\n[ManualRobot] Capture signal received (capture_index={pose_idx}, set_index={s_idx})")
                             if capture_tcp:
@@ -1383,6 +1397,9 @@ def main():
                                 capture_robot_joints_6dof=r_joints,
                                 set_cube_center_6dof=s_cube,
                                 set_index=s_idx,
+                                cube_gripped=m_gripped,
+                                capture_block=m_block,
+                                grasp_id=m_grasp,
                             )
 
                             status = "success" if saved else "skipped"

@@ -1,0 +1,23 @@
+{
+  "n_A": 57,
+  "n_B": 0,
+  "a": {
+    "anchor_rms_mm": 8.158406943341038,
+    "n_sets": 13,
+    "stats": {
+      "num_prior_total": 57,
+      "num_prior_used": 57,
+      "num_prior_rejected": 0,
+      "median_prior_trans_error_mm": 7.576694272921795,
+      "median_prior_rot_error_deg": 178.90446051780523,
+      "rotation_prior_used": false,
+      "translation_prior_used": true,
+      "anchor_rms_mm": 8.158406943341038,
+      "reason": "translation-only anchor, rms=8.2mm over 13 sets; rotation prior REJECTED (median 178.9deg > 45deg): orientation in set_cube_center_6dof does not match the observed cube"
+    }
+  },
+  "b": {
+    "skipped": "no B_eyetohand frames in this session"
+  },
+  "comparison": {}
+}

@@ -43,8 +43,8 @@
                               -> +Z 100mm 클리어런스 -> 각 capture_joints로 이동 후
                                  좌표 표시 -> 사람이 'c'+Enter 로 확인하면 촬영
                                  (s=skip, q=quit / --noconfirm 시 확인 없이 전자동)
-                                 (save gate 실패 시 해당 위치에서 ±2cm 지터링하며
-                                  최대 5회 재시도, 그래도 실패하면 해당 위치 스킵)
+                                 (save gate 실패 시 자동 지터 없이 곧바로 manual
+                                  recovery: 사람이 jog로 옮겨 인식시킨 뒤 c로 재촬영)
                               -> 다음 set로 큐브 이동 (재-그립 시 항상 place 위치
                                  +Z 20mm 위에서 접근 후 하강하여 close +
                                  +Z 30mm transit lift)
@@ -86,9 +86,7 @@ TOOL_CUBE_CENTER_Z = TOOL_GRIPPER_Z - CUBE_CENTER_OFFSET_Z
 
 # 큐브를 잡을 때 항상 place 위치 +Z 위에서 접근 후 하강
 GRIP_APPROACH_Z_MM = 20.0
-# save gate 실패 시 ±2cm 지터링 재시도 (최대 5회)
-CAPTURE_RETRY_MAX_ATTEMPTS = 5
-CAPTURE_RETRY_JITTER_MM = 20.0
+# save gate 실패 시: 자동 지터 없이 곧바로 사람이 jog하는 manual_recover로 진입한다.
 
 TCP_AXIS_MAP = {'x': 'dx', 'y': 'dy', 'z': 'dz', 'rz': 'drz', 'ry': 'dry', 'rx': 'drx'}
 JOINT_AXIS_MAP = {'d1': 'dj1', 'd2': 'dj2', 'd3': 'dj3', 'd4': 'dj4', 'd5': 'dj5', 'd6': 'dj6'}
@@ -234,13 +232,20 @@ def gripper_close():
 # ── Capture ──
 
 def do_capture(conn, capture_index, set_cube_center=None, set_index=None,
-               set_joints=None, set_tcp=None, place_joints=None):
-    """Returns (status, tcp, cube_tcp) or (None, None, None) on disconnect."""
+               set_joints=None, set_tcp=None, place_joints=None,
+               cube_gripped=False, capture_block="A_placement", grasp_id=0):
+    """Returns (status, tcp, cube_tcp) or (None, None, None) on disconnect.
+
+    capture_block / cube_gripped / grasp_id tag each frame so Step3 can separate:
+      A_placement  : cube released on table (set_cube_center anchor, method (a))
+      B_eyetohand  : cube rigidly gripped, robot sweeps (eye-to-hand, method (b))
+    """
     tcp = get_tcp()
     cube_tcp = get_cube_center()
     joints = get_joints()
     print ''
-    print '*** CAPTURE {} ***'.format(capture_index)
+    print '*** CAPTURE {} (block={} gripped={} grasp={}) ***'.format(
+        capture_index, capture_block, cube_gripped, grasp_id)
     print '  fingertip:    {}'.format(fmt6(tcp))
     print '  cube center:  {}'.format(fmt6(cube_tcp))
 
@@ -250,6 +255,9 @@ def do_capture(conn, capture_index, set_cube_center=None, set_index=None,
         "capture_cube_center_6dof": cube_tcp,
         "capture_robot_joints_6dof": joints,
         "capture_index": capture_index,
+        "cube_gripped": bool(cube_gripped),
+        "capture_block": capture_block,
+        "grasp_id": int(grasp_id),
     }
     if set_cube_center is not None:
         msg["set_cube_center_6dof"] = set_cube_center
@@ -306,55 +314,80 @@ def approach_and_close_gripper(rb, place_joints, place_tcp=None,
     gripper_close()
 
 
-def capture_with_retry(rb, conn, pose_idx, base_tcp,
-                        set_cube_center=None, set_index=None,
-                        set_joints=None, set_tcp=None, place_joints=None,
-                        max_attempts=CAPTURE_RETRY_MAX_ATTEMPTS,
-                        jitter_mm=CAPTURE_RETRY_JITTER_MM):
-    """save gate가 통과될 때까지 base_tcp 기준 ±2cm 지터링하며 촬영 재시도.
+def manual_recover(rb, conn, pose_idx, capture_kwargs):
+    """Marker detection failed at an auto waypoint. Hand control to the operator to
+    jog the robot until the cube is detected, then re-capture from the current pose.
 
-    최대 max_attempts번 시도. 모두 실패하면 'skipped' 반환.
-    save gate 통과 시 'success', 클라이언트 연결 끊김 시 None.
-    회전(rz/ry/rx)은 유지하고 x/y만 ±jitter_mm로 흔든다(z는 충돌 위험으로 고정).
+    Returns 'success' / 'skip' / 'quit' / None(disconnect). Jog commands mirror the
+    main manual loop (p / j / gotop / gotoj / show).
     """
-    deltas = [
-        (0.0, 0.0, 0.0),
-        (jitter_mm, 0.0, 0.0),
-        (-jitter_mm, 0.0, 0.0),
-        (0.0, jitter_mm, 0.0),
-        (0.0, -jitter_mm, 0.0),
-    ]
-    n = min(max_attempts, len(deltas))
-    for attempt in range(n):
-        dx, dy, dz = deltas[attempt]
-        if attempt > 0:
-            adj = list(base_tcp[:6])
-            adj[0] += dx
-            adj[1] += dy
-            adj[2] += dz
-            print '  [retry {}/{}] dx={:+.0f} dy={:+.0f} dz={:+.0f}'.format(
-                attempt + 1, n, dx, dy, dz)
+    print ''
+    print '  [Recover] marker not detected here. Manual jog until visible, then c.'
+    print '    p <axis>,<v>  j <axis>,<v>  gotop x,y,z[,rz,ry,rx]  gotoj d1..d6'
+    print '    show | c: re-capture | s: skip this pose | q: quit'
+    while True:
+        try:
+            line = raw_input('  recover> ').strip()
+        except EOFError:
+            return 'skip'
+        if not line:
+            continue
+        ll = line.lower()
+        if ll == 'c':
+            status, _, _ = do_capture(conn, pose_idx, **capture_kwargs)
+            if status is None:
+                return None
+            if status == 'success':
+                print '  [Recover] -> OK'
+                return 'success'
+            print '  [Recover] still failing (status={}); jog more, or s/q'.format(status)
+        elif ll == 's':
+            return 'skip'
+        elif ll == 'q':
+            return 'quit'
+        elif ll == 'show':
+            show_pose()
+        elif ll.startswith('p '):
             try:
-                rb.line(Position(*adj))
+                parts = line[2:].split(',')
+                move_tcp(parts[0].strip(), float(parts[1]))
+                show_pose()
             except Exception as e:
-                print '  [WARN] jitter move failed: {}'.format(e)
-                continue
-            time.sleep(0.3)
-
-        status, _, _ = do_capture(
-            conn, pose_idx,
-            set_cube_center=set_cube_center,
-            set_index=set_index,
-            set_joints=set_joints,
-            set_tcp=set_tcp,
-            place_joints=place_joints,
-        )
-        if status is None:
-            return None
-        if status == 'success':
-            return 'success'
-        print '  [Auto] save gate failed (status={})'.format(status)
-    return 'skipped'
+                print '  err: {}. Usage: p <axis>,<value>'.format(e)
+        elif ll.startswith('j '):
+            try:
+                parts = line[2:].split(',')
+                move_joint(parts[0].strip(), float(parts[1]))
+                show_pose()
+            except Exception as e:
+                print '  err: {}. Usage: j <axis>,<value>'.format(e)
+        elif ll.startswith('gotop ') or ll.startswith('goto '):
+            try:
+                rest = line[6:] if ll.startswith('gotop ') else line[5:]
+                vals = [float(v.strip()) for v in rest.split(',')]
+                if len(vals) == 6:
+                    rb.line(Position(*vals))
+                elif len(vals) == 3:
+                    t = get_tcp()
+                    rb.line(Position(vals[0], vals[1], vals[2], t[3], t[4], t[5]))
+                else:
+                    print '  usage: gotop x,y,z[,rz,ry,rx]'
+                    continue
+                show_pose()
+            except Exception as e:
+                print '  err: {}'.format(e)
+        elif ll.startswith('gotoj '):
+            try:
+                vals = [float(v.strip()) for v in line[6:].split(',')]
+                if len(vals) == 6:
+                    rb.move(Joint(*vals))
+                    show_pose()
+                else:
+                    print '  usage: gotoj d1,d2,d3,d4,d5,d6'
+            except Exception as e:
+                print '  err: {}'.format(e)
+        else:
+            print '  (p / j / gotop / gotoj / show / c / s / q)'
 
 
 def request_waypoints_from_pc(conn, timeout_sec=10.0):
@@ -551,7 +584,7 @@ def _run_auto_multiset(rb, conn, data, speed, confirm=True,
                 continue
             time.sleep(0.5)
             # 이동된 좌표값(joints + tcp) 표시.
-            base_tcp = show_pose()
+            show_pose()
 
             # 사람 확인 대기: 'c'(+Enter)=촬영, s=skip, q=quit.
             if confirm:
@@ -575,24 +608,42 @@ def _run_auto_multiset(rb, conn, data, speed, confirm=True,
                     send_json(conn, {"command": "quit"})
                     return
 
-            result = capture_with_retry(
-                rb, conn, pose_idx, base_tcp,
+            # Single capture, NO auto jitter. On detection failure go straight to
+            # manual recovery so the operator jogs until the cube is visible.
+            status, _, _ = do_capture(
+                conn, pose_idx,
                 set_cube_center=set_cc,
                 set_index=sidx,
                 set_joints=place_j,
                 set_tcp=None,
                 place_joints=place_j,
             )
-            if result is None:
+            if status is None:
                 print '[Auto] disconnected, stopping.'
                 return
-            if result == 'success':
+            if status == 'success':
                 success += 1
                 print '  [Auto] -> OK'
             else:
-                skipped += 1
-                print '  [Auto] -> SKIPPED ({} attempts failed)'.format(
-                    CAPTURE_RETRY_MAX_ATTEMPTS)
+                # Marker not detected. Hand control to the operator to jog the robot
+                # until visible, then re-capture.
+                print '  [Auto] -> not detected; entering manual recovery'
+                rec = manual_recover(
+                    rb, conn, pose_idx,
+                    {"set_cube_center": set_cc, "set_index": sidx,
+                     "set_joints": place_j, "set_tcp": None, "place_joints": place_j})
+                if rec is None:
+                    print '[Auto] disconnected, stopping.'
+                    return
+                if rec == 'success':
+                    success += 1
+                elif rec == 'quit':
+                    print '  -> quit by user'
+                    send_json(conn, {"command": "quit"})
+                    return
+                else:
+                    skipped += 1
+                    print '  [Auto] -> SKIPPED by user'
 
         # Step 5: if more sets remain, re-grip the cube and lift before transit.
         if si < n_sets - 1:
@@ -682,6 +733,11 @@ def main():
         set_cube_center = None
         last_place_joints = None
         waypoints = []
+        # capture tagging: A_placement (cube released, method a) vs B_eyetohand
+        # (cube gripped, robot sweeps, method b). gc(grip)/go(release) toggle gripped.
+        capture_block = "A_placement"
+        grasp_id = 0
+        cube_gripped = False
 
         print ''
         print '=========================================='
@@ -690,7 +746,10 @@ def main():
         print '  gotoj d1,d2,d3,d4,d5,d6: joint abs move'
         print '  show / speed <0-100>'
         print '  c: capture  set: save TCP+cube'
-        print '  go: grip open  gc: grip close'
+        print '  go: grip open(release)  gc: grip close(grip)'
+        print '  block a|b : A=placement(method a) / B=eye-to-hand sweep(method b)'
+        print '    (b)eye-to-hand: gc(grip cube) -> block b -> jog widely(z>=150mm,'
+        print '     tilt>=30deg) -> c at each pose (cube must stay visible to fixed cams)'
         print '  undo [N|all|<axes>|set]  q: quit'
         print '  start                 -> auto capture (PC sends waypoints)'
         print '  start <path> [speed]  -> auto capture (local file)'
@@ -774,13 +833,27 @@ def main():
                     set_cube_center[0], set_cube_center[1], set_cube_center[2],
                     CUBE_CENTER_OFFSET_Z)
 
+            # Capture block toggle (a = placement / b = eye-to-hand sweep)
+            elif cl.startswith('block'):
+                parts = cl.split()
+                if len(parts) >= 2 and parts[1] in ('a', 'b'):
+                    capture_block = "B_eyetohand" if parts[1] == 'b' else "A_placement"
+                    print 'capture_block = {} (grasp_id={}, cube_gripped={})'.format(
+                        capture_block, grasp_id, cube_gripped)
+                else:
+                    print 'Usage: block a | block b   (current: {})'.format(capture_block)
+
             # Gripper
             elif cl == 'go':
                 last_place_joints = get_joints()
                 gripper_open()
+                cube_gripped = False        # cube released on the table
 
             elif cl == 'gc':
                 gripper_close()
+                cube_gripped = True         # cube now rigidly held
+                grasp_id += 1               # new grasp = new eye-to-hand target transform
+                print '[grip] cube_gripped=True, grasp_id={}'.format(grasp_id)
 
             # Capture
             elif cl == 'c':
@@ -788,7 +861,10 @@ def main():
                     conn, capture_count, set_cube_center,
                     set_index if set_index >= 0 else None,
                     set_joints=home_joints, set_tcp=home_pose,
-                    place_joints=last_place_joints)
+                    place_joints=last_place_joints,
+                    cube_gripped=cube_gripped,
+                    capture_block=capture_block,
+                    grasp_id=grasp_id)
                 if status is None:
                     break
                 wp = {
